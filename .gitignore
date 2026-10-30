@@ -1,0 +1,25 @@
+# Logs y Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Python y entornos virtuales
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+
+# Sistema y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Variables de entorno
+.env
+.env.*.local
