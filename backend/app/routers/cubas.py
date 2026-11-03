@@ -1,87 +1,133 @@
 """
 Router de Cubas para consulta del Frontend (Dashboard, CubaDetail).
+Equivalente a un @RestController en Spring Boot.
 """
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from ..database import get_db
-from .. import models, schemas
+from app.database import get_db
+from app.models import Cuba, ProcesoFermentacion, LecturaTelemetria
+from app.schemas import CubaOut, LecturaOut, HistoricoCubaOut
 
 router = APIRouter(prefix="/api/cubas", tags=["Cubas y Monitoreo"])
 
 
-@router.get("", response_model=List[schemas.CubaOut])
+@router.get("", response_model=List[CubaOut], summary="Listar todas las cubas con telemetría en tiempo real")
 def listar_cubas(db: Session = Depends(get_db)):
-    """Lista todas las cubas con su última temperatura y grados Brix registrados."""
-    cubas = db.query(models.Cuba).all()
+    """Lista todas las cubas de la bodega con su última lectura de sensores registrada."""
+    cubas = db.query(Cuba).all()
     resultado = []
+    
     for c in cubas:
-        # Obtener última lectura registrada
-        ultima_lectura = (
-            db.query(models.LecturaTelemetria)
-            .filter(models.LecturaTelemetria.cuba_id == c.id)
-            .order_by(desc(models.LecturaTelemetria.timestamp))
+        # Buscar proceso de fermentación activo en la cuba (estado: 'en_proceso')
+        proceso_activo = (
+            db.query(ProcesoFermentacion)
+            .filter(ProcesoFermentacion.cuba_id == c.id, ProcesoFermentacion.estado == "en_proceso")
+            .order_by(desc(ProcesoFermentacion.id))
             .first()
         )
-        c_dict = schemas.CubaOut(
-            id=c.id,
-            codigo=c.codigo,
-            nombre=c.nombre,
-            variedad=c.variedad,
-            lote=c.lote,
-            capacidad_litros=c.capacidad_litros,
-            volumen_actual=c.volumen_actual,
-            dia_fermentacion=c.dia_fermentacion,
-            dias_estimados=c.dias_estimados,
-            estado=c.estado,
-            ultima_temperatura=ultima_lectura.temp_vino if ultima_lectura else None,
-            ultimos_brix=ultima_lectura.brix_calculado if ultima_lectura else None
+
+        ultima_lectura = None
+        if proceso_activo:
+            ultima_lectura = (
+                db.query(LecturaTelemetria)
+                .filter(LecturaTelemetria.fermentacion_id == proceso_activo.id)
+                .order_by(desc(LecturaTelemetria.timestamp))
+                .first()
+            )
+
+        resultado.append(
+            CubaOut(
+                id=c.id,
+                codigo_cuba=c.codigo,
+                nombre=f"Cuba {c.codigo}",
+                capacidad_lts=float(c.cap_litros) if c.cap_litros else 10000.0,
+                ubicacion_en_bodega=c.sector_cuba or "Sector Principal",
+                estado_operativo=c.estado_operativo or "operativo",
+                ultima_temperatura=float(ultima_lectura.temp_mosto) if ultima_lectura and ultima_lectura.temp_mosto else None,
+                ultimos_brix=float(ultima_lectura.brix) if ultima_lectura and ultima_lectura.brix else None,
+                ultimo_ph=float(ultima_lectura.ph) if ultima_lectura and ultima_lectura.ph else None,
+                proceso_activo_id=proceso_activo.id if proceso_activo else None
+            )
         )
-        resultado.append(c_dict)
     return resultado
 
 
-@router.get("/{cuba_id}", response_model=schemas.CubaOut)
+@router.get("/{cuba_id}", response_model=CubaOut, summary="Obtener detalle de una cuba por ID")
 def obtener_cuba(cuba_id: int, db: Session = Depends(get_db)):
-    """Obtiene el detalle de una cuba específica."""
-    cuba = db.query(models.Cuba).filter(models.Cuba.id == cuba_id).first()
-    if not cuba:
-        raise HTTPException(status_code=404, detail="Cuba no encontrada")
+    """Obtiene el estado detallado de una cuba y sus sensores."""
+    c = db.query(Cuba).filter(Cuba.id == cuba_id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail=f"Cuba con ID {cuba_id} no encontrada")
 
-    ultima_lectura = (
-        db.query(models.LecturaTelemetria)
-        .filter(models.LecturaTelemetria.cuba_id == cuba.id)
-        .order_by(desc(models.LecturaTelemetria.timestamp))
+    proceso_activo = (
+        db.query(ProcesoFermentacion)
+        .filter(ProcesoFermentacion.cuba_id == c.id, ProcesoFermentacion.estado == "en_proceso")
+        .order_by(desc(ProcesoFermentacion.id))
         .first()
     )
 
-    return schemas.CubaOut(
-        id=cuba.id,
-        codigo=cuba.codigo,
-        nombre=cuba.nombre,
-        variedad=cuba.variedad,
-        lote=cuba.lote,
-        capacidad_litros=cuba.capacidad_litros,
-        volumen_actual=cuba.volumen_actual,
-        dia_fermentacion=cuba.dia_fermentacion,
-        dias_estimados=cuba.dias_estimados,
-        estado=cuba.estado,
-        ultima_temperatura=ultima_lectura.temp_vino if ultima_lectura else None,
-        ultimos_brix=ultima_lectura.brix_calculado if ultima_lectura else None
+    ultima_lectura = None
+    if proceso_activo:
+        ultima_lectura = (
+            db.query(LecturaTelemetria)
+            .filter(LecturaTelemetria.fermentacion_id == proceso_activo.id)
+            .order_by(desc(LecturaTelemetria.timestamp))
+            .first()
+        )
+
+    return CubaOut(
+        id=c.id,
+        codigo_cuba=c.codigo,
+        nombre=f"Cuba {c.codigo}",
+        capacidad_lts=float(c.cap_litros) if c.cap_litros else 10000.0,
+        ubicacion_en_bodega=c.sector_cuba or "Sector Principal",
+        estado_operativo=c.estado_operativo or "operativo",
+        ultima_temperatura=float(ultima_lectura.temp_mosto) if ultima_lectura and ultima_lectura.temp_mosto else None,
+        ultimos_brix=float(ultima_lectura.brix) if ultima_lectura and ultima_lectura.brix else None,
+        ultimo_ph=float(ultima_lectura.ph) if ultima_lectura and ultima_lectura.ph else None,
+        proceso_activo_id=proceso_activo.id if proceso_activo else None
     )
 
 
-@router.get("/{cuba_id}/historico", response_model=List[schemas.LecturaOut])
-def obtener_historico_cuba(cuba_id: int, limit: int = 50, db: Session = Depends(get_db)):
-    """Obtiene el histórico de lecturas temporales para alimentar los gráficos de Chart.js."""
-    lecturas = (
-        db.query(models.LecturaTelemetria)
-        .filter(models.LecturaTelemetria.cuba_id == cuba_id)
-        .order_by(desc(models.LecturaTelemetria.timestamp))
-        .limit(limit)
-        .all()
-    )
-    return list(reversed(lecturas))
+@router.get("/{cuba_id}/historico", response_model=HistoricoCubaOut, summary="Curvas históricas de telemetría (para Chart.js)")
+def obtener_historico_cuba(
+    cuba_id: int,
+    rango_horas: int = Query(24, description="Ventana de tiempo en horas (24, 48, 168)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Entrega series temporales de temperatura de vino, grados Brix y pH
+    listas para renderizar en los gráficos de CubaDetailView.vue.
+    """
+    c = db.query(Cuba).filter(Cuba.id == cuba_id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail=f"Cuba con ID {cuba_id} no encontrada")
 
+    proceso_activo = (
+        db.query(ProcesoFermentacion)
+        .filter(ProcesoFermentacion.cuba_id == c.id)
+        .order_by(desc(ProcesoFermentacion.id))
+        .first()
+    )
+
+    query = db.query(LecturaTelemetria)
+    if proceso_activo:
+        query = query.filter(LecturaTelemetria.fermentacion_id == proceso_activo.id)
+    
+    lecturas = query.order_by(desc(LecturaTelemetria.timestamp)).limit(100).all()
+    lecturas = list(reversed(lecturas))
+
+    return HistoricoCubaOut(
+        cuba_id=c.id,
+        nombre_cuba=f"Cuba {c.codigo}",
+        proceso_id=proceso_activo.id if proceso_activo else None,
+        rango_horas=rango_horas,
+        total_muestras=len(lecturas),
+        timestamps=[l.timestamp.strftime("%H:%M:%S") if l.timestamp else "" for l in lecturas],
+        temperaturas_vino=[float(l.temp_mosto) if l.temp_mosto else None for l in lecturas],
+        grados_brix=[float(l.brix) if l.brix else None for l in lecturas],
+        valores_ph=[float(l.ph) if l.ph else None for l in lecturas]
+    )

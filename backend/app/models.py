@@ -1,6 +1,7 @@
 """
 Modelos ORM de SQLAlchemy para MOSTO.
-Estructura alineada exactamente a las tablas de Supabase (esquema oficial Fase 2).
+Estructura alineada exactamente a las 19 tablas de Supabase (esquema oficial Fase 2).
+Equivalente a la capa @Entity en Spring Boot.
 """
 from datetime import datetime
 from sqlalchemy import (
@@ -45,8 +46,15 @@ class Bodega(Base):
 
 
 # ==========================================
-# 2. CUBAS Y CEPAS
+# 2. CUBAS, MATERIALES Y CEPAS
 # ==========================================
+
+class TipoMaterialCuba(Base):
+    __tablename__ = "TIPO_MATERIAL_CUBA"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    nombre = Column(String(100), nullable=False)
+
 
 class Cepa(Base):
     __tablename__ = "CEPA"
@@ -66,7 +74,7 @@ class Cuba(Base):
     estado_operativo = Column(String(50), default="operativo")
     fecha_cuba = Column(DateTime, nullable=True)
     bodega_id = Column(BigInteger, ForeignKey("BODEGA.id"), nullable=True)
-    material_id = Column(BigInteger, nullable=True)
+    material_id = Column(BigInteger, ForeignKey("TIPO_MATERIAL_CUBA.id"), nullable=True)
 
     bodega = relationship("Bodega", back_populates="cubas")
     procesos = relationship("ProcesoFermentacion", back_populates="cuba")
@@ -109,8 +117,18 @@ class ProcesoFermentacion(Base):
 
 
 # ==========================================
-# 3. HARDWARE IOT Y ASIGNACIONES
+# 3. HARDWARE IOT Y MODELOS
 # ==========================================
+
+class ModeloDispositivo(Base):
+    __tablename__ = "MODELO_DISPOSITIVO"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    marca = Column(String(100), nullable=True)
+    modelo = Column(String(100), nullable=False)
+    arquitectura = Column(String(100), nullable=True)
+    version_hardware = Column(String(50), nullable=True)
+
 
 class Dispositivo(Base):
     __tablename__ = "DISPOSITIVO"
@@ -120,8 +138,8 @@ class Dispositivo(Base):
     tipo_dispositivo = Column(String(50), nullable=True) # Sonda DS18B20 / Flotador MPU-6050
     firmware_version = Column(String(50), nullable=True)
     estado = Column(String(50), default="activo")
-    empresa_id = Column(BigInteger, ForeignKey("EMPRESA_CLIENTE.id"), nullable=True)
-    modelo_id = Column(BigInteger, nullable=True)
+    empresa_id = Column(BigInteger, ForeignKey("EMPRESA_CLIENTE.id"), nullable=False)
+    modelo_id = Column(BigInteger, ForeignKey("MODELO_DISPOSITIVO.id"), nullable=False)
     creado_en = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     lecturas = relationship("LecturaTelemetria", back_populates="dispositivo")
@@ -140,7 +158,7 @@ class AsignacionDispositivo(Base):
 
 
 # ==========================================
-# 4. TELEMETRÍA (Lecturas de tempsensmosto.ino y esp86xyz.ino)
+# 4. TELEMETRÍA (Lecturas tempsensmosto.ino y esp86xyz.ino)
 # ==========================================
 
 class LecturaTelemetria(Base):
@@ -151,7 +169,6 @@ class LecturaTelemetria(Base):
     fermentacion_id = Column(BigInteger, ForeignKey("PROCESO_FERMENTACION.id"), nullable=True, index=True)
     timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
 
-    # Sensores del proyecto
     temp_mosto = Column(Numeric(5, 2), nullable=True)      # DS18B20 (tempsensmosto.ino)
     temp_ambiente = Column(Numeric(5, 2), nullable=True)   # DHT22 (tempsensmosto.ino)
     densidad_sg = Column(Numeric(6, 4), nullable=True)     # Calculado
@@ -170,7 +187,7 @@ class TelemetriaEstadoNodo(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     dispositivo_id = Column(BigInteger, ForeignKey("DISPOSITIVO.id"), nullable=False)
     timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
-    bateria_pct = Column(SmallInteger, nullable=True)      # Porcentaje batería Li-Po
+    bateria_pct = Column(SmallInteger, nullable=True)      # % batería Li-Po
     bateria_volt = Column(Numeric(4, 2), nullable=True)
     rssi_dbm = Column(SmallInteger, nullable=True)          # Señal Wi-Fi (dBm)
     estado_red = Column(String(50), default="conectado")
@@ -190,30 +207,32 @@ class EventoAlerta(Base):
     fermentacion_id = Column(BigInteger, ForeignKey("PROCESO_FERMENTACION.id"), nullable=True, index=True)
     atendida_por = Column(BigInteger, nullable=True)
     timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
-    tipo_alerta = Column(String(50), nullable=False)       # caida_termica, brix_estancado, pico_termico
-    severidad = Column(String(20), default="warning")      # danger, warning, info
-    met_dispar = Column(String(50), nullable=True)         # regla_umbral
-    valor_registrado = Column(Numeric(6, 2), nullable=True)
-    valor_limite = Column(Numeric(6, 2), nullable=True)
-    mensaje = Column(Text, nullable=False)
-    estado = Column(String(50), default="activa")          # activa, en_proceso, resuelta
-    fecha_atencion = Column(DateTime(timezone=True), nullable=True)
-    resolucion_nota = Column(Text, nullable=True)
+    tipo_alerta = Column(String(50), nullable=False)
+    severidad = Column(String(20), default="warning")
+    met_dispar = Column(String(50), nullable=True)
 
     fermentacion = relationship("ProcesoFermentacion", back_populates="alertas")
 
 
 # ==========================================
-# 6. BITÁCORA ENOLÓGICA
+# 6. USUARIOS Y ROLES (RBAC)
 # ==========================================
 
-class BitacoraIntervencion(Base):
-    __tablename__ = "BITACORA_INTERVENCION"
+class Rol(Base):
+    __tablename__ = "ROL"
 
     id = Column(BigInteger, primary_key=True, index=True)
-    fermentacion_id = Column(BigInteger, ForeignKey("PROCESO_FERMENTACION.id"), nullable=False, index=True)
-    usuario_id = Column(BigInteger, nullable=True)
-    fecha_registro = Column(DateTime(timezone=True), default=datetime.utcnow)
-    tipo_intervencion = Column(String(50), nullable=False) # remontado, sulfatado, ajuste_frio
-    descripcion = Column(Text, nullable=False)
-    dosis_aplicada = Column(String(100), nullable=True)
+    nomb_rol = Column(String(50), unique=True, nullable=False)
+    descripcion = Column(String(200), nullable=True)
+
+
+class Usuario(Base):
+    __tablename__ = "USUARIO"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    nombre = Column(String(100), nullable=False)
+    email = Column(String(100), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    rol_id = Column(BigInteger, ForeignKey("ROL.id"), nullable=False)
+    activo = Column(Boolean, default=True)
+    creado_en = Column(DateTime(timezone=True), default=datetime.utcnow)

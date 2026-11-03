@@ -1,53 +1,87 @@
 """
-Esquemas Pydantic para validación y serialización de datos de la API.
+Esquemas Pydantic para validación y serialización de datos de la API MOSTO.
+Equivalente a la capa DTO (Data Transfer Objects) en Spring Boot.
 """
-from typing import Optional, List
+from typing import Optional, List, Any, Dict
 from datetime import datetime
 from pydantic import BaseModel, Field
 
 
 # ==========================================
-# ESQUEMAS DE INGESTA IOT (Desde los .ino)
+# 1. DTOs DE INGESTA IOT (Microcontroladores)
+# Compatible con tempsensmosto.ino y esp86xyz.ino
 # ==========================================
 
 class TelemetriaESP32In(BaseModel):
     """
-    Carga útil esperada desde tempsensmosto.ino (ESP32 con DS18B20 + DHT22 + pH)
+    Carga útil esperada desde tempsensmosto.ino (ESP32 Nodo Cuba)
+    Sensores: DS18B20 (vino), DHT22 (ambiente), PH-4502C (pH con divisor 2.0x)
     """
-    device_mac: str = Field(..., description="Dirección MAC física del ESP32")
-    cuba_id: int = Field(..., description="ID numérico de la cuba")
-    temp_vino: float = Field(..., description="Temperatura del vino en °C (DS18B20)")
-    temp_ambiente: Optional[float] = Field(None, description="Temperatura ambiente en °C (DHT22)")
-    humedad_ambiente: Optional[float] = Field(None, description="Humedad ambiente en % (DHT22)")
-    voltaje_ph: Optional[float] = Field(None, description="Voltaje analógico PO de sonda pH")
+    mac_address: str = Field(..., example="C8:F0:9E:4B:82:10", description="MAC física del ESP32")
+    cuba_id: Optional[int] = Field(None, example=1, description="ID de la cuba (opcional si ya está asignado en DB)")
+    temperatura_vino: float = Field(..., example=18.45, description="Temperatura del mosto/vino en °C (DS18B20)")
+    temperatura_ambiente: Optional[float] = Field(None, example=21.20, description="Temperatura ambiental en °C (DHT22)")
+    humedad_ambiente: Optional[float] = Field(None, example=65.0, description="Humedad relativa en % (DHT22)")
+    voltaje_ph: Optional[float] = Field(None, example=2.45, description="Voltaje PO de sonda PH-4502C para calibrar")
+    ph: Optional[float] = Field(None, example=3.45, description="pH directo si el sensor ya viene calibrado")
+    bateria_voltaje: Optional[float] = Field(None, example=3.92, description="Voltaje batería Li-Po (V)")
+    rssi: Optional[int] = Field(None, example=-68, description="Intensidad de señal Wi-Fi en dBm")
 
 
 class TelemetriaESP8266In(BaseModel):
     """
-    Carga útil esperada desde esp86xyz.ino (ESP8266 con MPU-6050 cápsula flotante)
+    Carga útil esperada desde esp86xyz.ino (ESP8266 Flotador Hidrómetro)
+    Sensor: MPU-6050 (Acelerómetro I2C para inclinación / densidad / °Brix)
     """
-    device_mac: str = Field(..., description="Dirección MAC física del ESP8266")
-    cuba_id: int = Field(..., description="ID numérico de la cuba")
-    inclinacion: float = Field(..., description="Ángulo de inclinación en grados (MPU-6050)")
-    ax: Optional[float] = Field(None, description="Aceleración en eje X (g)")
-    ay: Optional[float] = Field(None, description="Aceleración en eje Y (g)")
-    az: Optional[float] = Field(None, description="Aceleración en eje Z (g)")
+    mac_address: str = Field(..., example="5C:CF:7F:12:34:56", description="MAC física del ESP8266")
+    cuba_id: Optional[int] = Field(None, example=1, description="ID de la cuba (opcional si ya está asignado)")
+    angulo_tilt: Optional[float] = Field(None, example=43.20, description="Ángulo de inclinación en grados respecto a Z")
+    ax: Optional[float] = Field(None, example=0.045, description="Aceleración en X (g)")
+    ay: Optional[float] = Field(None, example=0.680, description="Aceleración en Y (g)")
+    az: Optional[float] = Field(None, example=0.730, description="Aceleración en Z (g)")
+    temp_vino: Optional[float] = Field(None, example=18.30, description="Temperatura interna del flotador (°C)")
+    brix: Optional[float] = Field(None, example=22.50, description="°Brix directo si el nodo ya lo calculó")
+    densidad_sg: Optional[float] = Field(None, example=1.0940, description="Gravedad específica directa (SG)")
+    bateria_voltaje: Optional[float] = Field(None, example=3.85, description="Voltaje batería Li-Po (V)")
+    rssi: Optional[int] = Field(None, example=-72, description="Intensidad de señal Wi-Fi en dBm")
+
+
+class TelemetriaProcesadaOut(BaseModel):
+    temperatura_vino: Optional[float] = None
+    temperatura_ambiente: Optional[float] = None
+    humedad_ambiente: Optional[float] = None
+    ph: Optional[float] = None
+    angulo_tilt: Optional[float] = None
+    brix: Optional[float] = None
+    densidad_sg: Optional[float] = None
+    bateria_pct: Optional[int] = None
+    calidad_wifi: Optional[str] = None
+
+
+class TelemetriaRespuestaOut(BaseModel):
+    status: str = Field(..., example="ok")
+    mensaje: str = Field(..., example="Telemetría registrada y calibrada con éxito")
+    lectura_id: int
+    cuba_id: Optional[int] = None
+    proceso_id: Optional[int] = None
+    timestamp: datetime
+    valores_procesados: TelemetriaProcesadaOut
 
 
 # ==========================================
-# ESQUEMAS DE CONSULTA PARA EL FRONTEND
+# 2. DTOs PARA EL FRONTEND (Vistas Vue 3)
 # ==========================================
 
 class LecturaOut(BaseModel):
     id: int
-    cuba_id: int
+    dispositivo_id: Optional[int] = None
     timestamp: datetime
-    temp_vino: Optional[float] = None
+    temp_mosto: Optional[float] = None
     temp_ambiente: Optional[float] = None
-    humedad_ambiente: Optional[float] = None
-    voltaje_ph: Optional[float] = None
-    inclinacion: Optional[float] = None
-    brix_calculado: Optional[float] = None
+    densidad_sg: Optional[float] = None
+    brix: Optional[float] = None
+    ph: Optional[float] = None
+    origen_dato: Optional[str] = "sensor_iot"
 
     class Config:
         from_attributes = True
@@ -55,54 +89,45 @@ class LecturaOut(BaseModel):
 
 class CubaOut(BaseModel):
     id: int
-    codigo: str
-    nombre: str
-    variedad: str
-    lote: Optional[str] = None
-    capacidad_litros: int
-    volumen_actual: int
-    dia_fermentacion: int
-    dias_estimados: int
-    estado: str
-    # Últimas lecturas resumidas
+    codigo_cuba: str
+    nombre: Optional[str] = None
+    capacidad_lts: Optional[float] = None
+    ubicacion_en_bodega: Optional[str] = None
+    estado_operativo: str
+    # Métricas en tiempo real calculadas
     ultima_temperatura: Optional[float] = None
     ultimos_brix: Optional[float] = None
+    ultimo_ph: Optional[float] = None
+    proceso_activo_id: Optional[int] = None
 
     class Config:
         from_attributes = True
 
+
+class HistoricoCubaOut(BaseModel):
+    cuba_id: int
+    nombre_cuba: str
+    proceso_id: Optional[int] = None
+    rango_horas: int
+    total_muestras: int
+    timestamps: List[str]
+    temperaturas_vino: List[Optional[float]]
+    grados_brix: List[Optional[float]]
+    valores_ph: List[Optional[float]]
+
+
+# ==========================================
+# 3. DTOs PARA GESTIÓN DE ALERTAS
+# ==========================================
 
 class AlertaOut(BaseModel):
     id: int
-    cuba_id: int
-    sensor_tipo: str
+    dispositivo_id: Optional[int] = None
+    fermentacion_id: Optional[int] = None
+    timestamp: datetime
+    tipo_alerta: str
     severidad: str
-    titulo: str
-    descripcion: str
-    valor_detectado: Optional[str] = None
-    regla_infringida: Optional[str] = None
-    estado: str
-    atendido_por: Optional[str] = None
-    created_at: datetime
-    resolved_at: Optional[datetime] = None
+    met_dispar: Optional[str] = None
 
     class Config:
         from_attributes = True
-
-
-class DispositivoOut(BaseModel):
-    id: int
-    codigo: str
-    nombre: str
-    mac: str
-    modelo: str
-    tipo_sensor: str
-    cuba_id: Optional[int] = None
-    estado: str
-    fuente_energia: str
-    nivel_bateria: int
-    ultima_conexion: datetime
-
-    class Config:
-        from_attributes = True
-
