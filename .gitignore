@@ -23,3 +23,8 @@ Thumbs.db
 # Variables de entorno
 .env
 .env.*.local
+
+# Bases de datos locales
+*.db
+*.sqlite3
+*.db-journal
