@@ -146,16 +146,16 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
 ---
 
 #### TASK-BE-04A: API de Consulta y Reconocimiento de Alertas
-* **Estado:** Pendiente
+* **Estado:** COMPLETADA
 * **Rama Git:** `feat/be-alerts-read-ack`
-* **Archivos a Crear:** `backend/app/routers/alerts.py`, `backend/app/schemas.py`
+* **Archivos:** `backend/app/routers/alerts.py`, `backend/app/schemas.py`, `backend/app/models.py`, `backend/app/main.py`
 * **Alcance:**
   * Endpoints REST para la vista `AlertsView.vue`:
     * `GET /api/alertas`: Lista alertas con filtros (`?estado=pendiente`, `?severidad=critica`, `?cuba_id=1`).
     * `PATCH /api/alertas/{id}/atender`: Cambia estado a `'atendida'` y registra timestamp del operador.
 * **Criterios de Aceptacion:**
-  - [ ] Endpoint de listado paginado o con limite parametrizable.
-  - [ ] Cumplimiento de la restriccion `ck_alerta_atencion` (`atendida_por` exige `fecha_atencion`).
+  - [x] Endpoint de listado paginado o con limite parametrizable.
+  - [x] Cumplimiento de la restriccion `ck_alerta_atencion` (`atendida_por` exige `fecha_atencion`).
 
 ---
 

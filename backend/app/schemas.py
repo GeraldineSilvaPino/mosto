@@ -135,14 +135,37 @@ class HistoricoCubaOut(BaseModel):
 # 3. DTOs PARA GESTIÓN DE ALERTAS
 # ==========================================
 
+class AlertaAtenderIn(BaseModel):
+    usuario_id: Optional[int] = Field(default=1, description="ID del usuario/operador que atiende la alerta")
+    nota: Optional[str] = Field(None, description="Observaciones técnicas iniciales al atender la alerta")
+
+
 class AlertaOut(BaseModel):
     id: int
     dispositivo_id: Optional[int] = None
     fermentacion_id: Optional[int] = None
-    timestamp: datetime
+    cuba_id: Optional[int] = None
+    cuba_codigo: Optional[str] = None
+    cuba_nombre: Optional[str] = None
+    variedad: Optional[str] = None
+    sensor_tipo: Optional[str] = None
+    
+    # Datos de la alerta y severidad
     tipo_alerta: str
     severidad: str
+    estado: str
     met_dispar: Optional[str] = None
+    titulo: Optional[str] = None
+    descripcion: Optional[str] = None
+    
+    # Fechas y auditoría (cumplimiento restricción ck_alerta_atencion)
+    timestamp: datetime
+    atendida_por: Optional[int] = None
+    operador_nombre: Optional[str] = None
+    fecha_atencion: Optional[datetime] = None
+    fecha_resolucion: Optional[datetime] = None
+    nota_atencion: Optional[str] = None
+    nota_resolucion: Optional[str] = None
 
     class Config:
         from_attributes = True

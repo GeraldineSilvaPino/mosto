@@ -216,6 +216,10 @@ class EventoAlerta(Base):
     dispositivo_id = Column(BigInteger, ForeignKey("DISPOSITIVO.id"), nullable=True)
     fermentacion_id = Column(BigInteger, ForeignKey("PROCESO_FERMENTACION.id"), nullable=True, index=True)
     atendida_por = Column(BigInteger, nullable=True)
+    fecha_atencion = Column(DateTime(timezone=True), nullable=True)
+    fecha_resolucion = Column(DateTime(timezone=True), nullable=True)
+    nota_atencion = Column(Text, nullable=True)
+    nota_resolucion = Column(Text, nullable=True)
     timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
     tipo_alerta = Column(String(50), nullable=False)
     severidad = Column(String(20), default="media")
@@ -223,6 +227,7 @@ class EventoAlerta(Base):
     met_dispar = Column(String(50), nullable=True)
 
     fermentacion = relationship("ProcesoFermentacion", back_populates="alertas")
+    dispositivo = relationship("Dispositivo")
 
 
 # ==========================================
