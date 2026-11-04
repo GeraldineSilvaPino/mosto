@@ -71,7 +71,7 @@ class Cuba(Base):
     codigo = Column(String(50), unique=True, nullable=False, index=True) # Ej: CB-01
     cap_litros = Column(Numeric(10, 2), nullable=True)
     sector_cuba = Column(String(50), nullable=True)
-    estado_operativo = Column(String(50), default="operativo")
+    estado_operativo = Column(String(50), default="disponible")
     fecha_cuba = Column(DateTime, nullable=True)
     bodega_id = Column(BigInteger, ForeignKey("BODEGA.id"), nullable=True)
     material_id = Column(BigInteger, ForeignKey("TIPO_MATERIAL_CUBA.id"), nullable=True)
@@ -146,6 +146,9 @@ class Dispositivo(Base):
     modelo_id = Column(BigInteger, ForeignKey("MODELO_DISPOSITIVO.id"), nullable=False)
     creado_en = Column(DateTime(timezone=True), default=datetime.utcnow)
 
+    modelo = relationship("ModeloDispositivo")
+    empresa = relationship("EmpresaCliente")
+    asignaciones = relationship("AsignacionDispositivo", back_populates="dispositivo")
     lecturas = relationship("LecturaTelemetria", back_populates="dispositivo")
     estados_nodo = relationship("TelemetriaEstadoNodo", back_populates="dispositivo")
 
@@ -159,6 +162,9 @@ class AsignacionDispositivo(Base):
     activo = Column(Boolean, default=True)
     asignado_en = Column(DateTime(timezone=True), default=datetime.utcnow)
     desasignado_en = Column(DateTime(timezone=True), nullable=True)
+
+    dispositivo = relationship("Dispositivo", back_populates="asignaciones")
+    cuba = relationship("Cuba")
 
 
 # ==========================================

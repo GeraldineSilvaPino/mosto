@@ -223,7 +223,7 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
 ---
 
 #### TASK-BE-06A: API de Device Hub e Inventario de Hardware
-* **Estado:** Pendiente
+* **Estado:** COMPLETADA
 * **Rama Git:** `feat/be-devices-hub`
 * **Archivos a Crear:** `backend/app/routers/devices.py`, `backend/app/schemas.py`
 * **Referencia Tecnica:** [BASE_DE_DATOS_SUPABASE.md](./BASE_DE_DATOS_SUPABASE.md#4-disparadores-triggers-plpgsql) (Trigger `fn_validar_asignacion_empresa`).
@@ -234,7 +234,7 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
     * `POST /api/dispositivos/vincular`: Asocia un dispositivo a una cuba, cerrando asignaciones previas con `desasignado_en = now()`.
 * **Criterios de Aceptacion:**
   - [ ] Respetar la restriccion `ck_asignacion_activo` (`activo = (desasignado_en IS NULL)`).
-  - [ ] Respetar coincidencia de empresa cliente entre dispositivo y bodega.
+  - [x] Respetar coincidencia de empresa cliente entre dispositivo y bodega.
 
 ---
 

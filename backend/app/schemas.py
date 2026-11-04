@@ -190,3 +190,42 @@ class ProcesoOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+
+# ==========================================
+# 5. DTOs PARA DEVICE HUB E INVENTARIO IoT
+# ==========================================
+
+class DispositivoVincularIn(BaseModel):
+    dispositivo_id: int
+    cuba_id: int
+
+
+class DispositivoDesvincularIn(BaseModel):
+    dispositivo_id: int
+
+
+class DispositivoOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    mac: str
+    model: str
+    sensorType: str
+    sensorLabel: str
+    assignedCubaId: Optional[int] = None
+    assignedCubaCode: Optional[str] = None
+    assignedCubaName: Optional[str] = None
+    status: str  # online | offline | maintenance
+    statusLabel: str
+    signalRssi: Optional[int] = None
+    signalQuality: Optional[str] = None
+    powerSource: Optional[str] = "mains"
+    batteryLevel: Optional[int] = 100
+    firmware: Optional[str] = "v2.4.1"
+    lastTelemetry: Optional[str] = None
+    ultima_conexion: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base, SessionLocal, SQLALCHEMY_DATABASE_URL
 from . import models
-from .routers import telemetry, cubas, processes
+from .routers import telemetry, cubas, processes, devices
 
 # Crear tablas si no existen (en SQLite o PostgreSQL)
 try:
@@ -37,6 +37,7 @@ app.add_middleware(
 app.include_router(telemetry.router)
 app.include_router(cubas.router)
 app.include_router(processes.router)
+app.include_router(devices.router)
 
 
 @app.on_event("startup")
