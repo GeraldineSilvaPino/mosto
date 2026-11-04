@@ -94,6 +94,9 @@ class PerfilFermentacion(Base):
     bodega_id = Column(BigInteger, ForeignKey("BODEGA.id"), nullable=True)
     cepa_id = Column(BigInteger, ForeignKey("CEPA.id"), nullable=True)
 
+    cepa = relationship("Cepa")
+    bodega = relationship("Bodega")
+
 
 class ProcesoFermentacion(Base):
     __tablename__ = "PROCESO_FERMENTACION"
@@ -112,6 +115,7 @@ class ProcesoFermentacion(Base):
     creado_en = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     cuba = relationship("Cuba", back_populates="procesos")
+    perfil = relationship("PerfilFermentacion")
     lecturas = relationship("LecturaTelemetria", back_populates="fermentacion")
     alertas = relationship("EventoAlerta", back_populates="fermentacion")
 

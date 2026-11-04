@@ -1,6 +1,6 @@
 """
 Esquemas Pydantic para validación y serialización de datos de la API MOSTO.
-Equivalente a la capa DTO (Data Transfer Objects) en Spring Boot.
+Capa DTO (Data Transfer Objects).
 """
 from typing import Optional, List, Any, Dict
 from datetime import datetime
@@ -94,11 +94,22 @@ class CubaOut(BaseModel):
     capacidad_lts: Optional[float] = None
     ubicacion_en_bodega: Optional[str] = None
     estado_operativo: str
-    # Métricas en tiempo real calculadas
+    
+    # Proceso de fermentación activo
+    proceso_activo_id: Optional[int] = None
+    variedad: Optional[str] = None
+    lote: Optional[str] = None
+    volumen_actual_lts: Optional[float] = None
+    dia_fermentacion: Optional[int] = None
+    dias_estimados: Optional[int] = 14
+    temp_min_perfil: Optional[float] = None
+    temp_max_perfil: Optional[float] = None
+    
+    # Métricas en tiempo real calculadas de la última lectura
     ultima_temperatura: Optional[float] = None
     ultimos_brix: Optional[float] = None
     ultimo_ph: Optional[float] = None
-    proceso_activo_id: Optional[int] = None
+    ultima_lectura_timestamp: Optional[datetime] = None
 
     class Config:
         from_attributes = True
