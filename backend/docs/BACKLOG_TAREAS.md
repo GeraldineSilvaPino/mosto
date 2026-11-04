@@ -233,13 +233,13 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
     * Calculo de estado dinamico: si `now() - ultima_conexion > 120s` -> marcar como `'offline'`.
     * `POST /api/dispositivos/vincular`: Asocia un dispositivo a una cuba, cerrando asignaciones previas con `desasignado_en = now()`.
 * **Criterios de Aceptacion:**
-  - [ ] Respetar la restriccion `ck_asignacion_activo` (`activo = (desasignado_en IS NULL)`).
+  - [x] Respetar la restriccion `ck_asignacion_activo` (`activo = (desasignado_en IS NULL)`).
   - [x] Respetar coincidencia de empresa cliente entre dispositivo y bodega.
 
 ---
 
 #### TASK-BE-06B: CRUD de Perfiles de Fermentacion y Bandas Termicas
-* **Estado:** Pendiente
+* **Estado:** COMPLETADA
 * **Rama Git:** `feat/be-thresholds-profiles`
 * **Archivos a Crear:** `backend/app/routers/thresholds.py`, `backend/app/schemas.py`
 * **Referencia Tecnica:** [BASE_DE_DATOS_SUPABASE.md](./BASE_DE_DATOS_SUPABASE.md#3-restricciones-check-de-integridad) (Restricciones CHECK `ck_perfil_temp` y `ck_perfil_ph`).
@@ -249,5 +249,5 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
     * `POST /api/perfiles`: Crea un perfil para una cepa vinifera.
     * `PUT /api/perfiles/{id}`: Modifica umbrales de temperatura y pH de un perfil existente.
 * **Criterios de Aceptacion:**
-  - [ ] Validar que `temp_min <= temp_max` y `ph_min <= ph_max` antes de persistir.
-  - [ ] Integracion probada desde Swagger UI en `http://localhost:8000/docs`.
+  - [x] Validar que `temp_min <= temp_max` y `ph_min <= ph_max` antes de persistir.
+  - [x] Integracion probada desde Swagger UI en `http://localhost:8000/docs`.

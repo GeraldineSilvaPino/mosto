@@ -4,7 +4,7 @@ Capa DTO (Data Transfer Objects).
 """
 from typing import Optional, List, Any, Dict
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ==========================================
@@ -226,6 +226,73 @@ class DispositivoOut(BaseModel):
     firmware: Optional[str] = "v2.4.1"
     lastTelemetry: Optional[str] = None
     ultima_conexion: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ==========================================
+# 6. DTOs PARA PERFILES DE FERMENTACIÓN (TASK-BE-06B)
+# ==========================================
+
+class PerfilCreateIn(BaseModel):
+    """Payload de entrada para creación de un perfil de fermentación."""
+    nomb_perfil: str = Field(..., min_length=2, max_length=100, example="Tinto Robusto & Guarda", description="Nombre descriptivo del perfil")
+    temp_min: float = Field(..., example=18.0, description="Temperatura mínima óptima en °C")
+    temp_max: float = Field(..., example=28.0, description="Temperatura máxima óptima en °C")
+    ph_min: Optional[float] = Field(3.20, example=3.20, description="pH mínimo aceptable")
+    ph_max: Optional[float] = Field(3.80, example=3.80, description="pH máximo aceptable")
+    brix_caida_min_dia: Optional[float] = Field(1.50, example=1.50, description="Caída mínima diaria esperada en °Brix")
+    cepa_id: Optional[int] = Field(None, example=1, description="ID de la cepa vinífera asociada")
+    bodega_id: Optional[int] = Field(None, example=1, description="ID de la bodega")
+    activo: Optional[bool] = Field(True, description="Indica si el perfil está habilitado para ser asignado")
+
+    @model_validator(mode="after")
+    def validar_rangos(self):
+        if self.temp_min is not None and self.temp_max is not None and self.temp_min > self.temp_max:
+            raise ValueError("temp_min no puede ser mayor que temp_max (ck_perfil_temp)")
+        if self.ph_min is not None and self.ph_max is not None and self.ph_min > self.ph_max:
+            raise ValueError("ph_min no puede ser mayor que ph_max (ck_perfil_ph)")
+        return self
+
+
+class PerfilUpdateIn(BaseModel):
+    """Payload de entrada para modificación parcial o total de un perfil de fermentación."""
+    nomb_perfil: Optional[str] = Field(None, min_length=2, max_length=100, example="Tinto Robusto & Guarda Modificado")
+    temp_min: Optional[float] = Field(None, example=19.0, description="Temperatura mínima óptima en °C")
+    temp_max: Optional[float] = Field(None, example=27.5, description="Temperatura máxima óptima en °C")
+    ph_min: Optional[float] = Field(None, example=3.10, description="pH mínimo aceptable")
+    ph_max: Optional[float] = Field(None, example=3.70, description="pH máximo aceptable")
+    brix_caida_min_dia: Optional[float] = Field(None, example=1.80, description="Caída diaria esperada de azúcar")
+    cepa_id: Optional[int] = Field(None, example=1)
+    bodega_id: Optional[int] = Field(None, example=1)
+    activo: Optional[bool] = Field(None, example=True)
+
+    @model_validator(mode="after")
+    def validar_rangos(self):
+        if self.temp_min is not None and self.temp_max is not None and self.temp_min > self.temp_max:
+            raise ValueError("temp_min no puede ser mayor que temp_max (ck_perfil_temp)")
+        if self.ph_min is not None and self.ph_max is not None and self.ph_min > self.ph_max:
+            raise ValueError("ph_min no puede ser mayor que ph_max (ck_perfil_ph)")
+        return self
+
+
+class PerfilOut(BaseModel):
+    """DTO de salida para perfiles de fermentación con bandas térmicas y de acidez."""
+    id: int
+    nomb_perfil: str
+    temp_min: float
+    temp_max: float
+    ph_min: Optional[float] = None
+    ph_max: Optional[float] = None
+    brix_caida_min_dia: Optional[float] = None
+    activo: bool
+    bodega_id: Optional[int] = None
+    bodega_nombre: Optional[str] = None
+    cepa_id: Optional[int] = None
+    cepa_nombre: Optional[str] = None
+    crit_min: Optional[float] = None
+    crit_max: Optional[float] = None
 
     class Config:
         from_attributes = True
