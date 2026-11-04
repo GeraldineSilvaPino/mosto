@@ -160,7 +160,7 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
 ---
 
 #### TASK-BE-04B: Resolucion de Incidencias, Metricas MTTR y Exportacion CSV
-* **Estado:** Pendiente
+* **Estado:** COMPLETADA
 * **Rama Git:** `feat/be-alerts-resolve-mttr`
 * **Archivos a Intervenir:** `backend/app/routers/alerts.py`, `backend/app/schemas.py`
 * **Alcance:**
@@ -169,9 +169,9 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
     * `GET /api/alertas/metricas`: Calcula total de alertas activas, criticas y promedio MTTR en minutos.
     * `GET /api/alertas/exportar`: Retorna bitacora historica en formato `text/csv`.
 * **Criterios de Aceptacion:**
-  - [ ] Formula MTTR calculada sobre alertas con estado `'resuelta'`:
+  - [x] Formula MTTR calculada sobre alertas con estado `'resuelta'`:
     $$\text{MTTR} = \frac{\sum (\text{fecha\_resolucion} - \text{fecha\_generacion})}{\text{Total Resueltas}}$$
-  - [ ] Cabecera de respuesta `Content-Type: text/csv` con descarga directa en el navegador.
+  - [x] Cabecera de respuesta `Content-Type: text/csv` con descarga directa en el navegador.
 
 ---
 

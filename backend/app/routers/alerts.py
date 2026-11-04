@@ -1,23 +1,29 @@
 """
-Controlador REST para Gestión y Reconocimiento de Alertas e Incidencias (MOSTO).
+Controlador REST para Gestión, Reconocimiento y Auditoría de Alertas e Incidencias (MOSTO).
 TASK-BE-04A: API de Consulta y Reconocimiento de Alertas (AlertsView.vue).
-Rama: feat/be-alerts-read-ack
+TASK-BE-04B: Resolución de Incidencias, Métricas MTTR y Exportación CSV (AlertsAuditView.vue).
+Rama: feat/be-alerts-resolve-mttr
 
 Endpoints expuestos:
 - GET /api/alertas: Listado paginado con filtros de estado, severidad y cuba_id.
+- GET /api/alertas/metricas: KPIs globales, total activas, críticas y fórmula MTTR.
+- GET /api/alertas/exportar: Retorna bitácora histórica descargable en formato text/csv.
 - GET /api/alertas/{id}: Detalle individual de alerta.
-- PATCH /api/alertas/{id}/atender: Cambia estado a 'atendida' y registra operador y timestamp,
-  asegurando el cumplimiento estricto de la restricción CHECK `ck_alerta_atencion`.
+- PATCH /api/alertas/{id}/atender: Cambia estado a 'atendida' y registra operador y timestamp (ck_alerta_atencion).
+- PATCH /api/alertas/{id}/resolver: Cambia estado a 'resuelta' y almacena nota de acción correctiva.
 """
+import csv
+import io
 from typing import List, Optional, Tuple
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.database import get_db
 from app.models import EventoAlerta, ProcesoFermentacion, Cuba, Usuario, Dispositivo
-from app.schemas import AlertaOut, AlertaAtenderIn
+from app.schemas import AlertaOut, AlertaAtenderIn, AlertaResolverIn, AlertasMetricasOut
 
 router = APIRouter(prefix="/api/alertas", tags=["Alertas e Incidencias"])
 
@@ -181,6 +187,152 @@ def listar_alertas(
     return [_mapear_alerta_out(a, db) for a in alertas]
 
 
+@router.get("/metricas", response_model=AlertasMetricasOut, summary="Obtener KPIs de auditoría y cálculo MTTR")
+def obtener_metricas_alertas(
+    cuba_id: Optional[int] = Query(None, description="Filtrar métricas por ID de cuba específica"),
+    db: Session = Depends(get_db)
+):
+    """
+    Calcula los KPIs de auditoría para la vista `AlertsAuditView.vue`:
+    - Total de alertas registradas.
+    - Total de alertas activas (en estado 'pendiente' o 'atendida').
+    - Alertas críticas activas.
+    - Total de incidencias resueltas.
+    - Fórmula MTTR (Mean Time to Resolution) calculada estrictamente sobre alertas con estado 'resuelta':
+        MTTR = sum(fecha_resolucion - fecha_generacion) / Total Resueltas (en minutos)
+    - Tasa de resolución porcentual.
+    """
+    query = db.query(EventoAlerta)
+    if isinstance(cuba_id, int):
+        query = (
+            query.join(ProcesoFermentacion, EventoAlerta.fermentacion_id == ProcesoFermentacion.id)
+            .filter(ProcesoFermentacion.cuba_id == cuba_id)
+        )
+
+    todas_alertas = query.all()
+    total_alertas = len(todas_alertas)
+
+    alertas_activas_list = [a for a in todas_alertas if a.estado in ("pendiente", "atendida")]
+    total_activas = len(alertas_activas_list)
+    total_criticas = len([a for a in alertas_activas_list if a.severidad == "critica"])
+
+    alertas_resueltas = [a for a in todas_alertas if a.estado == "resuelta"]
+    total_resueltas = len(alertas_resueltas)
+
+    # ==========================================
+    # CÁLCULO MTTR (Mean Time To Resolution)
+    # MTTR = sum(fecha_resolucion - fecha_generacion) / Total Resueltas
+    # ==========================================
+    suma_minutos = 0.0
+    for a in alertas_resueltas:
+        f_generacion = a.timestamp
+        f_resolucion = a.fecha_resolucion
+        if f_generacion and f_resolucion:
+            segundos = (f_resolucion - f_generacion).total_seconds()
+            suma_minutos += max(0.0, segundos / 60.0)
+
+    mttr_promedio = round(suma_minutos / total_resueltas, 2) if total_resueltas > 0 else 0.0
+    tasa_resolucion = round((total_resueltas / total_alertas) * 100.0, 1) if total_alertas > 0 else 0.0
+
+    return AlertasMetricasOut(
+        total_alertas=total_alertas,
+        alertas_activas=total_activas,
+        alertas_criticas=total_criticas,
+        total_resueltas=total_resueltas,
+        mttr_promedio_minutos=mttr_promedio,
+        tasa_resolucion_pct=tasa_resolucion
+    )
+
+
+@router.get("/exportar", summary="Exportar bitácora histórica en formato CSV para descarga directa")
+def exportar_bitacora_alertas_csv(
+    estado: Optional[str] = Query(None, description="Filtrar por estado ('pendiente', 'atendida', 'resuelta')"),
+    severidad: Optional[str] = Query(None, description="Filtrar por severidad ('baja', 'media', 'alta', 'critica')"),
+    cuba_id: Optional[int] = Query(None, description="Filtrar por ID de cuba"),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna la bitácora histórica completa en formato `text/csv` con descarga directa en el navegador.
+    Cumple con el criterio de cabecera `Content-Type: text/csv` y `Content-Disposition: attachment`.
+    """
+    query = db.query(EventoAlerta)
+
+    if isinstance(estado, str) and estado.strip():
+        query = query.filter(EventoAlerta.estado == estado.strip().lower())
+
+    if isinstance(severidad, str) and severidad.strip():
+        query = query.filter(EventoAlerta.severidad == severidad.strip().lower())
+
+    if isinstance(cuba_id, int):
+        query = (
+            query.join(ProcesoFermentacion, EventoAlerta.fermentacion_id == ProcesoFermentacion.id)
+            .filter(ProcesoFermentacion.cuba_id == cuba_id)
+        )
+
+    alertas = query.order_by(desc(EventoAlerta.timestamp)).all()
+
+    # Generación de CSV en memoria con BOM utf-8 para compatibilidad nativa con Excel
+    buffer = io.StringIO()
+    buffer.write('\ufeff')
+    writer = csv.writer(buffer, delimiter=',', quoting=csv.QUOTE_MINIMAL)
+
+    # Cabeceras formales
+    writer.writerow([
+        "ID Incidencia",
+        "Cuba",
+        "Variedad",
+        "Sensor",
+        "Tipo Alerta",
+        "Severidad",
+        "Estado",
+        "Fecha Deteccion (UTC)",
+        "Fecha Atencion (UTC)",
+        "Fecha Resolucion (UTC)",
+        "Tiempo Resolucion (min)",
+        "Operador",
+        "Nota Atencion",
+        "Accion Correctiva / Nota Resolucion"
+    ])
+
+    for a in alertas:
+        dto = _mapear_alerta_out(a, db)
+
+        # Cálculo de tiempo de resolución si está disponible
+        tiempo_res_str = ""
+        if a.timestamp and a.fecha_resolucion:
+            minutos = max(0.0, (a.fecha_resolucion - a.timestamp).total_seconds() / 60.0)
+            tiempo_res_str = f"{round(minutos, 1)}"
+
+        writer.writerow([
+            dto.id,
+            dto.cuba_codigo or "N/A",
+            dto.variedad or "N/A",
+            dto.sensor_tipo or "N/A",
+            dto.tipo_alerta,
+            dto.severidad,
+            dto.estado,
+            dto.timestamp.strftime("%Y-%m-%d %H:%M:%S") if dto.timestamp else "",
+            dto.fecha_atencion.strftime("%Y-%m-%d %H:%M:%S") if dto.fecha_atencion else "",
+            dto.fecha_resolucion.strftime("%Y-%m-%d %H:%M:%S") if dto.fecha_resolucion else "",
+            tiempo_res_str,
+            dto.operador_nombre or "N/A",
+            dto.nota_atencion or "",
+            dto.nota_resolucion or ""
+        ])
+
+    timestamp_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    nombre_archivo = f"bitacora_alertas_{timestamp_str}.csv"
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={
+            "Content-Type": "text/csv; charset=utf-8",
+            "Content-Disposition": f'attachment; filename="{nombre_archivo}"'
+        }
+    )
+
+
 @router.get("/{id}", response_model=AlertaOut, summary="Obtener detalle de una alerta")
 def obtener_alerta(id: int, db: Session = Depends(get_db)):
     """Retorna el detalle completo de una alerta individual por su identificador primario."""
@@ -229,6 +381,50 @@ def atender_alerta(
 
     if payload and payload.nota:
         alerta.nota_atencion = payload.nota.strip()
+
+    db.commit()
+    db.refresh(alerta)
+
+    return _mapear_alerta_out(alerta, db)
+
+
+@router.patch("/{id}/resolver", response_model=AlertaOut, summary="Resolver alerta y registrar acción correctiva")
+def resolver_alerta(
+    id: int,
+    payload: Optional[AlertaResolverIn] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    TASK-BE-04B: Registra la resolución formal de una alerta enológica:
+    - Cambia el estado a `'resuelta'`.
+    - Registra el timestamp exacto de cierre en `fecha_resolucion`.
+    - Si no tenía `fecha_atencion`, se fija para consistencia con `ck_alerta_atencion`.
+    - Guarda la nota o acción correctiva en `nota_resolucion` para la auditoría de MTTR.
+    """
+    alerta = db.query(EventoAlerta).filter(EventoAlerta.id == id).first()
+    if not alerta:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Alerta con ID {id} no encontrada."
+        )
+
+    ahora = datetime.utcnow()
+    alerta.estado = "resuelta"
+    alerta.fecha_resolucion = ahora
+
+    # Si no tenía fecha_atencion, registrarla para consistencia de auditoría y CHECKs
+    if not alerta.fecha_atencion:
+        alerta.fecha_atencion = ahora
+
+    # Asignar operador si viene en el payload
+    if payload and payload.usuario_id and not alerta.atendida_por:
+        alerta.atendida_por = payload.usuario_id
+    elif not alerta.atendida_por:
+        alerta.atendida_por = 1
+
+    # Registrar nota de acción correctiva
+    if payload and payload.nota_resolucion:
+        alerta.nota_resolucion = payload.nota_resolucion.strip()
 
     db.commit()
     db.refresh(alerta)

@@ -140,6 +140,20 @@ class AlertaAtenderIn(BaseModel):
     nota: Optional[str] = Field(None, description="Observaciones técnicas iniciales al atender la alerta")
 
 
+class AlertaResolverIn(BaseModel):
+    usuario_id: Optional[int] = Field(default=1, description="ID del operador o enólogo que resuelve la incidencia")
+    nota_resolucion: Optional[str] = Field(None, description="Nota técnica o acción correctiva aplicada en terreno")
+
+
+class AlertasMetricasOut(BaseModel):
+    total_alertas: int = Field(..., description="Total histórico de incidencias registradas")
+    alertas_activas: int = Field(..., description="Total de alertas actualmente en curso (pendientes + atendidas)")
+    alertas_criticas: int = Field(..., description="Alertas críticas activas en curso")
+    total_resueltas: int = Field(..., description="Total de alertas resueltas")
+    mttr_promedio_minutos: float = Field(..., description="Tiempo medio de resolución en minutos (MTTR)")
+    tasa_resolucion_pct: float = Field(..., description="Porcentaje de incidencias resueltas sobre el total")
+
+
 class AlertaOut(BaseModel):
     id: int
     dispositivo_id: Optional[int] = None
