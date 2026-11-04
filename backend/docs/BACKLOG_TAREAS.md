@@ -118,7 +118,7 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
 ### INTEGRANTE 2: Motor de Reglas Vitivinicolas, Alertas y Auditoria
 
 #### TASK-BE-03A: Servicio de Deteccion de Desviaciones Termicas y Acidez
-* **Estado:** Pendiente
+* **Estado:** COMPLETADA
 * **Rama Git:** `feat/be-rules-thermal-ph`
 * **Archivos a Crear:** `backend/app/services/rules_engine.py`
 * **Referencia Tecnica:** [ARQUITECTURA_Y_CONVENCIONES.md](./ARQUITECTURA_Y_CONVENCIONES.md#3-responsabilidad-estricta-de-cada-modulo) (Servicios de negocio).
@@ -126,13 +126,13 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
   * Crear la clase `RulesEngine` que evalue cada lectura contra los limites de `PERFIL_FERMENTACION` de la cuba.
   * Detecta: temperatura por sobre el maximo optimo, temperatura bajo el minimo optimo y pH fuera de rango.
 * **Criterios de Aceptacion:**
-  - [ ] Metodo `evaluar_lectura(db: Session, lectura: LecturaTelemetria, cuba_id: int) -> list[dict]`.
-  - [ ] Asignacion de nivel de severidad segun magnitud del desvio (`'alta'`, `'media'`, `'critica'`).
+  - [x] Metodo `evaluar_lectura(db: Session, lectura: LecturaTelemetria, cuba_id: int) -> list[dict]`.
+  - [x] Asignacion de nivel de severidad segun magnitud del desvio (`'alta'`, `'media'`, `'critica'`).
 
 ---
 
 #### TASK-BE-03B: Disparador de Alertas con Control Anti-Spam (Debounce)
-* **Estado:** Pendiente
+* **Estado:** COMPLETADA
 * **Rama Git:** `feat/be-rules-alert-dispatcher`
 * **Archivos a Intervenir:** `backend/app/services/rules_engine.py`, `backend/app/services/telemetry_service.py`
 * **Referencia Tecnica:** [BASE_DE_DATOS_SUPABASE.md](./BASE_DE_DATOS_SUPABASE.md#3-restricciones-check-de-integridad) (Restricciones CHECK `ck_alerta_estado` y `ck_alerta_severidad`).
@@ -140,8 +140,8 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
   * Si `RulesEngine` detecta una transgresion, inserta un registro en la tabla `EVENTO_ALERTA` con estado `'pendiente'`.
   * Filtro de enfriamiento temporal: no volver a generar la misma alerta para la misma cuba si existe una abierta generada hace menos de 15 minutos.
 * **Criterios de Aceptacion:**
-  - [ ] Conectar la evaluacion de reglas al final del procesamiento de telemetria.
-  - [ ] Verificar que no se inserten registros duplicados ante lecturas consecutivas anomalous.
+  - [x] Conectar la evaluacion de reglas al final del procesamiento de telemetria.
+  - [x] Verificar que no se inserten registros duplicados ante lecturas consecutivas anomalous.
 
 ---
 

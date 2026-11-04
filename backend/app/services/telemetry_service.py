@@ -33,6 +33,7 @@ from app.schemas import (
     TelemetriaRespuestaOut,
     TelemetriaProcesadaOut
 )
+from app.services.rules_engine import rules_engine
 
 
 class TelemetryService:
@@ -358,6 +359,14 @@ class TelemetryService:
         db.commit()
         db.refresh(lectura)
 
+        # TASK-BE-03B: Evaluación de reglas enológicas y despacho de alertas con control anti-spam
+        rules_engine.procesar_alertas_lectura(
+            db=db,
+            lectura=lectura,
+            cuba_id=cuba_id,
+            dispositivo_id=dispositivo.id
+        )
+
         return TelemetriaRespuestaOut(
             status="ok",
             mensaje="Telemetría ESP32 (Nodo Cuba) persistida y calibrada correctamente",
@@ -454,6 +463,14 @@ class TelemetryService:
 
         db.commit()
         db.refresh(lectura)
+
+        # TASK-BE-03B: Evaluación de reglas enológicas y despacho de alertas con control anti-spam
+        rules_engine.procesar_alertas_lectura(
+            db=db,
+            lectura=lectura,
+            cuba_id=cuba_id,
+            dispositivo_id=dispositivo.id
+        )
 
         return TelemetriaRespuestaOut(
             status="ok",

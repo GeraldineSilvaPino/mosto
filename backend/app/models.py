@@ -218,7 +218,8 @@ class EventoAlerta(Base):
     atendida_por = Column(BigInteger, nullable=True)
     timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
     tipo_alerta = Column(String(50), nullable=False)
-    severidad = Column(String(20), default="warning")
+    severidad = Column(String(20), default="media")
+    estado = Column(String(50), default="pendiente")
     met_dispar = Column(String(50), nullable=True)
 
     fermentacion = relationship("ProcesoFermentacion", back_populates="alertas")

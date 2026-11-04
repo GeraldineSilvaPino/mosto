@@ -1,14 +1,16 @@
-
-
 """
 Motor de Reglas Enológicas y Detección de Anomalías (MOSTO)
 TASK-BE-03A: Servicio de Detección de Desviaciones Térmicas y Acidez
-Rama: feat/be-rules-thermal-ph
+TASK-BE-03B: Disparador de Alertas con Control Anti-Spam (Debounce)
+Rama: feat/be-rules-alert-dispatcher
 
 Evalúa lecturas de telemetría en tiempo real contra los perfiles óptimos de fermentación
-de cada cuba y clasifica el desvío según severidades: 'media', 'alta', 'critica'.
+de cada cuba, clasifica el desvío según severidades ('media', 'alta', 'critica') y
+persiste las alertas en Supabase evitando saturación mediante ventana de enfriamiento (cooldown).
 """
+from __future__ import annotations
 import logging
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -17,7 +19,8 @@ from app.models import (
     Cuba,
     ProcesoFermentacion,
     PerfilFermentacion,
-    LecturaTelemetria
+    LecturaTelemetria,
+    EventoAlerta
 )
 
 logger = logging.getLogger(__name__)
@@ -25,8 +28,12 @@ logger = logging.getLogger(__name__)
 
 class RulesEngine:
     """
-    Motor encargado de verificar parámetros enológicos y detectar desviaciones térmicas y de pH.
+    Motor encargado de verificar parámetros enológicos, detectar desviaciones térmicas y de pH,
+    y despachar eventos de alerta en base de datos con control anti-spam.
     """
+
+    # Ventana de enfriamiento temporal (Debounce anti-spam): 15 minutos
+    COOLDOWN_MINUTOS = 15
 
     # Umbrales de desvío de temperatura (°C) sobre la banda óptima
     DELTA_TEMP_ALTA = 1.5      # > 1.5 °C de desvío = severidad 'alta'
@@ -228,7 +235,84 @@ class RulesEngine:
 
         return anomalias
 
+    def debe_suprimir_alerta(
+        self,
+        db: Session,
+        fermentacion_id: Optional[int],
+        tipo_alerta: str
+    ) -> bool:
+        """
+        Filtro de enfriamiento temporal (Debounce anti-spam):
+        Verifica si ya existe una alerta activa del mismo tipo para esta fermentación
+        generada hace menos de COOLDOWN_MINUTOS (15 minutos).
+        """
+        if not fermentacion_id:
+            return False
+
+        limite_cooldown = datetime.utcnow() - timedelta(minutes=self.COOLDOWN_MINUTOS)
+
+        alerta_reciente = (
+            db.query(EventoAlerta)
+            .filter(
+                EventoAlerta.fermentacion_id == fermentacion_id,
+                EventoAlerta.tipo_alerta == tipo_alerta,
+                EventoAlerta.timestamp >= limite_cooldown,
+                EventoAlerta.estado.in_(["pendiente", "atendida"])
+            )
+            .first()
+        )
+
+        return alerta_reciente is not None
+
+    def procesar_alertas_lectura(
+        self,
+        db: Session,
+        lectura: LecturaTelemetria,
+        cuba_id: int,
+        dispositivo_id: Optional[int] = None
+    ) -> List[EventoAlerta]:
+        """
+        TASK-BE-03B: Evalúa la lectura y persiste eventos de alerta en EVENTO_ALERTA
+        con estado 'pendiente', aplicando el filtro de enfriamiento de 15 minutos.
+        """
+        anomalias = self.evaluar_lectura(db=db, lectura=lectura, cuba_id=cuba_id)
+        alertas_generadas: List[EventoAlerta] = []
+
+        for anomalia in anomalias:
+            ferm_id = anomalia.get("fermentacion_id")
+            tipo = anomalia["tipo_alerta"]
+
+            # Comprobar si está en periodo de enfriamiento anti-spam
+            if self.debe_suprimir_alerta(db=db, fermentacion_id=ferm_id, tipo_alerta=tipo):
+                logger.info(
+                    f"[Anti-Spam] Alerta '{tipo}' para cuba {cuba_id} (proceso {ferm_id}) "
+                    f"suprimida: existe alerta activa generada hace menos de {self.COOLDOWN_MINUTOS} min."
+                )
+                continue
+
+            # Crear y persistir la nueva alerta
+            nueva_alerta = EventoAlerta(
+                dispositivo_id=dispositivo_id or lectura.dispositivo_id,
+                fermentacion_id=ferm_id,
+                timestamp=datetime.utcnow(),
+                tipo_alerta=tipo,
+                severidad=anomalia["severidad"],
+                met_dispar=anomalia.get("met_dispar", "sensor_iot"),
+                estado="pendiente"
+            )
+            db.add(nueva_alerta)
+            alertas_generadas.append(nueva_alerta)
+
+        if alertas_generadas:
+            db.commit()
+            for alerta in alertas_generadas:
+                db.refresh(alerta)
+            logger.info(
+                f"[Alertas] Se persistieron {len(alertas_generadas)} nuevas alertas para la cuba {cuba_id}."
+            )
+
+        return alertas_generadas
+
 
 # Instancia única para importación directa en servicios
 rules_engine = RulesEngine()
-
