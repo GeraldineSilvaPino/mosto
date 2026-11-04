@@ -3,7 +3,7 @@ Router de Cubas para consulta del Frontend (Dashboard, CubaDetail).
 Controlador REST para monitoreo en tiempo real y curvas de fermentación.
 """
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -127,34 +127,83 @@ def obtener_historico_cuba(
 ):
     """
     Entrega series temporales de temperatura de vino, grados Brix y pH
-    listas para renderizar en los gráficos de CubaDetailView.vue.
+    listas para renderizar en los gráficos de Chart.js en CubaDetailView.vue.
     """
     c = db.query(Cuba).filter(Cuba.id == cuba_id).first()
     if not c:
         raise HTTPException(status_code=404, detail=f"Cuba con ID {cuba_id} no encontrada")
 
+    # Buscar el proceso activo de fermentación para esta cuba
     proceso_activo = (
         db.query(ProcesoFermentacion)
-        .filter(ProcesoFermentacion.cuba_id == c.id)
+        .filter(ProcesoFermentacion.cuba_id == c.id, ProcesoFermentacion.estado == "en_proceso")
         .order_by(desc(ProcesoFermentacion.id))
         .first()
     )
 
-    query = db.query(LecturaTelemetria)
-    if proceso_activo:
-        query = query.filter(LecturaTelemetria.fermentacion_id == proceso_activo.id)
-    
-    lecturas = query.order_by(desc(LecturaTelemetria.timestamp)).limit(100).all()
+    # Si la cuba no tiene un proceso activo, retornar datasets vacíos de forma segura
+    if not proceso_activo:
+        return HistoricoCubaOut(
+            cuba_id=c.id,
+            nombre_cuba=f"Cuba {c.codigo}",
+            proceso_id=None,
+            rango_horas=rango_horas,
+            total_muestras=0,
+            timestamps=[],
+            temperaturas_vino=[],
+            grados_brix=[],
+            valores_ph=[],
+            labels=[],
+            temp=[],
+            brix=[]
+        )
+
+    desde_tiempo = datetime.utcnow() - timedelta(hours=rango_horas)
+
+    # Filtrar por proceso activo y ventana temporal solicitada
+    lecturas = (
+        db.query(LecturaTelemetria)
+        .filter(
+            LecturaTelemetria.fermentacion_id == proceso_activo.id,
+            LecturaTelemetria.timestamp >= desde_tiempo
+        )
+        .order_by(desc(LecturaTelemetria.timestamp))
+        .limit(200)
+        .all()
+    )
+
+    # Si no hay lecturas dentro de la ventana exacta (entorno local o pruebas),
+    # obtener las más recientes del proceso para visualización continua
+    if not lecturas:
+        lecturas = (
+            db.query(LecturaTelemetria)
+            .filter(LecturaTelemetria.fermentacion_id == proceso_activo.id)
+            .order_by(desc(LecturaTelemetria.timestamp))
+            .limit(50)
+            .all()
+        )
+
+    # Ordenar cronológicamente (de izquierda a derecha para Chart.js)
     lecturas = list(reversed(lecturas))
+
+    # Formateo de marcas temporales: horario si es <= 24h, fecha/hora si es mayor
+    formato_fecha = "%H:%M:%S" if rango_horas <= 24 else "%d/%m %H:%M"
+    timestamps_list = [l.timestamp.strftime(formato_fecha) if l.timestamp else "" for l in lecturas]
+    temp_list = [float(l.temp_mosto) if l.temp_mosto is not None else None for l in lecturas]
+    brix_list = [float(l.brix) if l.brix is not None else None for l in lecturas]
+    ph_list = [float(l.ph) if l.ph is not None else None for l in lecturas]
 
     return HistoricoCubaOut(
         cuba_id=c.id,
         nombre_cuba=f"Cuba {c.codigo}",
-        proceso_id=proceso_activo.id if proceso_activo else None,
+        proceso_id=proceso_activo.id,
         rango_horas=rango_horas,
         total_muestras=len(lecturas),
-        timestamps=[l.timestamp.strftime("%H:%M:%S") if l.timestamp else "" for l in lecturas],
-        temperaturas_vino=[float(l.temp_mosto) if l.temp_mosto else None for l in lecturas],
-        grados_brix=[float(l.brix) if l.brix else None for l in lecturas],
-        valores_ph=[float(l.ph) if l.ph else None for l in lecturas]
+        timestamps=timestamps_list,
+        temperaturas_vino=temp_list,
+        grados_brix=brix_list,
+        valores_ph=ph_list,
+        labels=timestamps_list,
+        temp=temp_list,
+        brix=brix_list
     )

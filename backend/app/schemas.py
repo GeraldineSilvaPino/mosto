@@ -125,6 +125,10 @@ class HistoricoCubaOut(BaseModel):
     temperaturas_vino: List[Optional[float]]
     grados_brix: List[Optional[float]]
     valores_ph: List[Optional[float]]
+    # Compatibilidad directa con datasets de Chart.js (CubaDetailView.vue)
+    labels: List[str] = []
+    temp: List[Optional[float]] = []
+    brix: List[Optional[float]] = []
 
 
 # ==========================================
