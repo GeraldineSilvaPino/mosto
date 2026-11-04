@@ -280,8 +280,8 @@ class PerfilCreateIn(BaseModel):
     ph_min: Optional[float] = Field(3.20, example=3.20, description="pH mínimo aceptable")
     ph_max: Optional[float] = Field(3.80, example=3.80, description="pH máximo aceptable")
     brix_caida_min_dia: Optional[float] = Field(1.50, example=1.50, description="Caída mínima diaria esperada en °Brix")
-    cepa_id: Optional[int] = Field(None, example=1, description="ID de la cepa vinífera asociada")
-    bodega_id: Optional[int] = Field(None, example=1, description="ID de la bodega")
+    cepa_id: int = Field(..., example=1, description="ID de la cepa vinífera asociada")
+    bodega_id: int = Field(..., example=1, description="ID de la bodega")
     activo: Optional[bool] = Field(True, description="Indica si el perfil está habilitado para ser asignado")
 
     @model_validator(mode="after")

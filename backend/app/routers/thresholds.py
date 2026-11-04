@@ -99,22 +99,20 @@ def crear_perfil(payload: PerfilCreateIn, db: Session = Depends(get_db)):
         )
 
     # 3. Validar existencia de Cepa
-    if payload.cepa_id:
-        cepa = db.query(Cepa).filter(Cepa.id == payload.cepa_id).first()
-        if not cepa:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Cepa vinífera con ID {payload.cepa_id} no encontrada"
-            )
+    cepa = db.query(Cepa).filter(Cepa.id == payload.cepa_id).first()
+    if not cepa:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Cepa vinífera con ID {payload.cepa_id} no encontrada"
+        )
 
     # 4. Validar existencia de Bodega
-    if payload.bodega_id:
-        bodega = db.query(Bodega).filter(Bodega.id == payload.bodega_id).first()
-        if not bodega:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Bodega con ID {payload.bodega_id} no encontrada"
-            )
+    bodega = db.query(Bodega).filter(Bodega.id == payload.bodega_id).first()
+    if not bodega:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Bodega con ID {payload.bodega_id} no encontrada"
+        )
 
     nuevo_perfil = PerfilFermentacion(
         nomb_perfil=payload.nomb_perfil.strip(),

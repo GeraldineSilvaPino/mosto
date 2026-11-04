@@ -73,7 +73,7 @@ class Cuba(Base):
     sector_cuba = Column(String(50), nullable=True)
     estado_operativo = Column(String(50), default="disponible")
     fecha_cuba = Column(DateTime, nullable=True)
-    bodega_id = Column(BigInteger, ForeignKey("BODEGA.id"), nullable=True)
+    bodega_id = Column(BigInteger, ForeignKey("BODEGA.id"), nullable=False)
     material_id = Column(BigInteger, ForeignKey("TIPO_MATERIAL_CUBA.id"), nullable=True)
 
     bodega = relationship("Bodega", back_populates="cubas")
@@ -91,8 +91,8 @@ class PerfilFermentacion(Base):
     ph_min = Column(Numeric(4, 2), nullable=True)
     ph_max = Column(Numeric(4, 2), nullable=True)
     activo = Column(Boolean, default=True)
-    bodega_id = Column(BigInteger, ForeignKey("BODEGA.id"), nullable=True)
-    cepa_id = Column(BigInteger, ForeignKey("CEPA.id"), nullable=True)
+    bodega_id = Column(BigInteger, ForeignKey("BODEGA.id"), nullable=False)
+    cepa_id = Column(BigInteger, ForeignKey("CEPA.id"), nullable=False)
 
     cepa = relationship("Cepa")
     bodega = relationship("Bodega")
@@ -220,6 +220,9 @@ class EventoAlerta(Base):
     fecha_resolucion = Column(DateTime(timezone=True), nullable=True)
     nota_atencion = Column(Text, nullable=True)
     nota_resolucion = Column(Text, nullable=True)
+    mensaje = Column(Text, nullable=True)
+    valor_registrado = Column(Numeric(6, 2), nullable=True)
+    valor_limite = Column(Numeric(6, 2), nullable=True)
     timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
     tipo_alerta = Column(String(50), nullable=False)
     severidad = Column(String(20), default="media")
@@ -246,9 +249,17 @@ class Usuario(Base):
     __tablename__ = "USUARIO"
 
     id = Column(BigInteger, primary_key=True, index=True)
-    nombre = Column(String(100), nullable=False)
-    email = Column(String(100), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
-    rol_id = Column(BigInteger, ForeignKey("ROL.id"), nullable=False)
+    nomb_compl = Column(String(100), nullable=False)
+    correo_elec = Column(String(100), unique=True, nullable=False, index=True)
+    telefono = Column(String(50), nullable=True)
+    empresa_id = Column(BigInteger, ForeignKey("EMPRESA_CLIENTE.id"), nullable=True)
     activo = Column(Boolean, default=True)
     creado_en = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    @property
+    def nombre(self):
+        return self.nomb_compl
+
+    @property
+    def email(self):
+        return self.correo_elec

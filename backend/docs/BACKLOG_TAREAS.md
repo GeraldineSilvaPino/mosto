@@ -87,7 +87,7 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
 ---
 
 #### TASK-BE-02A: Script Simulador de Nodos ESP32 y ESP8266
-* **Estado:** Pendiente
+* **Estado:** COMPLETADA
 * **Rama Git:** `feat/be-iot-simulator-base`
 * **Archivos a Crear:** `backend/scripts/simulate_esp.py`
 * **Referencia Tecnica:** [HARDWARE_Y_TELEMETRIA.md](./HARDWARE_Y_TELEMETRIA.md#5-contratos-de-comunicacion-http-para-el-firmware-arduino) (Formato JSON de envio).
@@ -95,13 +95,13 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
   * Script independiente en Python ejecutable desde terminal (`python backend/scripts/simulate_esp.py --cuba 1 --interval 5`).
   * Envia peticiones HTTP POST periodicas a `/api/telemetria/nodo-cuba` y `/api/telemetria/flotador` simulando una fermentacion real (°Brix descendiendo de 24° a 2°, temperatura oscilando en torno a 18.5°C).
 * **Criterios de Aceptacion:**
-  - [ ] Transmitir paquetes validos a ambos endpoints en bucle configurable.
-  - [ ] Manejo de excepciones ante perdida de conexion con el servidor backend.
+  - [x] Transmitir paquetes validos a ambos endpoints en bucle configurable.
+  - [x] Manejo de excepciones ante perdida de conexion con el servidor backend.
 
 ---
 
 #### TASK-BE-02B: Inyector de Anomalias y Pruebas de Estres de Hardware
-* **Estado:** Pendiente
+* **Estado:** COMPLETADA
 * **Rama Git:** `feat/be-iot-simulator-faults`
 * **Archivos a Intervenir:** `backend/scripts/simulate_esp.py`
 * **Alcance:**

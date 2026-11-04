@@ -1,0 +1,674 @@
+{
+  "info": {
+    "_postman_id": "0376effd-4979-4146-af84-dac1c9dac8b4",
+    "name": "MOSTO API — Plataforma Vitivinícola IoT (Fase 2)",
+    "description": "Colección completa y organizada de endpoints para probar el backend de MOSTO en FastAPI conectado a Supabase PostgreSQL y microcontroladores ESP32/ESP8266.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "cuba_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "alerta_id",
+      "value": "3",
+      "type": "string"
+    },
+    {
+      "key": "dispositivo_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "perfil_id",
+      "value": "2",
+      "type": "string"
+    },
+    {
+      "key": "proceso_id",
+      "value": "4",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Health & Estado",
+      "item": [
+        {
+          "name": "Verificar Estado de la API (Root)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                ""
+              ]
+            },
+            "description": "Retorna el estado de la API y el motor de base de datos activo (Supabase PostgreSQL)."
+          }
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "Endpoint liviano para balanceadores y monitoreo de salud del contenedor."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Telemetría IoT (Hardware — Integrante 1)",
+      "item": [
+        {
+          "name": "Ingesta ESP32 (Sonda Térmica & pH)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mac_address\": \"C8:F0:9E:4B:82:10\",\n  \"cuba_id\": 1,\n  \"temperatura_vino\": 18.45,\n  \"temperatura_ambiente\": 21.2,\n  \"humedad_ambiente\": 65.0,\n  \"voltaje_ph\": 2.45,\n  \"bateria_voltaje\": 3.92,\n  \"rssi\": -68\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/telemetria/nodo-cuba",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "telemetria",
+                "nodo-cuba"
+              ]
+            },
+            "description": "Emula la transmisión periódica desde tempsensmosto.ino (ESP32). Aplica calibración Nernst automática al pH."
+          }
+        },
+        {
+          "name": "Ingesta ESP8266 (Flotador Hidrómetro — Brix)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mac_address\": \"5C:CF:7F:12:34:56\",\n  \"cuba_id\": 1,\n  \"angulo_tilt\": 43.2,\n  \"ax\": 0.045,\n  \"ay\": 0.68,\n  \"az\": 0.73,\n  \"temp_vino\": 18.3,\n  \"bateria_voltaje\": 3.85,\n  \"rssi\": -72\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/telemetria/flotador",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "telemetria",
+                "flotador"
+              ]
+            },
+            "description": "Emula el densímetro flotante esp86xyz.ino (ESP8266). Calcula grados Brix y gravedad específica (SG) mediante el sensor MPU-6050."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Reglas, Alertas y Auditoría (Integrante 2)",
+      "item": [
+        {
+          "name": "Listar Todas las Alertas (con filtros)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/alertas?estado=pendiente&limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "alertas"
+              ],
+              "query": [
+                {
+                  "key": "estado",
+                  "value": "pendiente",
+                  "description": "Filtro: pendiente, atendida, resuelta"
+                },
+                {
+                  "key": "severidad",
+                  "value": "critica",
+                  "disabled": true,
+                  "description": "baja, media, alta, critica"
+                },
+                {
+                  "key": "cuba_id",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Consulta el listado paginado y enriquecido para la vista AlertsView.vue."
+          }
+        },
+        {
+          "name": "Obtener Detalle de Alerta por ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/alertas/{{alerta_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "alertas",
+                "{{alerta_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Atender Alerta (Reconocimiento)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_id\": 1,\n  \"nota\": \"Operador en camino a inspeccionar sistema de fr\\u00edo y electrov\\u00e1lvulas\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/alertas/{{alerta_id}}/atender",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "alertas",
+                "{{alerta_id}}",
+                "atender"
+              ]
+            },
+            "description": "Cambia estado a 'atendida' y registra fecha_atencion respetando ck_alerta_atencion."
+          }
+        },
+        {
+          "name": "Resolver Alerta (Acción Correctiva)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_id\": 1,\n  \"nota_resolucion\": \"Se activ\\u00f3 recirculaci\\u00f3n de glicol y la temperatura volvi\\u00f3 a 18.2 \\u00b0C\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/alertas/{{alerta_id}}/resolver",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "alertas",
+                "{{alerta_id}}",
+                "resolver"
+              ]
+            },
+            "description": "Cierra la incidencia, guardando fecha_resolucion para alimentar el cálculo de MTTR."
+          }
+        },
+        {
+          "name": "Obtener KPIs y Métricas MTTR",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/alertas/metricas",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "alertas",
+                "metricas"
+              ]
+            },
+            "description": "Calcula total activas, críticas, resueltas, promedio MTTR en minutos y tasa de resolución."
+          }
+        },
+        {
+          "name": "Exportar Bitácora en CSV (Descarga)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/alertas/exportar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "alertas",
+                "exportar"
+              ]
+            },
+            "description": "Descarga directa de bitácora histórica en formato text/csv con cabeceras en español y UTF-8 BOM para Excel."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Cubas y Monitoreo en Vivo (Integrante 3)",
+      "item": [
+        {
+          "name": "Listar Cubas (Catálogo + Telemetría en Vivo)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/cubas",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cubas"
+              ]
+            },
+            "description": "Alimenta DashboardView.vue con estado operativo, lote activo y última lectura de temperatura, Brix y pH."
+          }
+        },
+        {
+          "name": "Obtener Detalle de Cuba por ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/cubas/{{cuba_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cubas",
+                "{{cuba_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Obtener Curvas Históricas (Chart.js)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/cubas/{{cuba_id}}/historico?rango_horas=24",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cubas",
+                "{{cuba_id}}",
+                "historico"
+              ],
+              "query": [
+                {
+                  "key": "rango_horas",
+                  "value": "24",
+                  "description": "Ventana: 24, 48 o 168 (7 días)"
+                }
+              ]
+            },
+            "description": "Entrega series temporales ordenadas cronológicamente con arrays paralelos (labels, temp, brix) listos para Chart.js."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Procesos de Fermentación — Vendimia (Integrante 3)",
+      "item": [
+        {
+          "name": "Listar Procesos de Fermentación",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/procesos?estado=en_proceso",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "procesos"
+              ],
+              "query": [
+                {
+                  "key": "estado",
+                  "value": "en_proceso",
+                  "description": "en_proceso o finalizada"
+                },
+                {
+                  "key": "cuba_id",
+                  "value": "1",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Iniciar Nuevo Proceso de Fermentación",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuba_id\": 1,\n  \"volumen_litros\": 8500.0,\n  \"perfil_id\": 2,\n  \"brix_inicial\": 24.5,\n  \"brix_objetivo\": 1.0,\n  \"densidad_inicial_sg\": 1.1,\n  \"dias_estimados\": 14\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/procesos/iniciar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "procesos",
+                "iniciar"
+              ]
+            },
+            "description": "Valida volumen vs capacidad (fn_validar_proceso) y actualiza el estado de la cuba a 'en_uso'."
+          }
+        },
+        {
+          "name": "Finalizar Proceso y Liberar Cuba",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"densidad_final_sg\": 0.994,\n  \"brix_final\": 0.8,\n  \"motivo\": \"Fermentaci\\u00f3n completada dentro de par\\u00e1metros \\u00f3ptimos\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/procesos/{{proceso_id}}/finalizar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "procesos",
+                "{{proceso_id}}",
+                "finalizar"
+              ]
+            },
+            "description": "Cambia proceso a 'finalizada' y libera la cuba a 'disponible'."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Device Hub e Inventario IoT (Integrante 3)",
+      "item": [
+        {
+          "name": "Listar Inventario de Dispositivos (Estado Dinámico)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dispositivos",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "dispositivos"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "online",
+                  "disabled": true,
+                  "description": "online, offline o maintenance"
+                },
+                {
+                  "key": "cuba_id",
+                  "value": "1",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Alimenta DevicesView.vue calculando 'online' si transmitió hace menos de 120s, más batería Li-Po y calidad Wi-Fi."
+          }
+        },
+        {
+          "name": "Obtener Detalle de Dispositivo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/dispositivos/{{dispositivo_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "dispositivos",
+                "{{dispositivo_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Vincular Dispositivo a Cuba",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dispositivo_id\": 1,\n  \"cuba_id\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/dispositivos/vincular",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "dispositivos",
+                "vincular"
+              ]
+            },
+            "description": "Cierra asignaciones previas y crea una nueva activa respetando ck_asignacion_activo y validando empresa (fn_validar_asignacion_empresa)."
+          }
+        },
+        {
+          "name": "Desvincular Dispositivo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dispositivo_id\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/dispositivos/desvincular",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "dispositivos",
+                "desvincular"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Perfiles Enológicos y Umbrales (Integrante 3)",
+      "item": [
+        {
+          "name": "Listar Perfiles Enológicos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/perfiles",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "perfiles"
+              ],
+              "query": [
+                {
+                  "key": "activo",
+                  "value": "true",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Entrega bandas óptimas y cálculo dinámico de bandas críticas (crit_min, crit_max) para ThresholdsView.vue."
+          }
+        },
+        {
+          "name": "Crear Nuevo Perfil Enológico",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nomb_perfil\": \"Tinto Frutal & Joven (Postman)\",\n  \"temp_min\": 19.0,\n  \"temp_max\": 27.0,\n  \"ph_min\": 3.2,\n  \"ph_max\": 3.65,\n  \"brix_caida_min_dia\": 1.8,\n  \"cepa_id\": 1,\n  \"bodega_id\": 1,\n  \"activo\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/perfiles",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "perfiles"
+              ]
+            },
+            "description": "Valida temp_min <= temp_max (ck_perfil_temp) y ph_min <= ph_max (ck_perfil_ph)."
+          }
+        },
+        {
+          "name": "Modificar Umbrales de Perfil (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"temp_min\": 18.5,\n  \"temp_max\": 26.5,\n  \"ph_min\": 3.15,\n  \"ph_max\": 3.7\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/perfiles/{{perfil_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "perfiles",
+                "{{perfil_id}}"
+              ]
+            },
+            "description": "Actualiza parámetros térmicos y de acidez validando consistencia cruzada."
+          }
+        },
+        {
+          "name": "Desactivar Perfil (Soft-Delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/perfiles/{{perfil_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "perfiles",
+                "{{perfil_id}}"
+              ]
+            },
+            "description": "Desactiva el perfil, impidiendo la operación si está en uso por un proceso activo."
+          }
+        }
+      ]
+    }
+  ]
+}

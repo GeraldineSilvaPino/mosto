@@ -298,6 +298,9 @@ class RulesEngine:
                 tipo_alerta=tipo,
                 severidad=anomalia["severidad"],
                 met_dispar=anomalia.get("met_dispar", "sensor_iot"),
+                mensaje=anomalia.get("mensaje", f"Alerta {tipo}"),
+                valor_registrado=anomalia.get("valor_actual"),
+                valor_limite=anomalia.get("limite_esperado"),
                 estado="pendiente"
             )
             db.add(nueva_alerta)
