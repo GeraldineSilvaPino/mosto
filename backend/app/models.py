@@ -108,7 +108,7 @@ class ProcesoFermentacion(Base):
     brix_inicial = Column(Numeric(5, 2), nullable=True)
     brix_objetivo = Column(Numeric(5, 2), nullable=True)
     densidad_inicial_sg = Column(Numeric(6, 4), nullable=True)
-    estado = Column(String(50), default="en_fermentacion") # en_fermentacion, terminado, parada
+    estado = Column(String(50), default="en_proceso") # 'en_proceso', 'finalizada', 'detenida', 'cancelada'
     fecha_inicio = Column(DateTime(timezone=True), default=datetime.utcnow)
     fecha_estimada_fin = Column(DateTime(timezone=True), nullable=True)
     fecha_real_fin = Column(DateTime(timezone=True), nullable=True)

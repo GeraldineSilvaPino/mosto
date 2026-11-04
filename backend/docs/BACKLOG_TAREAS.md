@@ -209,16 +209,16 @@ Cada tarea incluye enlaces directos a sus especificaciones tecnicas:
 ---
 
 #### TASK-BE-05C: Ciclo de Vida de Procesos de Fermentacion (Vendimia)
-* **Estado:** Pendiente
+* **Estado:** COMPLETADA
 * **Rama Git:** `feat/be-processes-lifecycle`
-* **Archivos a Crear:** `backend/app/routers/processes.py`, `backend/app/schemas.py`
+* **Archivos:** `backend/app/routers/processes.py`, `backend/app/schemas.py`, `backend/app/main.py`
 * **Referencia Tecnica:** [BASE_DE_DATOS_SUPABASE.md](./BASE_DE_DATOS_SUPABASE.md#4-disparadores-triggers-plpgsql) (Trigger `fn_validar_proceso`).
 * **Alcance:**
   * `POST /api/procesos/iniciar`: Vincula una cuba a una cepa (`CEPA`), perfil de fermentacion y volumen de vendimia.
   * `PATCH /api/procesos/{id}/finalizar`: Cambia estado a `'finalizada'`, calcula densidad final obtenida y libera la cuba.
 * **Criterios de Aceptacion:**
-  - [ ] Validar que `volumen_litros <= cuba.cap_litros` para no infringir el trigger de Supabase.
-  - [ ] Impedir iniciar un proceso si la cuba ya tiene una fermentacion con estado `'en_proceso'`.
+  - [x] Validar que `volumen_litros <= cuba.cap_litros` para no infringir el trigger de Supabase.
+  - [x] Impedir iniciar un proceso si la cuba ya tiene una fermentacion con estado `'en_proceso'`.
 
 ---
 

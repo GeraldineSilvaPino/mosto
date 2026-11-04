@@ -146,3 +146,47 @@ class AlertaOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+
+# ==========================================
+# 4. DTOs PARA CICLO DE VIDA DE PROCESOS
+# ==========================================
+
+class ProcesoIniciarIn(BaseModel):
+    cuba_id: int
+    volumen_litros: float
+    perfil_id: Optional[int] = None
+    cepa_id: Optional[int] = None
+    brix_inicial: Optional[float] = 24.5
+    brix_objetivo: Optional[float] = 1.0
+    densidad_inicial_sg: Optional[float] = 1.1000
+    dias_estimados: Optional[int] = 14
+
+
+class ProcesoFinalizarIn(BaseModel):
+    densidad_final_sg: Optional[float] = None
+    brix_final: Optional[float] = None
+    motivo: Optional[str] = None
+
+
+class ProcesoOut(BaseModel):
+    id: int
+    cuba_id: int
+    codigo_cuba: Optional[str] = None
+    perfil_id: Optional[int] = None
+    perfil_nombre: Optional[str] = None
+    cepa_nombre: Optional[str] = None
+    volumen_litros: Optional[float] = None
+    brix_inicial: Optional[float] = None
+    brix_objetivo: Optional[float] = None
+    densidad_inicial_sg: Optional[float] = None
+    densidad_final_sg: Optional[float] = None
+    estado: str
+    fecha_inicio: Optional[datetime] = None
+    fecha_estimada_fin: Optional[datetime] = None
+    fecha_real_fin: Optional[datetime] = None
+    dia_fermentacion: Optional[int] = None
+
+    class Config:
+        from_attributes = True
