@@ -34,6 +34,7 @@ import {
   Zap,
   Sliders,
   Unlink,
+  Link,
   RotateCcw,
   Check,
   Signal,
@@ -386,7 +387,7 @@ onMounted(() => {
   loadDevices(true)
   // Refresco cada 15 segundos para reflejar dispositivos que se desconectan o reconectan
   pollInterval = setInterval(() => {
-    if (!isPairModalOpen.value && !isScanning.value) {
+    if (!isPairModalOpen.value && !isAssignModalOpen.value && !isUnlinkModalOpen.value && !isScanning.value) {
       loadDevices(false)
     }
   }, 15000)
@@ -530,22 +531,111 @@ function handleRestart(device) {
   }, 1800)
 }
 
-// Desvincular de cuba
-async function handleUnlink(device) {
-  if (!device.assignedCubaId) return
-  const prevCuba = device.assignedCubaName
+// ==========================================
+// MODAL DE ASIGNACIÓN / VINCULACIÓN A CUBA
+// ==========================================
+const isAssignModalOpen = ref(false)
+const selectedDeviceToAssign = ref(null)
+const selectedCubaId = ref('')
+const isAssigning = ref(false)
+const assignError = ref(null)
+
+function openAssignModal(device) {
+  selectedDeviceToAssign.value = device
+  assignError.value = null
+  if (device.assignedCubaId) {
+    selectedCubaId.value = String(device.assignedCubaId)
+  } else if (availableCubas.value.length > 0) {
+    selectedCubaId.value = String(availableCubas.value[0].id)
+  } else {
+    selectedCubaId.value = ''
+  }
+  isAssignModalOpen.value = true
+}
+
+function closeAssignModal() {
+  if (isAssigning.value) return
+  isAssignModalOpen.value = false
+  selectedDeviceToAssign.value = null
+  assignError.value = null
+}
+
+async function handleAssignCuba() {
+  if (!selectedDeviceToAssign.value || !selectedCubaId.value) return
+  isAssigning.value = true
+  assignError.value = null
+
   try {
-    if (typeof device.id === 'number') {
-      await deviceService.desvincular(device.id)
+    const updatedDevice = await deviceService.vincular({
+      dispositivo_id: selectedDeviceToAssign.value.id,
+      cuba_id: Number(selectedCubaId.value)
+    })
+
+    const idx = devices.value.findIndex(d => d.id === selectedDeviceToAssign.value.id)
+    if (idx !== -1) {
+      const mapped = mapBackendDevice(updatedDevice)
+      devices.value[idx] = { ...devices.value[idx], ...mapped }
     }
-    device.assignedCubaId = null
-    device.assignedCubaName = 'Sin Asignar (Bodega de Repuestos)'
-    showToast(`Dispositivo ${device.code} desvinculado de ${prevCuba} exitosamente.`)
+
+    const assignedCuba = availableCubas.value.find(c => String(c.id) === String(selectedCubaId.value))
+    const cubaLabel = assignedCuba ? `${assignedCuba.code} (${assignedCuba.name})` : `Cuba ID ${selectedCubaId.value}`
+    showToast(`Sensor ${selectedDeviceToAssign.value.code} vinculado exitosamente a ${cubaLabel}.`)
+    closeAssignModal()
   } catch (err) {
-    console.warn('Fallo desvinculación en backend, aplicando localmente:', err)
-    device.assignedCubaId = null
-    device.assignedCubaName = 'Sin Asignar (Bodega de Repuestos)'
-    showToast(`Dispositivo ${device.code} desvinculado localmente.`)
+    console.error('Error al vincular dispositivo:', err)
+    // Manejo de errores de negocio devueltos por el backend (ej: inconsistencia de bodega/empresa)
+    assignError.value = err.message || 'Error de negocio al vincular el sensor a la cuba seleccionada.'
+  } finally {
+    isAssigning.value = false
+  }
+}
+
+// ==========================================
+// MODAL DE CONFIRMACIÓN DE DESVINCULACIÓN
+// ==========================================
+const isUnlinkModalOpen = ref(false)
+const deviceToUnlink = ref(null)
+const isUnlinking = ref(false)
+const unlinkError = ref(null)
+
+function openUnlinkModal(device) {
+  if (!device.assignedCubaId) return
+  deviceToUnlink.value = device
+  unlinkError.value = null
+  isUnlinkModalOpen.value = true
+}
+
+function closeUnlinkModal() {
+  if (isUnlinking.value) return
+  isUnlinkModalOpen.value = false
+  deviceToUnlink.value = null
+  unlinkError.value = null
+}
+
+async function handleConfirmUnlink() {
+  if (!deviceToUnlink.value) return
+  isUnlinking.value = true
+  unlinkError.value = null
+
+  try {
+    const updatedDevice = await deviceService.desvincular({
+      dispositivo_id: deviceToUnlink.value.id
+    })
+
+    const idx = devices.value.findIndex(d => d.id === deviceToUnlink.value.id)
+    if (idx !== -1) {
+      const mapped = mapBackendDevice(updatedDevice)
+      devices.value[idx] = { ...devices.value[idx], ...mapped }
+    }
+
+    const devCode = deviceToUnlink.value.code
+    showToast(`Sensor ${devCode} desvinculado exitosamente. Ahora figura como "Sin Asignar".`)
+    closeUnlinkModal()
+  } catch (err) {
+    console.error('Error al desvincular dispositivo:', err)
+    unlinkError.value = err.message || 'Error de negocio al desvincular el dispositivo.'
+  } finally {
+    isUnlinking.value = false
   }
 }
 </script>
@@ -769,19 +859,30 @@ async function handleUnlink(device) {
         </div>
 
         <!-- Cuba Vinculada -->
-        <div class="device-cuba-banner">
+        <div class="device-cuba-banner" :class="{ 'device-cuba-banner--unassigned': !device.assignedCubaId }">
           <div class="cuba-info">
             <Cylinder :size="15" class="cuba-icon" />
             <span class="cuba-name">{{ device.assignedCubaName }}</span>
           </div>
-          <router-link
-            v-if="device.assignedCubaId"
-            :to="'/cubas/' + device.assignedCubaId"
-            class="cuba-link-btn"
-            title="Ir al detalle de la cuba"
-          >
-            Ver Telemetría
-          </router-link>
+          <div class="cuba-banner-actions">
+            <router-link
+              v-if="device.assignedCubaId"
+              :to="'/cubas/' + device.assignedCubaId"
+              class="cuba-link-btn"
+              title="Ir al detalle de la cuba"
+            >
+              Ver Telemetría
+            </router-link>
+            <button
+              v-else
+              class="cuba-link-btn cuba-link-btn--assign"
+              @click="openAssignModal(device)"
+              title="Asignar sensor a una cuba física"
+            >
+              <Link :size="12" />
+              <span>Vincular Cuba</span>
+            </button>
+          </div>
         </div>
 
         <!-- Métricas de Hardware: Señal, Energía y Lectura -->
@@ -843,7 +944,7 @@ async function handleUnlink(device) {
             title="Envía un paquete ICMP de prueba para medir latencia"
           >
             <Activity :size="13" />
-            <span>Ping de Prueba</span>
+            <span>Ping</span>
           </button>
 
           <button
@@ -855,11 +956,33 @@ async function handleUnlink(device) {
             <span>Reiniciar</span>
           </button>
 
+          <!-- Acción Asignar o Reasignar a Cuba -->
+          <button
+            v-if="!device.assignedCubaId"
+            class="btn-device-action btn-device-action--primary"
+            @click="openAssignModal(device)"
+            title="Asignar este sensor a una cuba de fermentación"
+          >
+            <Link :size="13" />
+            <span>Asignar</span>
+          </button>
+
+          <button
+            v-else
+            class="btn-device-action"
+            @click="openAssignModal(device)"
+            title="Cambiar o reasignar cuba"
+          >
+            <Link :size="13" />
+            <span>Reasignar</span>
+          </button>
+
+          <!-- Acción Desvincular con confirmación previa -->
           <button
             v-if="device.assignedCubaId"
             class="btn-device-action btn-device-action--danger"
-            @click="handleUnlink(device)"
-            title="Desvincula el sensor de esta cuba y lo deja en inventario"
+            @click="openUnlinkModal(device)"
+            title="Desvincula el sensor de esta cuba previa confirmación"
           >
             <Unlink :size="13" />
             <span>Desvincular</span>
@@ -1006,6 +1129,175 @@ async function handleUnlink(device) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- MODAL: ASIGNAR SENSOR A CUBA -->
+    <div v-if="isAssignModalOpen && selectedDeviceToAssign" class="modal-backdrop" @click.self="closeAssignModal">
+      <div class="assign-modal">
+        <!-- Header Modal -->
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="modal-icon-badge">
+              <Link :size="20" />
+            </div>
+            <div>
+              <h2 class="modal-title">Asignar Sensor a Cuba Física</h2>
+              <p class="modal-sub">
+                Asocia el nodo {{ selectedDeviceToAssign.code }} a una cuba para registrar su telemetría.
+              </p>
+            </div>
+          </div>
+
+          <button class="modal-close-btn" :disabled="isAssigning" @click="closeAssignModal">
+            <X :size="18" />
+          </button>
+        </div>
+
+        <!-- Formulario de Asignación -->
+        <form @submit.prevent="handleAssignCuba" class="modal-form">
+          <!-- Banner de Error de Negocio -->
+          <div v-if="assignError" class="modal-error-banner">
+            <AlertTriangle :size="16" class="error-banner-icon" />
+            <div class="error-banner-content">
+              <strong>Error en la asignación:</strong>
+              <p>{{ assignError }}</p>
+            </div>
+          </div>
+
+          <!-- Ficha Resumen del Dispositivo -->
+          <div class="device-summary-card">
+            <div class="summary-top">
+              <span class="summary-code">{{ selectedDeviceToAssign.code }}</span>
+              <span class="summary-model">{{ selectedDeviceToAssign.model }}</span>
+              <span class="summary-status" :class="'status--' + selectedDeviceToAssign.status">
+                {{ selectedDeviceToAssign.statusLabel }}
+              </span>
+            </div>
+            <div class="summary-grid">
+              <div class="summary-field">
+                <span class="field-label">Sensor:</span>
+                <span class="field-value">{{ selectedDeviceToAssign.sensorLabel }}</span>
+              </div>
+              <div class="summary-field">
+                <span class="field-label">Dirección MAC:</span>
+                <span class="field-value font-mono">{{ selectedDeviceToAssign.mac }}</span>
+              </div>
+              <div class="summary-field">
+                <span class="field-label">Asignación Actual:</span>
+                <span class="field-value">{{ selectedDeviceToAssign.assignedCubaName || 'Sin Asignar (Reserva)' }}</span>
+              </div>
+              <div class="summary-field">
+                <span class="field-label">Fuente de Energía:</span>
+                <span class="field-value">{{ selectedDeviceToAssign.powerSource === 'mains' ? 'Red Eléctrica (220V)' : 'Batería (' + selectedDeviceToAssign.batteryLevel + '%)' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Selección de Cuba -->
+          <div class="form-group">
+            <label class="form-label">Seleccionar Cuba de Fermentación *</label>
+            <select v-model="selectedCubaId" class="form-select" required :disabled="isAssigning">
+              <option value="" disabled>Seleccione una cuba de la lista...</option>
+              <option v-for="cuba in availableCubas" :key="cuba.id" :value="cuba.id">
+                {{ cuba.code }} — {{ cuba.name }}
+              </option>
+            </select>
+            <span class="form-hint">
+              Solo se listan cubas registradas en la bodega autorizada para este sensor.
+            </span>
+          </div>
+
+          <!-- Footer Modal -->
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary" :disabled="isAssigning" @click="closeAssignModal">
+              Cancelar
+            </button>
+            <button type="submit" class="btn-primary" :disabled="isAssigning || !selectedCubaId">
+              <RefreshCw v-if="isAssigning" :size="16" class="spin-icon" />
+              <Check v-else :size="16" />
+              <span>{{ isAssigning ? 'Vinculando en Servidor...' : 'Confirmar Asignación' }}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL: CONFIRMAR DESVINCULACIÓN DE SENSOR -->
+    <div v-if="isUnlinkModalOpen && deviceToUnlink" class="modal-backdrop" @click.self="closeUnlinkModal">
+      <div class="confirm-modal">
+        <!-- Header Modal -->
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="modal-icon-badge modal-icon-badge--danger">
+              <Unlink :size="20" />
+            </div>
+            <div>
+              <h2 class="modal-title">Confirmar Desvinculación</h2>
+              <p class="modal-sub">Liberar sensor IoT al stock de reserva</p>
+            </div>
+          </div>
+
+          <button class="modal-close-btn" :disabled="isUnlinking" @click="closeUnlinkModal">
+            <X :size="18" />
+          </button>
+        </div>
+
+        <div class="modal-body-confirm">
+          <!-- Banner de Error de Negocio -->
+          <div v-if="unlinkError" class="modal-error-banner">
+            <AlertTriangle :size="16" class="error-banner-icon" />
+            <div class="error-banner-content">
+              <strong>Error en la desvinculación:</strong>
+              <p>{{ unlinkError }}</p>
+            </div>
+          </div>
+
+          <div class="confirm-warning-box">
+            <AlertTriangle :size="20" class="warning-icon" />
+            <div class="warning-text">
+              <p>
+                ¿Estás seguro de que deseas desvincular el sensor <strong>{{ deviceToUnlink.code }}</strong> de la <strong>{{ deviceToUnlink.assignedCubaName }}</strong>?
+              </p>
+            </div>
+          </div>
+
+          <div class="unlink-details">
+            <div class="unlink-detail-row">
+              <span class="detail-label">Dispositivo:</span>
+              <span class="detail-val font-mono">{{ deviceToUnlink.code }} ({{ deviceToUnlink.mac }})</span>
+            </div>
+            <div class="unlink-detail-row">
+              <span class="detail-label">Tipo Sensor:</span>
+              <span class="detail-val">{{ deviceToUnlink.sensorLabel }}</span>
+            </div>
+            <div class="unlink-detail-row">
+              <span class="detail-label">Destino:</span>
+              <span class="detail-val highlight-val">Stock de Reserva (Sin Asignar)</span>
+            </div>
+          </div>
+
+          <p class="confirm-footnote">
+            Al confirmar, el sensor dejará de reportar variables fisicoquímicas para esta cuba y pasará al estado disponible para nuevas asignaciones.
+          </p>
+
+          <!-- Footer Confirmación -->
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary" :disabled="isUnlinking" @click="closeUnlinkModal">
+              Cancelar
+            </button>
+            <button
+              type="button"
+              class="btn-danger-confirm"
+              :disabled="isUnlinking"
+              @click="handleConfirmUnlink"
+            >
+              <RefreshCw v-if="isUnlinking" :size="16" class="spin-icon" />
+              <Unlink v-else :size="16" />
+              <span>{{ isUnlinking ? 'Desvinculando...' : 'Sí, Desvincular Sensor' }}</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1827,5 +2119,289 @@ async function handleUnlink(device) {
   justify-content: flex-end;
   align-items: center;
   gap: 0.75rem;
+}
+
+/* Acciones en el banner de la cuba */
+.cuba-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.device-cuba-banner--unassigned {
+  background-color: var(--bg-subtle);
+  border-left-color: var(--text-muted);
+}
+
+.cuba-link-btn--assign {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background-color: var(--wine-100);
+  color: var(--wine-700);
+  border: 1px solid var(--wine-600);
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cuba-link-btn--assign:hover {
+  background-color: var(--wine-700);
+  color: #FFFFFF;
+}
+
+.btn-device-action--primary {
+  background-color: var(--wine-100);
+  color: var(--wine-700);
+  border-color: var(--wine-600);
+  font-weight: 600;
+}
+
+.btn-device-action--primary:hover:not(:disabled) {
+  background-color: var(--wine-700) !important;
+  color: #FFFFFF !important;
+  border-color: var(--wine-800) !important;
+}
+
+/* Modales de Asignación y Confirmación */
+.assign-modal,
+.confirm-modal {
+  width: 100%;
+  max-width: 580px;
+  max-height: 90vh;
+  background-color: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 20px 45px rgba(35, 22, 28, 0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modal-pop 0.2s ease-out;
+}
+
+.confirm-modal {
+  max-width: 480px;
+}
+
+.modal-icon-badge--danger {
+  background-color: var(--status-danger-bg);
+  color: var(--status-danger);
+}
+
+.modal-body-confirm {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.confirm-warning-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.9rem 1.1rem;
+  border-radius: var(--radius-md);
+  background-color: var(--status-warn-bg);
+  border: 1px solid var(--status-warn-border);
+  color: var(--status-warn);
+}
+
+.confirm-warning-box .warning-icon {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+
+.warning-text p {
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.unlink-details {
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.unlink-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+.unlink-detail-row .detail-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.unlink-detail-row .detail-val {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.unlink-detail-row .highlight-val {
+  color: var(--status-warn);
+}
+
+.confirm-footnote {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.btn-danger-confirm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  background-color: var(--status-danger);
+  color: #FFFFFF;
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+  font-weight: 600;
+  transition: background-color 0.15s ease;
+  cursor: pointer;
+}
+
+.btn-danger-confirm:hover:not(:disabled) {
+  background-color: #7A1424;
+}
+
+.btn-danger-confirm:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* Banner de error de negocio */
+.modal-error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1.1rem;
+  border-radius: var(--radius-md);
+  background-color: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+  color: var(--status-danger);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.error-banner-icon {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+
+.error-banner-content strong {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 0.15rem;
+}
+
+.error-banner-content p {
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  word-break: break-word;
+}
+
+/* Ficha Resumen de Dispositivo en Asignación */
+.device-summary-card {
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.summary-top {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.summary-code {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--wine-900);
+}
+
+.summary-model {
+  font-size: 0.72rem;
+  background-color: var(--wine-100);
+  color: var(--wine-700);
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+}
+
+.summary-status {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.summary-status.status--online {
+  background-color: var(--status-good-bg);
+  color: var(--status-good);
+}
+
+.summary-status.status--offline {
+  background-color: var(--bg-subtle);
+  color: var(--text-muted);
+}
+
+.summary-status.status--maintenance {
+  background-color: var(--status-warn-bg);
+  color: var(--status-warn);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem 1rem;
+}
+
+@media (max-width: 520px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.summary-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.summary-field .field-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.summary-field .field-value {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.font-mono {
+  font-family: var(--font-mono);
 }
 </style>

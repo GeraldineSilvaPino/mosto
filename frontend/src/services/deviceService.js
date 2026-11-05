@@ -1,6 +1,6 @@
 import apiClient from './api.js'
 
-export default {
+export const deviceService = {
   /**
    * Lista el inventario de dispositivos IoT con estado telemétrico dinámico y RSSI
    * @param {Object} [params={}] - Filtros opcionales { cuba_id, status }
@@ -27,27 +27,55 @@ export default {
 
   /**
    * Vincula físicamente un sensor a una cuba
-   * @param {number|string} dispositivoId - ID del dispositivo
-   * @param {number|string} cubaId - ID de la cuba
+   * Acepta payload { dispositivo_id, cuba_id } o parámetros posicionales (dispositivoId, cubaId)
+   * @param {Object|number|string} payloadOrId - Objeto { dispositivo_id, cuba_id } o ID del dispositivo
+   * @param {number|string} [maybeCubaId] - ID de la cuba (si el primer parámetro es un id)
    */
-  vincular(dispositivoId, cubaId) {
+  vincular(payloadOrId, maybeCubaId) {
+    let dispositivo_id
+    let cuba_id
+
+    if (typeof payloadOrId === 'object' && payloadOrId !== null) {
+      dispositivo_id = payloadOrId.dispositivo_id ?? payloadOrId.dispositivoId
+      cuba_id = payloadOrId.cuba_id ?? payloadOrId.cubaId
+    } else {
+      dispositivo_id = payloadOrId
+      cuba_id = maybeCubaId
+    }
+
     return apiClient
       .post('/api/dispositivos/vincular', {
-        dispositivo_id: Number(dispositivoId),
-        cuba_id: Number(cubaId)
+        dispositivo_id: Number(dispositivo_id),
+        cuba_id: Number(cuba_id)
       })
       .then((res) => res.data)
   },
 
   /**
    * Desvincula un dispositivo de su cuba actual dejándolo en reserva
-   * @param {number|string} dispositivoId - ID del dispositivo
+   * Acepta payload { dispositivo_id } o parámetro posicional (dispositivoId)
+   * @param {Object|number|string} payloadOrId - Objeto { dispositivo_id } o ID del dispositivo
    */
-  desvincular(dispositivoId) {
+  desvincular(payloadOrId) {
+    let dispositivo_id
+
+    if (typeof payloadOrId === 'object' && payloadOrId !== null) {
+      dispositivo_id = payloadOrId.dispositivo_id ?? payloadOrId.dispositivoId
+    } else {
+      dispositivo_id = payloadOrId
+    }
+
     return apiClient
       .post('/api/dispositivos/desvincular', {
-        dispositivo_id: Number(dispositivoId)
+        dispositivo_id: Number(dispositivo_id)
       })
       .then((res) => res.data)
   }
 }
+
+export const listarDispositivos = (params) => deviceService.listarDispositivos(params)
+export const obtenerDispositivo = (id) => deviceService.obtenerDispositivo(id)
+export const vincular = (payloadOrId, maybeCubaId) => deviceService.vincular(payloadOrId, maybeCubaId)
+export const desvincular = (payloadOrId) => deviceService.desvincular(payloadOrId)
+
+export default deviceService
