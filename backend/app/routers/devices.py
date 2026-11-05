@@ -1,16 +1,29 @@
 """
 Router de Inventario de Hardware y Device Hub IoT.
-Gestiona el estado en vivo de microcontroladores (ESP32/ESP8266) y su vinculación con cubas.
+Gestiona el estado en vivo de microcontroladores (ESP32/ESP8266), registro y vinculación con cubas.
 """
 from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from app.database import get_db
-from app.models import Dispositivo, ModeloDispositivo, AsignacionDispositivo, Cuba, TelemetriaEstadoNodo, LecturaTelemetria
-from app.schemas import DispositivoOut, DispositivoVincularIn, DispositivoDesvincularIn
+from app.models import (
+    Dispositivo,
+    ModeloDispositivo,
+    AsignacionDispositivo,
+    Cuba,
+    TelemetriaEstadoNodo,
+    LecturaTelemetria,
+    EmpresaCliente
+)
+from app.schemas import (
+    DispositivoOut,
+    DispositivoVincularIn,
+    DispositivoDesvincularIn,
+    DispositivoCreateIn
+)
 
 router = APIRouter(prefix="/api/dispositivos", tags=["Device Hub e Inventario IoT"])
 
@@ -89,7 +102,6 @@ def _mapear_dispositivo_out(d: Dispositivo, db: Session) -> DispositivoOut:
     last_telemetry_str = "Sin transmisiones"
 
     if ultima_conexion:
-        # Asegurar comparación timezone-aware
         if ultima_conexion.tzinfo is None:
             ts_aware = ultima_conexion.replace(tzinfo=timezone.utc)
         else:
@@ -120,6 +132,10 @@ def _mapear_dispositivo_out(d: Dispositivo, db: Session) -> DispositivoOut:
         sensor_type = "PH-4502C"
         sensor_label = "Sonda de pH Analógica PH-4502C"
         power_source = "mains"
+    elif "DUAL" in tipo_str:
+        sensor_type = "DUAL"
+        sensor_label = "Combo Dual (DS18B20 + MPU-6050)"
+        power_source = "battery"
     else:
         sensor_type = "DS18B20"
         sensor_label = "Sonda Térmica Estanco DS18B20"
@@ -176,6 +192,73 @@ def listar_dispositivos(
     return resultado
 
 
+@router.post("", response_model=DispositivoOut, status_code=status.HTTP_201_CREATED, summary="Registrar nuevo dispositivo IoT")
+def crear_dispositivo(payload: DispositivoCreateIn, db: Session = Depends(get_db)):
+    """
+    Registra un nuevo microcontrolador ESP32/ESP8266 en la base de datos
+    y opcionalmente lo vincula a una cuba de fermentación.
+    """
+    mac_clean = payload.mac.strip().upper()
+    existente = db.query(Dispositivo).filter(func.upper(Dispositivo.mac_address) == mac_clean).first()
+    if existente:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ya existe un dispositivo registrado con la dirección MAC '{mac_clean}'."
+        )
+
+    # Buscar o crear modelo
+    nombre_modelo = payload.model or "ESP32-WROOM-32D"
+    modelo = db.query(ModeloDispositivo).filter(func.lower(ModeloDispositivo.modelo) == nombre_modelo.lower()).first()
+    if not modelo:
+        modelo = ModeloDispositivo(
+            marca="Espressif",
+            modelo=nombre_modelo,
+            arquitectura="Xtensa LX6",
+            version_hardware="v1.0"
+        )
+        db.add(modelo)
+        db.commit()
+        db.refresh(modelo)
+
+    # Empresa
+    empresa = db.query(EmpresaCliente).first()
+    empresa_id = empresa.id if empresa else 5
+
+    nuevo_dispositivo = Dispositivo(
+        mac_address=mac_clean,
+        tipo_dispositivo=payload.sensorType,
+        firmware_version="v2.4.1-ota",
+        estado="activo",
+        empresa_id=empresa_id,
+        modelo_id=modelo.id,
+        creado_en=datetime.utcnow()
+    )
+    db.add(nuevo_dispositivo)
+    db.commit()
+    db.refresh(nuevo_dispositivo)
+
+    # Vincular a cuba si se suministró
+    if payload.cubaId:
+        try:
+            cuba_id_int = int(payload.cubaId)
+            cuba = db.query(Cuba).filter(Cuba.id == cuba_id_int).first()
+            if cuba:
+                asig = AsignacionDispositivo(
+                    dispositivo_id=nuevo_dispositivo.id,
+                    cuba_id=cuba.id,
+                    activo=True,
+                    asignado_en=datetime.utcnow(),
+                    desasignado_en=None
+                )
+                db.add(asig)
+                db.commit()
+        except Exception as e:
+            print(f"Aviso al asignar cuba a dispositivo nuevo: {e}")
+            db.rollback()
+
+    return _mapear_dispositivo_out(nuevo_dispositivo, db)
+
+
 @router.get("/{dispositivo_id}", response_model=DispositivoOut, summary="Obtener detalle de un dispositivo")
 def obtener_dispositivo(dispositivo_id: int, db: Session = Depends(get_db)):
     """Retorna el estado detallado y última telemetría de un dispositivo IoT."""
@@ -187,13 +270,7 @@ def obtener_dispositivo(dispositivo_id: int, db: Session = Depends(get_db)):
 
 @router.post("/vincular", response_model=DispositivoOut, summary="Vincular dispositivo a una cuba")
 def vincular_dispositivo(payload: DispositivoVincularIn, db: Session = Depends(get_db)):
-    """
-    Vincula un dispositivo a una cuba:
-    1. Valida existencia de dispositivo y cuba.
-    2. Valida consistencia de empresa cliente (trigger Supabase fn_validar_asignacion_empresa).
-    3. Cierra asignaciones previas con activo = False y desasignado_en = now() (restricción ck_asignacion_activo).
-    4. Crea la nueva asignación activa con activo = True y desasignado_en = NULL.
-    """
+    """Vincula un dispositivo a una cuba."""
     d = db.query(Dispositivo).filter(Dispositivo.id == payload.dispositivo_id).first()
     if not d:
         raise HTTPException(status_code=404, detail=f"Dispositivo con ID {payload.dispositivo_id} no encontrado")
@@ -202,7 +279,6 @@ def vincular_dispositivo(payload: DispositivoVincularIn, db: Session = Depends(g
     if not c:
         raise HTTPException(status_code=404, detail=f"Cuba con ID {payload.cuba_id} no encontrada")
 
-    # Validación de Empresa Cliente (Trigger fn_validar_asignacion_empresa)
     if c.bodega and c.bodega.empresa_id != d.empresa_id:
         raise HTTPException(
             status_code=400,
@@ -211,7 +287,6 @@ def vincular_dispositivo(payload: DispositivoVincularIn, db: Session = Depends(g
 
     ahora = datetime.utcnow()
 
-    # Cerrar asignaciones activas previas del dispositivo
     asignaciones_previas = (
         db.query(AsignacionDispositivo)
         .filter(
@@ -224,7 +299,6 @@ def vincular_dispositivo(payload: DispositivoVincularIn, db: Session = Depends(g
         a.activo = False
         a.desasignado_en = ahora
 
-    # Crear nueva asignación activa (activo = True, desasignado_en = None cumple ck_asignacion_activo)
     nueva_asignacion = AsignacionDispositivo(
         dispositivo_id=d.id,
         cuba_id=c.id,
@@ -233,7 +307,6 @@ def vincular_dispositivo(payload: DispositivoVincularIn, db: Session = Depends(g
         desasignado_en=None
     )
     db.add(nueva_asignacion)
-
     db.commit()
     db.refresh(d)
 
@@ -242,10 +315,7 @@ def vincular_dispositivo(payload: DispositivoVincularIn, db: Session = Depends(g
 
 @router.post("/desvincular", response_model=DispositivoOut, summary="Desvincular dispositivo de su cuba actual")
 def desvincular_dispositivo(payload: DispositivoDesvincularIn, db: Session = Depends(get_db)):
-    """
-    Libera un dispositivo cerrando su asignación activa:
-    Actualiza activo = False y desasignado_en = now().
-    """
+    """Libera un dispositivo cerrando su asignación activa."""
     d = db.query(Dispositivo).filter(Dispositivo.id == payload.dispositivo_id).first()
     if not d:
         raise HTTPException(status_code=404, detail=f"Dispositivo con ID {payload.dispositivo_id} no encontrado")

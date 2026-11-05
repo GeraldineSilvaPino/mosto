@@ -2,22 +2,17 @@
 /**
  * 📋 09. [FRONT - VUE] Pantalla de Gestión de Usuarios y Roles
  * Módulo 5: Administración SaaS y Gestión de Empresa
- * Rama recomendada: feature/09-usuarios-roles
  *
- * Descripción:
- * Interfaz visual para controlar al personal interno de la viña de forma simulada.
- *
- * Características implementadas:
- * 1. Lista de usuarios ficticios con avatar (iniciales), nombre, email, rol y estado.
+ * Conectado con la API FastAPI y Supabase PostgreSQL (/api/usuarios):
+ * 1. Lista de usuarios reales con avatar (iniciales), nombre, email, rol y estado activo.
  * 2. Badges de rol diferenciados visualmente (Admin, Enólogo, Operario).
- * 3. Indicador de estado activo/inactivo.
- * 4. Modal para invitar nuevos usuarios (email + rol).
+ * 3. Indicador de estado activo/inactivo sincronizado con la base de datos.
+ * 4. Modal para invitar nuevos usuarios persistidos en PostgreSQL.
  * 5. Filtro por rol (pills toggle).
- * 6. Acciones por fila: editar rol, suspender/activar.
- * 7. 100% Frontend autónomo (sin requerir backend).
+ * 6. Acciones por fila: edición de rol y suspensión/reactivación en tiempo real.
  */
 
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
 import {
   UserPlus,
   Shield,
@@ -30,8 +25,10 @@ import {
   Mail,
   Users,
   ChevronDown,
-  Check
+  Check,
+  Loader2
 } from 'lucide-vue-next'
+import userService from '../services/userService.js'
 
 // ==========================================
 // CONFIGURACIÓN DE ROLES
@@ -43,61 +40,40 @@ const roles = {
 }
 
 // ==========================================
-// DATOS MOCK DE USUARIOS
+// ESTADO REACTIVO
 // ==========================================
-let nextId = 10
+const users = ref([])
+const isLoading = ref(false)
+const isSubmitting = ref(false)
+const errorMessage = ref(null)
+const toastMessage = ref('')
 
-const users = ref([
-  {
-    id: 1,
-    name: 'Carlos Mendoza',
-    email: 'carlos.mendoza@vinamosto.cl',
-    role: 'admin',
-    active: true
-  },
-  {
-    id: 2,
-    name: 'María González',
-    email: 'maria.gonzalez@vinamosto.cl',
-    role: 'enologo',
-    active: true
-  },
-  {
-    id: 3,
-    name: 'Alejandro Rojas',
-    email: 'alejandro.rojas@vinamosto.cl',
-    role: 'operario',
-    active: true
-  },
-  {
-    id: 4,
-    name: 'Fernanda Vidal',
-    email: 'fernanda.vidal@vinamosto.cl',
-    role: 'enologo',
-    active: false
-  },
-  {
-    id: 5,
-    name: 'Roberto Soto',
-    email: 'roberto.soto@vinamosto.cl',
-    role: 'operario',
-    active: true
-  },
-  {
-    id: 6,
-    name: 'Valentina Parra',
-    email: 'valentina.parra@vinamosto.cl',
-    role: 'admin',
-    active: true
-  },
-  {
-    id: 7,
-    name: 'Diego Fuentes',
-    email: 'diego.fuentes@vinamosto.cl',
-    role: 'operario',
-    active: false
+async function loadUsers() {
+  isLoading.value = true
+  errorMessage.value = null
+  try {
+    const data = await userService.listar()
+    if (Array.isArray(data)) {
+      users.value = data
+    }
+  } catch (err) {
+    console.error('Error al cargar usuarios:', err)
+    errorMessage.value = err.message || 'Error al conectar con la base de datos de usuarios'
+  } finally {
+    isLoading.value = false
   }
-])
+}
+
+onMounted(() => {
+  loadUsers()
+})
+
+function showToast(msg) {
+  toastMessage.value = msg
+  setTimeout(() => {
+    toastMessage.value = ''
+  }, 3500)
+}
 
 // ==========================================
 // FILTROS
@@ -108,14 +84,17 @@ const filterCounts = computed(() => ({
   all: users.value.length,
   admin: users.value.filter(u => u.role === 'admin').length,
   enologo: users.value.filter(u => u.role === 'enologo').length,
-  operario: users.value.filter(u => u.role === 'operario').length
+  operario: users.value.filter(u => u.role === 'operario' || u.role === 'operador').length
 }))
 
 const filteredUsers = computed(() => {
   return users.value
-    .filter(u => activeFilter.value === 'todos' || u.role === activeFilter.value)
+    .filter(u => {
+      if (activeFilter.value === 'todos') return true
+      if (activeFilter.value === 'operario') return u.role === 'operario' || u.role === 'operador'
+      return u.role === activeFilter.value
+    })
     .sort((a, b) => {
-      // Activos primero, luego por nombre
       if (a.active !== b.active) return b.active - a.active
       return a.name.localeCompare(b.name)
     })
@@ -125,7 +104,13 @@ const filteredUsers = computed(() => {
 // HELPERS
 // ==========================================
 function getInitials(name) {
+  if (!name) return 'US'
   return name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase()
+}
+
+function getRoleConfig(roleKey) {
+  const norm = (roleKey === 'operador' ? 'operario' : roleKey) || 'operario'
+  return roles[norm] || roles.operario
 }
 
 // ==========================================
@@ -147,18 +132,25 @@ function openInviteModal() {
   })
 }
 
-function submitInvite() {
+async function submitInvite() {
   if (!inviteForm.value.name.trim() || !inviteForm.value.email.trim()) return
 
-  users.value.push({
-    id: nextId++,
-    name: inviteForm.value.name.trim(),
-    email: inviteForm.value.email.trim().toLowerCase(),
-    role: inviteForm.value.role,
-    active: true
-  })
-
-  showInviteModal.value = false
+  isSubmitting.value = true
+  try {
+    const nuevo = await userService.crear({
+      name: inviteForm.value.name.trim(),
+      email: inviteForm.value.email.trim().toLowerCase(),
+      role: inviteForm.value.role,
+      password: 'mosto' + Math.floor(1000 + Math.random() * 9000)
+    })
+    users.value.push(nuevo)
+    showInviteModal.value = false
+    showToast(`Usuario ${nuevo.name} invitado y registrado en la base de datos.`)
+  } catch (err) {
+    alert(err.message || 'Error al invitar al usuario.')
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 // ==========================================
@@ -170,16 +162,34 @@ function toggleEditRole(userId) {
   editingUserId.value = editingUserId.value === userId ? null : userId
 }
 
-function setRole(user, newRole) {
+async function setRole(user, newRole) {
+  const anterior = user.role
   user.role = newRole
   editingUserId.value = null
+
+  try {
+    await userService.actualizarRol(user.id, newRole)
+    showToast(`Rol de ${user.name} actualizado a ${roles[newRole]?.label || newRole}.`)
+  } catch (err) {
+    user.role = anterior
+    alert(err.message || 'Error al actualizar el rol.')
+  }
 }
 
 // ==========================================
 // SUSPENDER / ACTIVAR
 // ==========================================
-function toggleActive(user) {
-  user.active = !user.active
+async function toggleActive(user) {
+  const nuevoEstado = !user.active
+  user.active = nuevoEstado
+
+  try {
+    await userService.actualizarEstado(user.id, nuevoEstado)
+    showToast(`Usuario ${user.name} ${nuevoEstado ? 'reactivado' : 'suspendido'} en Supabase.`)
+  } catch (err) {
+    user.active = !nuevoEstado
+    alert(err.message || 'Error al modificar el estado del usuario.')
+  }
 }
 </script>
 
@@ -255,7 +265,7 @@ function toggleActive(user) {
         :class="{ 'is-inactive': !user.active }"
       >
         <!-- Avatar con iniciales -->
-        <div class="user-avatar" :class="roles[user.role].colorClass">
+        <div class="user-avatar" :class="getRoleConfig(user.role).colorClass">
           {{ getInitials(user.name) }}
         </div>
 
@@ -266,9 +276,9 @@ function toggleActive(user) {
         </div>
 
         <!-- Badge de rol -->
-        <div class="user-role-badge" :class="roles[user.role].colorClass">
-          <component :is="roles[user.role].icon" :size="13" />
-          <span>{{ roles[user.role].label }}</span>
+        <div class="user-role-badge" :class="getRoleConfig(user.role).colorClass">
+          <component :is="getRoleConfig(user.role).icon" :size="13" />
+          <span>{{ getRoleConfig(user.role).label }}</span>
         </div>
 
         <!-- Estado -->

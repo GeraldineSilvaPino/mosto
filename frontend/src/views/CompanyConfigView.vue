@@ -2,19 +2,17 @@
 /**
  * 📋 10. [FRONT - VUE] Pantalla de Configuración de la Empresa / Viña
  * Módulo 5: Administración SaaS y Gestión de Empresa
- * Rama recomendada: feature/10-configuracion-empresa
  *
- * Características implementadas:
- * 1. Ficha de identidad y bodega con previsualización reactiva de logotipo (carga de archivo local o restablecer).
- * 2. Datos fiscales reales chilenos (RUT, Razón Social, Giro, Dirección, Contacto).
- * 3. Tarjeta de plan SaaS con estado activo y barras de consumo de cuotas reales (9/24 cubas, 7/15 usuarios).
- * 4. Modal funcional e interactivo para solicitud de ampliación de cubas/cuota.
+ * Conectado con la API FastAPI y Supabase PostgreSQL (/api/empresa):
+ * 1. Ficha de identidad y bodega sincronizada con la base de datos.
+ * 2. Datos fiscales reales (RUT, Razón Social, Giro, Dirección, Contacto).
+ * 3. Tarjeta de plan SaaS con estado activo y cálculo de cuotas reales desde la base de datos.
+ * 4. Modal funcional e interactivo para solicitud y persistencia de ampliación de cubas.
  * 5. Toggles operativos funcionales (reporte enológico, alertas SMS).
- * 6. Botones reactivos de Guardar (con toast de éxito) y Restablecer valores.
- * 7. 100% Frontend autónomo (sin requerir backend).
+ * 6. Guardado real en Supabase con notificación toast y botón de restablecer.
  */
 
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   Building2,
   Grape,
@@ -36,18 +34,16 @@ import {
   BellRing,
   Sparkles
 } from 'lucide-vue-next'
+import companyService from '../services/companyService.js'
 
 // ==========================================
 // ESTADO INICIAL / VALORES POR DEFECTO
 // ==========================================
 const defaultData = {
-  // Identidad
   brandName: 'Viña Santa Emiliana',
   facility: 'Planta Principal · Bodega Central',
   valley: 'Valle del Maule',
-  logoUrl: '', // Si está vacío se muestra el avatar estilizado vitivinícola
-  
-  // Fiscales
+  logoUrl: '',
   taxId: '76.432.891-K',
   legalName: 'Agrícola y Vitivinícola Santa Emiliana S.A.',
   taxCategory: 'Elaboración y Envasado de Vinos y Mostos',
@@ -55,33 +51,69 @@ const defaultData = {
   region: 'Región del Maule, Chile',
   contactEmail: 'contacto@santaemiliana.cl',
   contactPhone: '+56 73 245 8890',
-
-  // Operacionales
   dailyEnologyReport: true,
   smsCriticalAlerts: true
 }
 
-// Estado reactivo editable
 const company = ref({ ...defaultData })
 
-// Cuotas SaaS (Conectadas con los datos del Dashboard y Usuarios)
 const saasQuota = ref({
   planName: 'Plan Bodega Industrial',
   billingCycle: 'Anual (Renovación: Nov 2027)',
   status: 'Activo',
-  usedCubas: 9,
+  usedCubas: 1,
   maxCubas: 24,
-  usedUsers: 7,
+  usedUsers: 1,
   maxUsers: 15
+})
+
+const isLoadingData = ref(false)
+
+async function loadCompanyData() {
+  isLoadingData.value = true
+  try {
+    const data = await companyService.obtenerConfiguracion()
+    if (data) {
+      company.value = {
+        brandName: data.brandName || '',
+        facility: data.facility || '',
+        valley: data.valley || '',
+        logoUrl: data.logoUrl || '',
+        taxId: data.taxId || '',
+        legalName: data.legalName || '',
+        taxCategory: data.taxCategory || '',
+        address: data.address || '',
+        region: data.region || '',
+        contactEmail: data.contactEmail || '',
+        contactPhone: data.contactPhone || '',
+        dailyEnologyReport: Boolean(data.dailyEnologyReport),
+        smsCriticalAlerts: Boolean(data.smsCriticalAlerts)
+      }
+      Object.assign(defaultData, { ...company.value })
+      if (data.saasQuota) {
+        saasQuota.value = data.saasQuota
+      }
+    }
+  } catch (err) {
+    console.error('Aviso al cargar configuración de empresa:', err)
+  } finally {
+    isLoadingData.value = false
+  }
+}
+
+onMounted(() => {
+  loadCompanyData()
 })
 
 // Porcentajes de cuota
 const cubasPercentage = computed(() => {
-  return Math.round((saasQuota.value.usedCubas / saasQuota.value.maxCubas) * 100)
+  const max = saasQuota.value.maxCubas || 1
+  return Math.min(100, Math.round((saasQuota.value.usedCubas / max) * 100))
 })
 
 const usersPercentage = computed(() => {
-  return Math.round((saasQuota.value.usedUsers / saasQuota.value.maxUsers) * 100)
+  const max = saasQuota.value.maxUsers || 1
+  return Math.min(100, Math.round((saasQuota.value.usedUsers / max) * 100))
 })
 
 // Control de cambios no guardados
@@ -121,18 +153,24 @@ const isSaving = ref(false)
 const showToast = ref(false)
 const toastMessage = ref('')
 
-const saveChanges = () => {
+const saveChanges = async () => {
   isSaving.value = true
-  setTimeout(() => {
-    isSaving.value = false
-    // Sincronizar estado por defecto
-    Object.assign(defaultData, { ...company.value })
-    toastMessage.value = 'Configuración de la viña actualizada correctamente'
+  try {
+    const updated = await companyService.actualizarConfiguracion(company.value)
+    if (updated) {
+      Object.assign(defaultData, { ...company.value })
+      if (updated.saasQuota) saasQuota.value = updated.saasQuota
+    }
+    toastMessage.value = 'Configuración de la viña guardada exitosamente en Supabase'
     showToast.value = true
     setTimeout(() => {
       showToast.value = false
     }, 3500)
-  }, 450)
+  } catch (err) {
+    alert(err.message || 'Error al guardar la configuración.')
+  } finally {
+    isSaving.value = false
+  }
 }
 
 const resetChanges = () => {
@@ -151,10 +189,11 @@ const openUpgradeModal = () => {
   showUpgradeModal.value = true
 }
 
-const confirmUpgrade = () => {
+const confirmUpgrade = async () => {
   isSubmittingUpgrade.value = true
-  setTimeout(() => {
-    saasQuota.value.maxCubas += requestedExtraCubas.value
+  try {
+    const res = await companyService.solicitarAmpliacion(requestedExtraCubas.value)
+    saasQuota.value.maxCubas = res.nueva_capacidad
     isSubmittingUpgrade.value = false
     showUpgradeModal.value = false
     toastMessage.value = `Capacidad ampliada a ${saasQuota.value.maxCubas} cubas en monitoreo`
@@ -162,7 +201,10 @@ const confirmUpgrade = () => {
     setTimeout(() => {
       showToast.value = false
     }, 3500)
-  }, 500)
+  } catch (err) {
+    alert(err.message || 'Error al ampliar la cuota.')
+    isSubmittingUpgrade.value = false
+  }
 }
 </script>
 

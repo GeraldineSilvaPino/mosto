@@ -34,6 +34,7 @@ import {
 } from 'lucide-vue-next'
 import profileService from '../services/profileService.js'
 import cubaService from '../services/cubaService.js'
+import masterService from '../services/masterService.js'
 
 // ==========================================
 // ESTADO REACTIVO PRINCIPAL
@@ -176,6 +177,16 @@ async function loadProfiles(isManual = false) {
         profiles.value = allData.map(mapBackendProfile)
         selectedProfileId.value = profiles.value[0].id
       }
+    }
+
+    // Cargar catálogo de cepas enológicas
+    try {
+      const cepasData = await masterService.listarCepas()
+      if (Array.isArray(cepasData) && cepasData.length > 0) {
+        availableCepas.value = cepasData
+      }
+    } catch {
+      // Ignorar fallback de cepas
     }
 
     // Cargar sincronización de cubas

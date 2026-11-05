@@ -26,6 +26,14 @@ export const deviceService = {
   },
 
   /**
+   * Registra un nuevo dispositivo en el inventario IoT y en la base de datos de Supabase
+   * @param {Object} payload - { code, name, mac, model, sensorType, cubaId, powerSource, samplingInterval, notes }
+   */
+  registrarDispositivo(payload) {
+    return apiClient.post('/api/dispositivos', payload).then((res) => res.data)
+  },
+
+  /**
    * Vincula físicamente un sensor a una cuba
    * Acepta payload { dispositivo_id, cuba_id } o parámetros posicionales (dispositivoId, cubaId)
    * @param {Object|number|string} payloadOrId - Objeto { dispositivo_id, cuba_id } o ID del dispositivo
@@ -75,6 +83,7 @@ export const deviceService = {
 
 export const listarDispositivos = (params) => deviceService.listarDispositivos(params)
 export const obtenerDispositivo = (id) => deviceService.obtenerDispositivo(id)
+export const registrarDispositivo = (payload) => deviceService.registrarDispositivo(payload)
 export const vincular = (payloadOrId, maybeCubaId) => deviceService.vincular(payloadOrId, maybeCubaId)
 export const desvincular = (payloadOrId) => deviceService.desvincular(payloadOrId)
 

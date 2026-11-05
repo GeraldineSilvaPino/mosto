@@ -1,23 +1,18 @@
 <script setup>
 /**
- * 📋 08. [FRONT - VUE] Pantalla de Bitácora
+ * 📋 08. [FRONT - VUE] Pantalla de Bitácora Enológica
  * Módulo 4: Hardware y Configuración Operativa
- * Rama recomendada: feature/08-bitacora
  *
- * Descripción:
- * Registro cronológico visual de notas y eventos simulados realizados por los enólogos.
- *
- * Características implementadas:
- * 1. Timeline vertical con entradas agrupadas por día.
+ * Conectado con la API FastAPI y Supabase PostgreSQL (/api/bitacora):
+ * 1. Timeline vertical con entradas agrupadas por día y ordenadas cronológicamente.
  * 2. 4 tipos de entrada diferenciados por icono y color (Nota, Alerta, Config, Lectura).
- * 3. Formulario rápido para agregar nuevas notas simuladas localmente.
- * 4. Filtro por tipo de entrada (botones toggle).
+ * 3. Formulario funcional para registrar y persistir notas e intervenciones en la BD.
+ * 4. Filtro por tipo de entrada (botones toggle reactivos).
  * 5. Búsqueda por texto libre.
- * 6. Referencia a cuba en cada entrada.
- * 7. 100% Frontend autónomo (sin requerir backend).
+ * 6. Selectores dinámicos de cubas y autores cargados desde la base de datos.
  */
 
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
 import {
   Plus,
   Search,
@@ -33,6 +28,9 @@ import {
   ChevronUp,
   Pencil
 } from 'lucide-vue-next'
+import binnacleService from '../services/binnacleService.js'
+import cubaService from '../services/cubaService.js'
+import userService from '../services/userService.js'
 
 // ==========================================
 // TIPOS DE ENTRADA
@@ -45,129 +43,77 @@ const entryTypes = {
 }
 
 // ==========================================
-// DATOS MOCK DE CUBAS (para selector)
+// CATÁLOGOS DINÁMICOS (Cubas y Autores)
 // ==========================================
-const cubasOptions = [
+const cubasOptions = ref([
   { id: 'general', label: 'General' },
   { id: 'cuba-01', label: 'Cuba 01' },
   { id: 'cuba-02', label: 'Cuba 02' },
   { id: 'cuba-03', label: 'Cuba 03' },
-  { id: 'cuba-04', label: 'Cuba 04' },
-  { id: 'cuba-05', label: 'Cuba 05' },
-  { id: 'cuba-06', label: 'Cuba 06' },
-  { id: 'cuba-07', label: 'Cuba 07' },
-  { id: 'cuba-08', label: 'Cuba 08' },
-  { id: 'cuba-09', label: 'Cuba 09' }
-]
-
-// ==========================================
-// ENTRADAS MOCK (datos de prueba estáticos)
-// ==========================================
-let nextId = 20
-
-const entries = ref([
-  {
-    id: 1,
-    type: 'alerta',
-    timestamp: new Date(2026, 9, 30, 14, 32),
-    cuba: 'cuba-03',
-    message: 'Temperatura elevada detectada: 30.1°C (umbral máx: 28°C)',
-    author: 'Sistema IoT'
-  },
-  {
-    id: 2,
-    type: 'nota',
-    timestamp: new Date(2026, 9, 30, 11, 5),
-    cuba: 'cuba-01',
-    message: 'Agregado SO₂ correctivo (35 mg/L). Mosto en buenas condiciones generales.',
-    author: 'María González'
-  },
-  {
-    id: 3,
-    type: 'lectura',
-    timestamp: new Date(2026, 9, 30, 9, 15),
-    cuba: 'cuba-02',
-    message: 'Lectura manual: 17.5°C / 18.5 °Bx. Fermentación activa día 3.',
-    author: 'Alejandro Rojas'
-  },
-  {
-    id: 4,
-    type: 'config',
-    timestamp: new Date(2026, 9, 29, 16, 45),
-    cuba: 'general',
-    message: 'Umbral de pH ajustado de 3.2 a 3.4 para todas las cubas de tinto.',
-    author: 'Admin'
-  },
-  {
-    id: 5,
-    type: 'nota',
-    timestamp: new Date(2026, 9, 29, 14, 20),
-    cuba: 'cuba-05',
-    message: 'Fermentación de Merlot entrando en fase final. Brix en 3.4, cercano a sequedad.',
-    author: 'María González'
-  },
-  {
-    id: 6,
-    type: 'alerta',
-    timestamp: new Date(2026, 9, 29, 10, 8),
-    cuba: 'cuba-04',
-    message: 'Alerta de sobrecalentamiento: 30.1°C en Syrah. Riesgo de parada de levadura.',
-    author: 'Sistema IoT'
-  },
-  {
-    id: 7,
-    type: 'lectura',
-    timestamp: new Date(2026, 9, 29, 8, 0),
-    cuba: 'cuba-06',
-    message: 'Lectura matutina: 12.5°C / 23.2 °Bx. Maceración prefermentativa en curso.',
-    author: 'Alejandro Rojas'
-  },
-  {
-    id: 8,
-    type: 'nota',
-    timestamp: new Date(2026, 9, 28, 17, 30),
-    cuba: 'cuba-07',
-    message: 'Chardonnay listo para trasiego. Borras finas decantadas, limpidez buena.',
-    author: 'María González'
-  },
-  {
-    id: 9,
-    type: 'config',
-    timestamp: new Date(2026, 9, 28, 9, 0),
-    cuba: 'cuba-08',
-    message: 'Intervalo de lectura del sensor DS18B20 reducido de 5 min a 2 min por alta actividad.',
-    author: 'Admin'
-  },
-  {
-    id: 10,
-    type: 'alerta',
-    timestamp: new Date(2026, 9, 28, 7, 22),
-    cuba: 'cuba-02',
-    message: 'Caída brusca de temperatura en Carménère: -3.2°C en 2 horas.',
-    author: 'Sistema IoT'
-  },
-  {
-    id: 11,
-    type: 'lectura',
-    timestamp: new Date(2026, 9, 27, 15, 0),
-    cuba: 'cuba-09',
-    message: 'Lectura vespertina: 24.2°C / 9.8 °Bx. Fermentación media estable.',
-    author: 'Alejandro Rojas'
-  },
-  {
-    id: 12,
-    type: 'nota',
-    timestamp: new Date(2026, 9, 27, 10, 45),
-    cuba: 'cuba-01',
-    message: 'Remontaje realizado. Color y extracto evolucionando bien.',
-    author: 'María González'
-  }
+  { id: 'cuba-04', label: 'Cuba 04' }
 ])
+
+const authorOptions = ref(['María González', 'Alejandro Rojas', 'Administrador General', 'Sistema IoT'])
+
+// ==========================================
+// ENTRADAS DE BITÁCORA REACTIVAS
+// ==========================================
+const entries = ref([])
+const isLoading = ref(false)
+const isSubmitting = ref(false)
+
+async function loadBitacora() {
+  isLoading.value = true
+  try {
+    const data = await binnacleService.listarEntradas()
+    if (Array.isArray(data)) {
+      entries.value = data.map((item) => ({
+        ...item,
+        timestamp: new Date(item.timestamp)
+      }))
+    }
+
+    // Cargar cubas reales si están disponibles
+    try {
+      const cubasData = await cubaService.listarCubas()
+      if (Array.isArray(cubasData) && cubasData.length > 0) {
+        const opts = [{ id: 'general', label: 'General' }]
+        cubasData.forEach((c) => {
+          opts.push({
+            id: `cuba-${String(c.id).padStart(2, '0')}`,
+            label: c.nombre || `Cuba ${c.codigo_cuba || c.id}`
+          })
+        })
+        cubasOptions.value = opts
+      }
+    } catch {
+      // Usar cubas por defecto si falla
+    }
+
+    // Cargar autores reales
+    try {
+      const usersData = await userService.listar()
+      if (Array.isArray(usersData) && usersData.length > 0) {
+        authorOptions.value = usersData.map((u) => u.name).concat(['Sistema IoT'])
+      }
+    } catch {
+      // Usar autores por defecto
+    }
+  } catch (err) {
+    console.error('Error al cargar bitácora:', err)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(() => {
+  loadBitacora()
+})
 
 // ==========================================
 // FILTROS Y BÚSQUEDA
 // ==========================================
-const activeFilter = ref('todos')  // 'todos' | 'nota' | 'alerta' | 'config' | 'lectura'
+const activeFilter = ref('todos')
 const searchQuery = ref('')
 
 const filterCounts = computed(() => {
@@ -190,7 +136,7 @@ const filteredEntries = computed(() => {
           e.message.toLowerCase().includes(q) ||
           e.author.toLowerCase().includes(q) ||
           cubaLabel.includes(q) ||
-          entryTypes[e.type].label.toLowerCase().includes(q)
+          (entryTypes[e.type]?.label || '').toLowerCase().includes(q)
         )
       }
       return true
@@ -240,7 +186,7 @@ function formatTime(date) {
 }
 
 function getCubaLabel(cubaId) {
-  const found = cubasOptions.find(c => c.id === cubaId)
+  const found = cubasOptions.value.find(c => c.id === cubaId)
   return found ? found.label : cubaId
 }
 
@@ -255,8 +201,6 @@ const newEntry = ref({
   author: 'María González'
 })
 
-const authorOptions = ['María González', 'Alejandro Rojas', 'Admin', 'Sistema IoT']
-
 function toggleForm() {
   showForm.value = !showForm.value
   if (showForm.value) {
@@ -267,23 +211,38 @@ function toggleForm() {
   }
 }
 
-function submitEntry() {
-  if (!newEntry.value.message.trim()) return
+async function submitEntry() {
+  if (!newEntry.value.message.trim() || isSubmitting.value) return
 
-  entries.value.unshift({
-    id: nextId++,
-    type: newEntry.value.type,
-    timestamp: new Date(),
-    cuba: newEntry.value.cuba,
-    message: newEntry.value.message.trim(),
-    author: newEntry.value.author
-  })
+  isSubmitting.value = true
+  try {
+    const res = await binnacleService.registrarEntrada({
+      type: newEntry.value.type,
+      cuba: newEntry.value.cuba,
+      message: newEntry.value.message.trim(),
+      author: newEntry.value.author
+    })
 
-  // Reset form
-  newEntry.value.message = ''
-  newEntry.value.type = 'nota'
-  newEntry.value.cuba = 'general'
-  showForm.value = false
+    entries.value.unshift({
+      id: res.id,
+      type: res.type,
+      timestamp: new Date(res.timestamp),
+      cuba: res.cuba,
+      message: res.message,
+      author: res.author,
+      dosis: res.dosis
+    })
+
+    // Reset form
+    newEntry.value.message = ''
+    newEntry.value.type = 'nota'
+    newEntry.value.cuba = 'general'
+    showForm.value = false
+  } catch (err) {
+    alert(err.message || 'Error al registrar la entrada en la bitácora.')
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 function cancelForm() {

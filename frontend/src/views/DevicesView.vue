@@ -446,45 +446,30 @@ function closePairModal() {
   isPairModalOpen.value = false
 }
 
-// Guardar nuevo dispositivo
-function handleSaveNewDevice() {
+// Guardar nuevo dispositivo con persistencia en Supabase PostgreSQL
+async function handleSaveNewDevice() {
   if (!newDevice.value.code || !newDevice.value.mac) return
 
-  const cuba = availableCubas.value.find(c => String(c.id) === String(newDevice.value.cubaId))
-  const sensorLabelMap = {
-    DS18B20: 'Sonda Térmica Estanco DS18B20',
-    'MPU-6050': 'Inclinómetro Giroscopio MPU-6050',
-    'PH-4502C': 'Sonda de pH Analógica PH-4502C',
-    DUAL: 'Combo Dual (DS18B20 + MPU-6050)'
-  }
+  try {
+    const created = await deviceService.registrarDispositivo({
+      code: newDevice.value.code.toUpperCase(),
+      name: newDevice.value.name,
+      mac: newDevice.value.mac.toUpperCase(),
+      model: newDevice.value.model,
+      sensorType: newDevice.value.sensorType,
+      cubaId: newDevice.value.cubaId,
+      powerSource: newDevice.value.powerSource,
+      samplingInterval: newDevice.value.samplingInterval,
+      notes: newDevice.value.notes
+    })
 
-  const newEntry = {
-    id: ++nextDeviceId,
-    code: newDevice.value.code.toUpperCase(),
-    name: newDevice.value.name,
-    mac: newDevice.value.mac.toUpperCase(),
-    model: newDevice.value.model,
-    sensorType: newDevice.value.sensorType,
-    sensorLabel: sensorLabelMap[newDevice.value.sensorType] || newDevice.value.sensorType,
-    assignedCubaId: cuba ? String(cuba.id) : null,
-    assignedCubaName: cuba ? cuba.name : 'Sin Asignar (Reserva)',
-    status: 'online',
-    statusLabel: 'En Línea',
-    signalRssi: -60,
-    signalQuality: 'good',
-    powerSource: newDevice.value.powerSource,
-    batteryLevel: newDevice.value.powerSource === 'battery' ? 100 : 100,
-    firmware: 'v2.4.1-ota',
-    lastTelemetry: 'Ahora mismo',
-    lastReadingValue: newDevice.value.sensorType === 'DS18B20' ? '22.0 °C' : '45.0°',
-    samplingInterval: newDevice.value.samplingInterval,
-    ipAddress: `192.168.10.${Math.floor(Math.random() * 100) + 50}`,
-    notes: newDevice.value.notes
+    const mapped = mapBackendDevice(created)
+    devices.value.unshift(mapped)
+    isPairModalOpen.value = false
+    showToast(`¡Dispositivo ${mapped.code || newDevice.value.code} registrado y persistido en la base de datos!`)
+  } catch (err) {
+    alert(err.message || 'Error al registrar el dispositivo en el servidor.')
   }
-
-  devices.value.unshift(newEntry)
-  isPairModalOpen.value = false
-  showToast(`¡Dispositivo ${newEntry.code} emparejado y vinculado exitosamente a ${newEntry.assignedCubaName}!`)
 }
 
 // Simular Ping a dispositivo

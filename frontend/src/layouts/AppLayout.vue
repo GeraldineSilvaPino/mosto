@@ -24,6 +24,8 @@ import {
   Sparkles
 } from 'lucide-vue-next'
 import alertService from '../services/alertService'
+import authService from '../services/authService'
+import companyService from '../services/companyService'
 
 const route = useRoute()
 const router = useRouter()
@@ -42,6 +44,45 @@ const globalSearchText = ref('')
 const showTenantMenu = ref(false)
 const showUserMenu = ref(false)
 
+// Usuario y Empresa sincronizados con backend y sesión
+const currentUser = ref(authService.obtenerUsuarioSesion() || {
+  name: 'Enología & Control',
+  email: 'enologo@mosto.cl',
+  role: 'Enólogo Jefe',
+  winery: 'Viña Santa Emiliana',
+  avatarInitial: 'EC'
+})
+
+const wineryName = ref(currentUser.value?.winery || 'Viña Santa Emiliana')
+
+async function syncProfile() {
+  if (authService.isAuthenticated()) {
+    try {
+      const u = await authService.obtenerUsuarioActual()
+      if (u) {
+        currentUser.value = u
+        if (u.winery) wineryName.value = u.winery
+      }
+    } catch {
+      // Mantener perfil local si falla
+    }
+  }
+
+  try {
+    const comp = await companyService.obtenerConfiguracion()
+    if (comp?.brandName) {
+      wineryName.value = comp.brandName
+    }
+  } catch {
+    // Mantener nombre actual
+  }
+}
+
+function handleLogout() {
+  authService.cerrarSesion()
+  router.push('/login')
+}
+
 async function updatePendingCount() {
   try {
     const metricas = await alertService.obtenerMetricas()
@@ -53,15 +94,28 @@ async function updatePendingCount() {
 
 onMounted(() => {
   updatePendingCount()
+  syncProfile()
   alertPollTimer = setInterval(updatePendingCount, 15000)
 
-  // Escuchar shortcut de teclado Ctrl+K o Cmd+K para enfocar búsqueda
   window.addEventListener('keydown', handleGlobalKeydown)
+  window.addEventListener('mosto:login-success', onUserChanged)
+  window.addEventListener('mosto:user-updated', onUserChanged)
+  window.addEventListener('mosto:auth-expired', handleLogout)
 })
+
+function onUserChanged(e) {
+  if (e.detail) {
+    currentUser.value = e.detail
+    if (e.detail.winery) wineryName.value = e.detail.winery
+  }
+}
 
 onBeforeUnmount(() => {
   if (alertPollTimer) clearInterval(alertPollTimer)
   window.removeEventListener('keydown', handleGlobalKeydown)
+  window.removeEventListener('mosto:login-success', onUserChanged)
+  window.removeEventListener('mosto:user-updated', onUserChanged)
+  window.removeEventListener('mosto:auth-expired', handleLogout)
 })
 
 function handleGlobalKeydown(e) {
@@ -132,8 +186,8 @@ const currentTitle = computed(() => {
               <Grape :size="15" :stroke-width="2.2" />
             </div>
             <div class="workspace-text">
-              <span class="workspace-title">vina-santaemiliana.cl</span>
-              <span class="workspace-sub">Planta Principal · Valle Central</span>
+              <span class="workspace-title">{{ wineryName }}</span>
+              <span class="workspace-sub">{{ currentUser.role || 'Control Enológico' }}</span>
             </div>
           </div>
           <ChevronDown :size="14" class="workspace-chevron" />
@@ -194,14 +248,14 @@ const currentTitle = computed(() => {
         </div>
       </nav>
 
-      <!-- Pie de Barra Lateral con Perfil de Usuario -->
+      <!-- Pie de Barra Lateral con Perfil de Usuario y Logout -->
       <div class="sidebar-footer">
-        <div class="user-profile">
+        <div class="user-profile" style="position: relative;">
           <div class="user-info-group">
-            <div class="user-avatar">SC</div>
+            <div class="user-avatar">{{ currentUser.avatarInitial || 'US' }}</div>
             <div class="user-details">
-              <span class="user-name">Sarah Chen</span>
-              <span class="user-role">sarah@santaemiliana.cl</span>
+              <span class="user-name">{{ currentUser.name }}</span>
+              <span class="user-role">{{ currentUser.email }}</span>
             </div>
           </div>
           <button
@@ -212,6 +266,28 @@ const currentTitle = computed(() => {
           >
             <MoreVertical :size="15" style="color: var(--text-muted);" />
           </button>
+
+          <!-- Menú Flotante de Usuario (Logout) -->
+          <div v-if="showUserMenu" class="user-dropdown-menu">
+            <div class="dropdown-header">
+              <strong>{{ currentUser.name }}</strong>
+              <small>{{ currentUser.role }}</small>
+            </div>
+            <div class="dropdown-divider"></div>
+            <button type="button" class="dropdown-item" @click="router.push('/usuarios'); showUserMenu = false">
+              <UsersRound :size="14" />
+              <span>Ver Equipo</span>
+            </button>
+            <button type="button" class="dropdown-item" @click="router.push('/configuracion-empresa'); showUserMenu = false">
+              <Building2 :size="14" />
+              <span>Configuración Viña</span>
+            </button>
+            <div class="dropdown-divider"></div>
+            <button type="button" class="dropdown-item logout-item" @click="handleLogout">
+              <LogOut :size="14" />
+              <span>Cerrar Sesión</span>
+            </button>
+          </div>
         </div>
       </div>
     </aside>
@@ -290,4 +366,69 @@ const currentTitle = computed(() => {
   background-color: var(--bg-subtle);
   color: var(--text-primary);
 }
+
+.user-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 25px rgba(35, 22, 28, 0.12);
+  padding: 0.4rem;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.dropdown-header {
+  padding: 0.4rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.dropdown-header strong {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+}
+
+.dropdown-header small {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.dropdown-divider {
+  height: 1px;
+  background-color: var(--border-color);
+  margin: 0.25rem 0;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  transition: all 0.12s ease;
+  width: 100%;
+  text-align: left;
+}
+
+.dropdown-item:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.dropdown-item.logout-item {
+  color: var(--status-danger);
+}
+
+.dropdown-item.logout-item:hover {
+  background-color: var(--status-danger-bg);
+}
+
 </style>

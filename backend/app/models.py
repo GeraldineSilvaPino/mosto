@@ -1,7 +1,6 @@
 """
 Modelos ORM de SQLAlchemy para MOSTO.
-Estructura alineada exactamente a las 19 tablas de Supabase (esquema oficial Fase 2).
-Equivalente a la capa @Entity en Spring Boot.
+Estructura alineada a las 18 tablas de Supabase PostgreSQL (esquema Fase 2).
 """
 from datetime import datetime
 from sqlalchemy import (
@@ -20,11 +19,24 @@ class EmpresaCliente(Base):
     __tablename__ = "EMPRESA_CLIENTE"
 
     id = Column(BigInteger, primary_key=True, index=True)
-    nomb_emp = Column(String(100), unique=True, nullable=False)
-    email_emp = Column(String(100), nullable=True)
+    nomb_emp = Column(String(150), unique=True, nullable=False)
+    email_emp = Column(String(120), nullable=True)
     direccion_emp = Column(String(200), nullable=True)
     activo = Column(Boolean, default=True)
     creado_en = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    # Configuración extendida SaaS y fiscal
+    rut = Column(String(50), nullable=True)
+    razon_social = Column(String(150), nullable=True)
+    giro = Column(String(150), nullable=True)
+    telefono = Column(String(50), nullable=True)
+    logo_url = Column(Text, nullable=True)
+    reporte_diario = Column(Boolean, default=True)
+    alertas_sms = Column(Boolean, default=True)
+    max_cubas = Column(Integer, default=24)
+    max_usuarios = Column(Integer, default=15)
+    plan_nombre = Column(String(100), default="Plan Bodega Industrial")
+    ciclo_facturacion = Column(String(100), default="Anual (Renovación: Nov 2027)")
 
     bodegas = relationship("Bodega", back_populates="empresa")
 
@@ -61,7 +73,7 @@ class Cepa(Base):
 
     id = Column(BigInteger, primary_key=True, index=True)
     tipo_uva = Column(String(50), nullable=True)           # Tinto / Blanco
-    nombre_variedad = Column(String(100), unique=True, nullable=False) # Cabernet, Carménère...
+    nombre_variedad = Column(String(100), unique=True, nullable=False) # Cabernet Sauvignon, Carménère...
 
 
 class Cuba(Base):
@@ -77,6 +89,7 @@ class Cuba(Base):
     material_id = Column(BigInteger, ForeignKey("TIPO_MATERIAL_CUBA.id"), nullable=True)
 
     bodega = relationship("Bodega", back_populates="cubas")
+    material = relationship("TipoMaterialCuba")
     procesos = relationship("ProcesoFermentacion", back_populates="cuba")
 
 
@@ -234,14 +247,35 @@ class EventoAlerta(Base):
 
 
 # ==========================================
-# 6. USUARIOS Y ROLES (RBAC)
+# 6. BITÁCORA ENOLÓGICA E INTERVENCIONES
+# ==========================================
+
+class BitacoraIntervencion(Base):
+    __tablename__ = "BITACORA_INTERVENCION"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    fecha_registro = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+    tipo_intervencion = Column(String(50), nullable=False) # 'nota', 'alerta', 'config', 'lectura'
+    descripcion = Column(Text, nullable=False)
+    dosis_aplicada = Column(String(100), nullable=True)
+    usuario_id = Column(BigInteger, ForeignKey("USUARIO.id"), nullable=False)
+    fermentacion_id = Column(BigInteger, ForeignKey("PROCESO_FERMENTACION.id"), nullable=True)
+    cuba_id = Column(BigInteger, ForeignKey("CUBA.id"), nullable=True)
+
+    usuario = relationship("Usuario")
+    fermentacion = relationship("ProcesoFermentacion")
+    cuba = relationship("Cuba")
+
+
+# ==========================================
+# 7. USUARIOS Y ROLES (RBAC)
 # ==========================================
 
 class Rol(Base):
     __tablename__ = "ROL"
 
     id = Column(BigInteger, primary_key=True, index=True)
-    nomb_rol = Column(String(50), unique=True, nullable=False)
+    codigo = Column(String(50), unique=True, nullable=False) # admin, enologo, operador
     descripcion = Column(String(200), nullable=True)
 
 
@@ -255,6 +289,12 @@ class Usuario(Base):
     empresa_id = Column(BigInteger, ForeignKey("EMPRESA_CLIENTE.id"), nullable=True)
     activo = Column(Boolean, default=True)
     creado_en = Column(DateTime(timezone=True), default=datetime.utcnow)
+    password_hash = Column(String(255), nullable=True)
+    rol = Column(String(50), default="operador")
+    auth_uid = Column(String(50), nullable=True)
+
+    empresa = relationship("EmpresaCliente")
+    bodega_asignaciones = relationship("UsuarioBodega", back_populates="usuario")
 
     @property
     def nombre(self):
@@ -263,3 +303,17 @@ class Usuario(Base):
     @property
     def email(self):
         return self.correo_elec
+
+
+class UsuarioBodega(Base):
+    __tablename__ = "USUARIO_BODEGA"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    usuario_id = Column(BigInteger, ForeignKey("USUARIO.id"), nullable=False)
+    bodega_id = Column(BigInteger, ForeignKey("BODEGA.id"), nullable=False)
+    rol_id = Column(BigInteger, ForeignKey("ROL.id"), nullable=False)
+    asignado_en = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    usuario = relationship("Usuario", back_populates="bodega_asignaciones")
+    bodega = relationship("Bodega")
+    rol = relationship("Rol")

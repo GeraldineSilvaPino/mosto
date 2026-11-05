@@ -15,10 +15,34 @@ export const apiClient = axios.create({
   }
 })
 
-// Interceptor de respuesta global para manejo unificado de errores
+// Interceptor de petición para inyectar token JWT automáticamente
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('mosto_auth_token') || sessionStorage.getItem('mosto_auth_token')
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
+// Interceptor de respuesta global para manejo unificado de errores y expiración de sesión
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      // Si el token expiró y no estamos en /login, limpiar sesión
+      const isLoginRequest = error.config?.url?.includes('/api/auth/login')
+      if (!isLoginRequest) {
+        localStorage.removeItem('mosto_auth_token')
+        sessionStorage.removeItem('mosto_auth_token')
+        localStorage.removeItem('mosto_user')
+        sessionStorage.removeItem('mosto_user')
+        window.dispatchEvent(new CustomEvent('mosto:auth-expired'))
+      }
+    }
+
     let errorMsg =
       error.response?.data?.detail ||
       error.message ||

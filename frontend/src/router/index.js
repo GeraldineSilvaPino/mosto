@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from '../layouts/AppLayout.vue'
+import authService from '../services/authService.js'
 
 const routes = [
   // ==========================================
@@ -9,17 +10,17 @@ const routes = [
     path: '/login',
     name: 'Login',
     component: () => import('../views/LoginView.vue'),
-    meta: { title: 'Inicio de Sesión', module: 'Módulo 1: Autenticación' }
+    meta: { title: 'Inicio de Sesión', public: true }
   },
   {
     path: '/recuperar-password',
     name: 'ForgotPassword',
     component: () => import('../views/ForgotPasswordView.vue'),
-    meta: { title: 'Recuperación de Contraseña', module: 'Módulo 1: Autenticación' }
+    meta: { title: 'Recuperación de Contraseña', public: true }
   },
 
   // ==========================================
-  // Layout Principal con Sidebar
+  // Layout Principal con Sidebar (Protegido)
   // ==========================================
   {
     path: '/',
@@ -104,6 +105,28 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+// Guardia de navegación para control de autenticación
+router.beforeEach((to, from, next) => {
+  // Título del documento
+  if (to.meta?.title) {
+    document.title = `${to.meta.title} · MOSTO Platform`
+  }
+
+  const authenticated = authService.isAuthenticated()
+
+  if (!to.meta?.public && !authenticated) {
+    // Si no está autenticado y la ruta es protegida, redirigir a Login
+    return next({ path: '/login', query: { redirect: to.fullPath } })
+  }
+
+  if (to.path === '/login' && authenticated) {
+    // Si ya está autenticado e intenta ir a login, redirigir a inicio
+    return next({ path: '/' })
+  }
+
+  next()
 })
 
 export default router

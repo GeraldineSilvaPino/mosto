@@ -13,6 +13,7 @@
 
 import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import authService from '../services/authService'
 import {
   Grape,
   Mail,
@@ -100,7 +101,6 @@ const setDemoCredentials = (role) => {
 
 // Proceso de autenticación simulada (Frontend Mock)
 const handleLogin = async () => {
-  // Marcar campos como tocados
   touched.email = true
   touched.password = true
   errorMessage.value = ''
@@ -114,38 +114,17 @@ const handleLogin = async () => {
   isLoading.value = true
 
   try {
-    // Simulamos latencia de red de 750ms para una experiencia realista
-    await new Promise((resolve) => setTimeout(resolve, 750))
+    const data = await authService.login({
+      email: form.email,
+      password: form.password,
+      rememberMe: form.rememberMe
+    })
 
-    // Simulación de credencial de prueba rechazada (ejemplo intencional si escribe 'error@mosto.cl')
-    if (form.email.toLowerCase() === 'error@mosto.cl') {
-      throw new Error('Credenciales inválidas. Comprueba tu correo y contraseña.')
-    }
+    successMessage.value = `¡Credenciales verificadas! Bienvenido, ${data.user?.name || 'usuario'}.`
 
-    // Generar sesión simulada local (Mock Token)
-    const mockToken = 'mock_jwt_mosto_' + Math.random().toString(36).substring(2) + Date.now()
-    const mockUser = {
-      name: form.email.includes('admin') ? 'Administrador General' : 'Enología & Control',
-      email: form.email.trim(),
-      role: form.email.includes('admin') ? 'Administrador' : 'Enólogo Jefe',
-      winery: 'Viña Santa Emiliana',
-      avatarInitial: form.email.substring(0, 2).toUpperCase()
-    }
-
-    if (form.rememberMe) {
-      localStorage.setItem('mosto_auth_token', mockToken)
-      localStorage.setItem('mosto_user', JSON.stringify(mockUser))
-    } else {
-      sessionStorage.setItem('mosto_auth_token', mockToken)
-      sessionStorage.setItem('mosto_user', JSON.stringify(mockUser))
-    }
-
-    successMessage.value = '¡Credenciales verificadas! Entrando al sistema...'
-
-    // Redirección al Dashboard tras breve confirmación visual
     setTimeout(() => {
       router.push('/')
-    }, 600)
+    }, 500)
   } catch (err) {
     errorMessage.value = err.message || 'Error al iniciar sesión. Inténtalo nuevamente.'
   } finally {

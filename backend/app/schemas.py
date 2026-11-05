@@ -333,3 +333,179 @@ class PerfilOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ==========================================
+# 7. DTOs PARA AUTENTICACIÓN Y SEGURIDAD (Módulo 1)
+# ==========================================
+
+class LoginIn(BaseModel):
+    email: str = Field(..., example="enologo@mosto.cl")
+    password: str = Field(..., min_length=4, example="vinacura2024")
+    remember_me: Optional[bool] = False
+
+
+class UserAuthPayload(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+    winery: str
+    avatarInitial: str
+
+
+class LoginOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserAuthPayload
+
+
+class PasswordResetIn(BaseModel):
+    email: str = Field(..., example="enologo@mosto.cl")
+
+
+# ==========================================
+# 8. DTOs PARA GESTIÓN DE USUARIOS Y ROLES (Módulo 5)
+# ==========================================
+
+class UsuarioOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+    active: bool
+    phone: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UsuarioCreateIn(BaseModel):
+    name: str = Field(..., min_length=2, example="Andrea Muñoz")
+    email: str = Field(..., example="andrea.munoz@vinamosto.cl")
+    role: str = Field(..., example="operador") # admin | enologo | operador | operario
+    password: Optional[str] = Field("mosto2026", example="mosto2026")
+    phone: Optional[str] = Field("+56912345678", example="+56912345678")
+    bodega_id: Optional[int] = Field(None, example=5)
+
+
+class UsuarioUpdateRolIn(BaseModel):
+    role: str = Field(..., example="enologo")
+
+
+class UsuarioUpdateEstadoIn(BaseModel):
+    active: bool
+
+
+# ==========================================
+# 9. DTOs PARA CONFIGURACIÓN DE EMPRESA Y SAAS (Módulo 5)
+# ==========================================
+
+class SaasQuotaDTO(BaseModel):
+    planName: str
+    billingCycle: str
+    status: str
+    usedCubas: int
+    maxCubas: int
+    usedUsers: int
+    maxUsers: int
+
+
+class EmpresaOut(BaseModel):
+    brandName: str
+    facility: str
+    valley: str
+    logoUrl: Optional[str] = ""
+    taxId: str
+    legalName: str
+    taxCategory: str
+    address: str
+    region: str
+    contactEmail: str
+    contactPhone: str
+    dailyEnologyReport: bool
+    smsCriticalAlerts: bool
+    saasQuota: SaasQuotaDTO
+
+
+class EmpresaUpdateIn(BaseModel):
+    brandName: Optional[str] = None
+    facility: Optional[str] = None
+    valley: Optional[str] = None
+    logoUrl: Optional[str] = None
+    taxId: Optional[str] = None
+    legalName: Optional[str] = None
+    taxCategory: Optional[str] = None
+    address: Optional[str] = None
+    region: Optional[str] = None
+    contactEmail: Optional[str] = None
+    contactPhone: Optional[str] = None
+    dailyEnologyReport: Optional[bool] = None
+    smsCriticalAlerts: Optional[bool] = None
+
+
+class AmpliacionCuotaIn(BaseModel):
+    extra_cubas: int = Field(..., ge=1, le=100, example=6)
+
+
+# ==========================================
+# 10. DTOs PARA BITÁCORA ENOLÓGICA (Módulo 4)
+# ==========================================
+
+class BitacoraCreateIn(BaseModel):
+    type: str = Field(..., example="nota") # nota | alerta | config | lectura
+    cuba: Optional[str] = Field("general", example="cuba-01")
+    message: str = Field(..., min_length=2, example="Remontaje realizado.")
+    author: Optional[str] = Field("Sistema", example="María González")
+    dosis: Optional[str] = Field(None, example="35 mg/L")
+
+
+class BitacoraOut(BaseModel):
+    id: int
+    type: str
+    timestamp: datetime
+    cuba: str
+    message: str
+    author: str
+    dosis: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ==========================================
+# 11. DTOs PARA REGISTRO DE DISPOSITIVOS IOT (Módulo 4)
+# ==========================================
+
+class DispositivoCreateIn(BaseModel):
+    code: str = Field(..., example="ESP32-CB05-TEMP")
+    name: str = Field(..., example="Nodo Térmico Cuba 05")
+    mac: str = Field(..., example="24:6F:28:AB:CD:EF")
+    model: Optional[str] = Field("ESP32-WROOM-32D", example="ESP32-WROOM-32D")
+    sensorType: str = Field(..., example="DS18B20") # DS18B20 | MPU-6050 | PH-4502C | DUAL
+    cubaId: Optional[Any] = Field(None, example=1)
+    powerSource: Optional[str] = Field("mains", example="mains")
+    samplingInterval: Optional[str] = Field("1 min", example="1 min")
+    notes: Optional[str] = Field(None, example="Instalado en vendimia 2026.")
+
+
+# ==========================================
+# 12. DTOs DE CATÁLOGOS MAESTROS
+# ==========================================
+
+class CepaOut(BaseModel):
+    id: int
+    name: str
+    tipo_uva: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TipoMaterialCubaOut(BaseModel):
+    id: int
+    nombre: str
+
+    class Config:
+        from_attributes = True

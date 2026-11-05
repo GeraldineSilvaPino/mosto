@@ -13,6 +13,7 @@
  */
 
 import { ref, reactive, computed } from 'vue'
+import authService from '../services/authService'
 import {
   Grape,
   Mail,
@@ -75,14 +76,11 @@ const handleRecoverPassword = async () => {
   isLoading.value = true
 
   try {
-    // Simular latencia de red de 750ms
-    await new Promise((resolve) => setTimeout(resolve, 750))
-
-    // Guardar el correo al que se le envió para el mensaje de confirmación
+    await authService.recuperarPassword(form.email)
     sentEmail.value = form.email.trim()
     isSubmitted.value = true
   } catch (err) {
-    errorMessage.value = 'Ocurrió un error al procesar la solicitud. Intenta nuevamente.'
+    errorMessage.value = err.message || 'Ocurrió un error al procesar la solicitud. Intenta nuevamente.'
   } finally {
     isLoading.value = false
   }
