@@ -306,7 +306,7 @@ class TelemetryService:
         ultima_lectura = (
             db.query(LecturaTelemetria)
             .filter(LecturaTelemetria.fermentacion_id == proceso_id)
-            .order_by(desc(LecturaTelemetria.timestamp))
+            .order_by(desc(LecturaTelemetria.id))
             .first()
         )
 
@@ -413,7 +413,7 @@ class TelemetryService:
         ultima_lectura = (
             db.query(LecturaTelemetria)
             .filter(LecturaTelemetria.fermentacion_id == proceso_id)
-            .order_by(desc(LecturaTelemetria.timestamp))
+            .order_by(desc(LecturaTelemetria.id))
             .first()
         )
 

@@ -4,16 +4,17 @@
  * Módulo 2: Monitoreo en Vivo (Core)
  *
  * Características implementadas:
- * 1. Cuadrícula (grid) responsive y moderna de tarjetas de cubas con datos mock locales.
+ * 1. Consumo asíncrono en tiempo real de GET /api/cubas mediante cubaService.
  * 2. Indicadores visuales en tiempo real: Temperatura (°C), Grados Brix (°Bx) y Semáforos de Estado (Normal, Advertencia, Crítico).
- * 3. Barra de métricas resumen (KPIs) con filtrado interactivo por clic.
- * 4. Barra de herramientas con buscador por cepa/cuba y filtros de estado.
- * 5. Simulación de telemetría en vivo (actualización reactiva de lecturas con fluctuaciones reales).
- * 6. Enlaces interactivos al detalle de cuba.
- * 7. 100% Frontend autónomo (sin requerir backend).
+ * 3. Detección dinámica de fluctuaciones del simulador IoT con cálculo reactivo de tendencia térmica (alza/baja/estable) y resplandor visual (flash-update).
+ * 4. Polling automático en tiempo real cada 5 segundos con limpieza en onBeforeUnmount y cache-busting.
+ * 5. Manejo robusto de estados de carga (Skeleton cards) y error de conexión con botón "Reintentar".
+ * 6. Barra de métricas resumen (KPIs) calculadas reactivamente con computed en base a la API (Cubas Totales, En Fermentación, Advertencias).
+ * 7. Barra de herramientas con buscador por cepa/cuba y filtros de estado.
+ * 8. Navegación hacia /cubas/:id preservando el ID real de la cuba.
  */
 
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Cylinder,
@@ -30,227 +31,263 @@ import {
   TrendingDown,
   Layers,
   Clock,
-  Sparkles
+  Sparkles,
+  Radio
 } from 'lucide-vue-next'
+import cubaService from '../services/cubaService'
 
 const router = useRouter()
 
-// Datos mock iniciales de las cubas de la bodega
-const cubas = ref([
-  {
-    id: 1,
-    codigo: 'Cuba 01',
-    variedad: 'Cabernet Sauvignon',
-    lote: 'Lote CS-2024-A',
-    fase: 'Fermentación Alcohólica',
-    dia: 6,
-    volumenActual: 13500,
-    volumenTotal: 15000,
-    temperatura: 23.4,
-    tempMin: 22.0,
-    tempMax: 26.0,
-    brix: 14.2,
-    brixInicial: 24.5,
-    estado: 'normal', // 'normal' | 'advertencia' | 'critico'
-    tendenciaTemp: 'estable',
-    ultimaLectura: 'Hace 1 min'
-  },
-  {
-    id: 2,
-    codigo: 'Cuba 02',
-    variedad: 'Carménère',
-    lote: 'Lote CM-2024-B',
-    fase: 'Fermentación Alcohólica',
-    dia: 3,
-    volumenActual: 11800,
-    volumenTotal: 12000,
-    temperatura: 27.6,
-    tempMin: 23.0,
-    tempMax: 27.0,
-    brix: 18.5,
-    brixInicial: 25.0,
-    estado: 'advertencia',
-    tendenciaTemp: 'alza',
-    ultimaLectura: 'Hace 30 seg',
-    alertaMsg: 'Temperatura cerca del límite superior (+0.6 °C)'
-  },
-  {
-    id: 3,
-    codigo: 'Cuba 03',
-    variedad: 'Sauvignon Blanc',
-    lote: 'Lote SB-2024-F',
-    fase: 'Fermentación en Frío',
-    dia: 9,
-    volumenActual: 9500,
-    volumenTotal: 10000,
-    temperatura: 15.2,
-    tempMin: 14.0,
-    tempMax: 17.0,
-    brix: 8.1,
-    brixInicial: 22.0,
-    estado: 'normal',
-    tendenciaTemp: 'baja',
-    ultimaLectura: 'Hace 2 min'
-  },
-  {
-    id: 4,
-    codigo: 'Cuba 04',
-    variedad: 'Syrah',
-    lote: 'Lote SY-2024-C',
-    fase: 'Pico de Fermentación',
-    dia: 4,
-    volumenActual: 17200,
-    volumenTotal: 18000,
-    temperatura: 30.1,
-    tempMin: 24.0,
-    tempMax: 28.0,
-    brix: 11.4,
-    brixInicial: 25.5,
-    estado: 'critico',
-    tendenciaTemp: 'alza',
-    ultimaLectura: 'Hace 15 seg',
-    alertaMsg: 'Alerta de sobrecalentamiento. Riesgo de parada de levadura.'
-  },
-  {
-    id: 5,
-    codigo: 'Cuba 05',
-    variedad: 'Merlot',
-    lote: 'Lote ME-2024-A',
-    fase: 'Fin de Fermentación',
-    dia: 11,
-    volumenActual: 14200,
-    volumenTotal: 15000,
-    temperatura: 21.8,
-    tempMin: 20.0,
-    tempMax: 25.0,
-    brix: 3.4,
-    brixInicial: 24.0,
-    estado: 'normal',
-    tendenciaTemp: 'estable',
-    ultimaLectura: 'Hace 3 min'
-  },
-  {
-    id: 6,
-    codigo: 'Cuba 06',
-    variedad: 'Pinot Noir',
-    lote: 'Lote PN-2024-D',
-    fase: 'Maceración Prefermentativa',
-    dia: 2,
-    volumenActual: 7800,
-    volumenTotal: 8000,
-    temperatura: 12.5,
-    tempMin: 10.0,
-    tempMax: 14.0,
-    brix: 23.2,
-    brixInicial: 23.5,
-    estado: 'normal',
-    tendenciaTemp: 'estable',
-    ultimaLectura: 'Hace 1 min'
-  },
-  {
-    id: 7,
-    codigo: 'Cuba 07',
-    variedad: 'Chardonnay',
-    lote: 'Lote CH-2024-E',
-    fase: 'Estabilización y Borras',
-    dia: 14,
-    volumenActual: 11900,
-    volumenTotal: 12000,
-    temperatura: 13.9,
-    tempMin: 12.0,
-    tempMax: 16.0,
-    brix: 1.8,
-    brixInicial: 22.8,
-    estado: 'normal',
-    tendenciaTemp: 'estable',
-    ultimaLectura: 'Hace 5 min'
-  },
-  {
-    id: 8,
-    codigo: 'Cuba 08',
-    variedad: 'Malbec',
-    lote: 'Lote MB-2024-B',
-    fase: 'Fase Inicial',
-    dia: 2,
-    volumenActual: 15400,
-    volumenTotal: 16000,
-    temperatura: 26.8,
-    tempMin: 22.0,
-    tempMax: 26.0,
-    brix: 20.4,
-    brixInicial: 25.0,
-    estado: 'advertencia',
-    tendenciaTemp: 'alza',
-    ultimaLectura: 'Hace 45 seg',
-    alertaMsg: 'Tendencia rápida al alza (+1.2 °C en 2h)'
-  },
-  {
-    id: 9,
-    codigo: 'Cuba 09',
-    variedad: 'Cabernet Franc',
-    lote: 'Lote CF-2024-A',
-    fase: 'Fermentación Media',
-    dia: 7,
-    volumenActual: 10800,
-    volumenTotal: 11000,
-    temperatura: 24.2,
-    tempMin: 22.0,
-    tempMax: 26.0,
-    brix: 9.8,
-    brixInicial: 24.8,
-    estado: 'normal',
-    tendenciaTemp: 'estable',
-    ultimaLectura: 'Hace 2 min'
-  }
-])
+// Estado Asíncrono y Datos de Cubas
+const cubas = ref([])
+const loading = ref(true)
+const error = ref(null)
+const isRefreshing = ref(false)
+const lastSyncTime = ref(null)
+const updatedCubaIds = ref(new Set())
+let pollInterval = null
+let secondTicker = null
+const currentSecondsTick = ref(Date.now())
 
 // Filtros y Búsqueda
 const searchQuery = ref('')
-const selectedFilter = ref('todos') // 'todos' | 'normal' | 'advertencia' | 'critico'
-const sortBy = ref('id') // 'id' | 'temp-desc' | 'brix-asc' | 'alerta'
-const isRefreshing = ref(false)
+const selectedFilter = ref('todos') // 'todos' | 'fermentacion' | 'normal' | 'advertencia' | 'critico'
+const sortBy = ref('id') // 'id' | 'temp-desc' | 'temp-asc' | 'brix-asc' | 'brix-desc' | 'alerta'
 
-// Métricas Globales (KPIs)
+/**
+ * Mapeo de DTO Backend (CubaOut) a Modelo Frontend con detección de cambios
+ * cuba.id ➔ id
+ * cuba.codigo ➔ codigo_cuba
+ * cuba.variedad ➔ variedad
+ * cuba.volumenActual ➔ volumen_actual_lts
+ * cuba.temperatura ➔ ultima_temperatura
+ * cuba.brix ➔ ultimos_brix
+ * cuba.fase ➔ estado_operativo ("en_uso" = Activa, "disponible" = Disponible)
+ */
+const mapearCuba = (item, previa = null) => {
+  const estaEnUso = item.estado_operativo === 'en_uso'
+  const fase = estaEnUso
+    ? 'Activa'
+    : item.estado_operativo === 'disponible'
+      ? 'Disponible'
+      : item.estado_operativo || 'Disponible'
+
+  const temp =
+    item.ultima_temperatura !== null && item.ultima_temperatura !== undefined
+      ? Number(item.ultima_temperatura)
+      : null
+  const brix =
+    item.ultimos_brix !== null && item.ultimos_brix !== undefined
+      ? Number(item.ultimos_brix)
+      : null
+
+  // Detección de tendencia térmica y cambios respecto a la lectura previa
+  let tendenciaTemp = 'estable'
+  let haCambiado = false
+
+  if (previa && typeof previa.temperatura === 'number' && typeof temp === 'number') {
+    const diffTemp = Math.round((temp - previa.temperatura) * 100) / 100
+    if (diffTemp > 0.05) {
+      tendenciaTemp = 'alza'
+    } else if (diffTemp < -0.05) {
+      tendenciaTemp = 'baja'
+    } else {
+      tendenciaTemp = previa.tendenciaTemp || 'estable'
+    }
+
+    const diffBrix =
+      typeof previa.brix === 'number' && typeof brix === 'number'
+        ? Math.abs(brix - previa.brix)
+        : 0
+
+    if (Math.abs(diffTemp) >= 0.05 || diffBrix >= 0.05) {
+      haCambiado = true
+    }
+  }
+
+  const tempMin = typeof item.temp_min_perfil === 'number' ? item.temp_min_perfil : 16.0
+  const tempMax = typeof item.temp_max_perfil === 'number' ? item.temp_max_perfil : 26.0
+
+  // Diagnóstico de estado térmico según umbrales del proceso
+  let estado = 'normal'
+  let alertaMsg = null
+
+  if (temp !== null) {
+    if (temp > tempMax + 1.5) {
+      estado = 'critico'
+      alertaMsg = `Alerta crítica de sobrecalentamiento (${temp.toFixed(1)} °C > ${tempMax} °C)`
+    } else if (temp > tempMax) {
+      estado = 'advertencia'
+      alertaMsg = `Temperatura sobre límite superior (${temp.toFixed(1)} °C > ${tempMax} °C)`
+    } else if (temp < tempMin - 1.5) {
+      estado = 'critico'
+      alertaMsg = `Alerta crítica de enfriamiento excesivo (${temp.toFixed(1)} °C < ${tempMin} °C)`
+    } else if (temp < tempMin) {
+      estado = 'advertencia'
+      alertaMsg = `Temperatura bajo límite inferior (${temp.toFixed(1)} °C < ${tempMin} °C)`
+    }
+  }
+
+  return {
+    id: item.id,
+    codigo: item.codigo_cuba || `Cuba ${item.id}`,
+    nombre: item.nombre || `Cuba ${item.codigo_cuba || item.id}`,
+    variedad: item.variedad || (estaEnUso ? 'Sin asignar' : 'Disponible'),
+    lote: item.lote || (estaEnUso ? `Lote ${item.id}-2026` : 'Sin Lote'),
+    volumenActual: typeof item.volumen_actual_lts === 'number' ? item.volumen_actual_lts : 0,
+    volumenTotal: typeof item.capacidad_lts === 'number' ? item.capacidad_lts : 10000,
+    temperatura: temp,
+    tempMin,
+    tempMax,
+    brix,
+    brixInicial: 24.5,
+    fase,
+    dia: item.dia_fermentacion || 1,
+    estado_operativo: item.estado_operativo || 'disponible',
+    estado,
+    alertaMsg,
+    tendenciaTemp,
+    ultima_lectura_timestamp: item.ultima_lectura_timestamp,
+    _haCambiado: haCambiado
+  }
+}
+
+/**
+ * Formatea el tiempo transcurrido desde la última lectura de telemetría
+ */
+const formatTiempoLectura = (timestamp, estaEnUso) => {
+  // Para forzar reactividad en el segundo
+  void currentSecondsTick.value
+
+  if (!timestamp) {
+    return estaEnUso ? 'En línea' : 'Sin lecturas'
+  }
+
+  const lecturaDate = new Date(timestamp)
+  const ahora = Date.now()
+  const diffSec = Math.floor((ahora - lecturaDate.getTime()) / 1000)
+
+  const horaStr = lecturaDate.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+
+  if (isNaN(diffSec) || diffSec < 5) {
+    return `Hace instantes (${horaStr})`
+  }
+  if (diffSec < 60) {
+    return `Hace ${diffSec}s (${horaStr})`
+  }
+  if (diffSec < 3600) {
+    return `Hace ${Math.floor(diffSec / 60)}m (${horaStr})`
+  }
+  return `Hace ${Math.floor(diffSec / 3600)}h (${horaStr})`
+}
+
+/**
+ * Consulta la lista de cubas y telemetría mediante cubaService
+ * @param {boolean} isInitial Indica si es la carga inicial (activa skeleton cards)
+ */
+const fetchCubas = async (isInitial = false) => {
+  if (isInitial) {
+    loading.value = true
+    error.value = null
+  } else {
+    isRefreshing.value = true
+  }
+
+  try {
+    const data = await cubaService.listarCubas()
+    const nuevasCubas = []
+    const changedIds = new Set()
+
+    for (const item of data || []) {
+      const previa = cubas.value.find((c) => c.id === item.id)
+      const nueva = mapearCuba(item, previa)
+      if (nueva._haCambiado) {
+        changedIds.add(item.id)
+      }
+      nuevasCubas.push(nueva)
+    }
+
+    cubas.value = nuevasCubas
+
+    // Si hubo cambios en telemetría, activar resplandor visual temporal
+    if (changedIds.size > 0) {
+      updatedCubaIds.value = changedIds
+      setTimeout(() => {
+        updatedCubaIds.value = new Set()
+      }, 1500)
+    }
+
+    lastSyncTime.value = new Date().toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
+    error.value = null
+  } catch (err) {
+    console.error('[DashboardView] Error cargando cubas:', err)
+    error.value = err.message || 'Error de comunicación con el servidor MOSTO'
+  } finally {
+    if (isInitial) {
+      loading.value = false
+    }
+    isRefreshing.value = false
+  }
+}
+
+// Métricas Globales (KPIs) calculadas reactivamente con computed
 const stats = computed(() => {
   const total = cubas.value.length
-  const normales = cubas.value.filter(c => c.estado === 'normal').length
-  const advertencias = cubas.value.filter(c => c.estado === 'advertencia').length
-  const criticos = cubas.value.filter(c => c.estado === 'critico').length
+  const enFermentacion = cubas.value.filter(
+    (c) => c.estado_operativo === 'en_uso' || c.fase === 'Activa'
+  ).length
+  const normales = cubas.value.filter((c) => c.estado === 'normal').length
+  const advertencias = cubas.value.filter((c) => c.estado === 'advertencia').length
+  const criticos = cubas.value.filter((c) => c.estado === 'critico').length
 
-  const sumTemp = cubas.value.reduce((acc, c) => acc + c.temperatura, 0)
-  const avgTemp = (sumTemp / total).toFixed(1)
+  const cubasConTemp = cubas.value.filter(
+    (c) => typeof c.temperatura === 'number' && !isNaN(c.temperatura)
+  )
+  const sumTemp = cubasConTemp.reduce((acc, c) => acc + c.temperatura, 0)
+  const avgTemp = cubasConTemp.length > 0 ? (sumTemp / cubasConTemp.length).toFixed(1) : '--'
 
-  return { total, normales, advertencias, criticos, avgTemp }
+  return { total, enFermentacion, normales, advertencias, criticos, avgTemp }
 })
 
 // Lista filtrada y ordenada
 const filteredCubas = computed(() => {
   return cubas.value
-    .filter(c => {
-      // Filtro por estado
-      if (selectedFilter.value !== 'todos' && c.estado !== selectedFilter.value) {
+    .filter((c) => {
+      // Filtro por estado o proceso
+      if (selectedFilter.value === 'fermentacion') {
+        if (c.estado_operativo !== 'en_uso' && c.fase !== 'Activa') return false
+      } else if (selectedFilter.value !== 'todos' && c.estado !== selectedFilter.value) {
         return false
       }
+
       // Búsqueda por texto (código o cepa o lote)
       if (searchQuery.value.trim()) {
         const q = searchQuery.value.toLowerCase()
         return (
-          c.codigo.toLowerCase().includes(q) ||
-          c.variedad.toLowerCase().includes(q) ||
-          c.lote.toLowerCase().includes(q) ||
-          c.fase.toLowerCase().includes(q)
+          (c.codigo && c.codigo.toLowerCase().includes(q)) ||
+          (c.variedad && c.variedad.toLowerCase().includes(q)) ||
+          (c.lote && c.lote.toLowerCase().includes(q)) ||
+          (c.fase && c.fase.toLowerCase().includes(q))
         )
       }
       return true
     })
     .sort((a, b) => {
-      if (sortBy.value === 'temp-desc') return b.temperatura - a.temperatura
-      if (sortBy.value === 'temp-asc') return a.temperatura - b.temperatura
-      if (sortBy.value === 'brix-asc') return a.brix - b.brix
-      if (sortBy.value === 'brix-desc') return b.brix - a.brix
+      if (sortBy.value === 'temp-desc') return (b.temperatura ?? -999) - (a.temperatura ?? -999)
+      if (sortBy.value === 'temp-asc') return (a.temperatura ?? 999) - (b.temperatura ?? 999)
+      if (sortBy.value === 'brix-asc') return (a.brix ?? 999) - (b.brix ?? 999)
+      if (sortBy.value === 'brix-desc') return (b.brix ?? -999) - (a.brix ?? -999)
       if (sortBy.value === 'alerta') {
         const order = { critico: 0, advertencia: 1, normal: 2 }
-        return order[a.estado] - order[b.estado]
+        return (order[a.estado] ?? 2) - (order[b.estado] ?? 2)
       }
       return a.id - b.id
     })
@@ -270,53 +307,43 @@ const getStatusBadge = (estado) => {
 
 // Porcentaje de azúcar convertida (Progreso de fermentación)
 const getBrixProgress = (cuba) => {
-  const consumed = Math.max(0, cuba.brixInicial - cuba.brix)
-  const percentage = (consumed / cuba.brixInicial) * 100
+  if (cuba.brix === null || cuba.brix === undefined) return 0
+  const brixInicial = cuba.brixInicial || 24.5
+  const consumed = Math.max(0, brixInicial - cuba.brix)
+  const percentage = (consumed / brixInicial) * 100
   return Math.min(100, Math.max(0, Math.round(percentage)))
 }
 
-// Simulación de actualización de telemetría (Reactividad en vivo)
-const simulateTelemetryRefresh = () => {
-  isRefreshing.value = true
-
-  setTimeout(() => {
-    cubas.value = cubas.value.map(c => {
-      // Fluctuación aleatoria leve (-0.3 a +0.3 °C)
-      const deltaTemp = (Math.random() * 0.6 - 0.3)
-      const newTemp = Math.round((c.temperatura + deltaTemp) * 10) / 10
-
-      // Consumo leve de brix si está fermentando
-      let newBrix = c.brix
-      if (c.brix > 1 && Math.random() > 0.6) {
-        newBrix = Math.round((c.brix - 0.1) * 10) / 10
-      }
-
-      // Evaluar estado térmico según umbrales de la cuba
-      let newEstado = c.estado
-      if (newTemp > c.tempMax + 1.5) {
-        newEstado = 'critico'
-      } else if (newTemp > c.tempMax || newTemp < c.tempMin) {
-        newEstado = 'advertencia'
-      } else {
-        newEstado = 'normal'
-      }
-
-      return {
-        ...c,
-        temperatura: newTemp,
-        brix: newBrix,
-        estado: newEstado,
-        ultimaLectura: 'Hace instantes'
-      }
-    })
-    isRefreshing.value = false
-  }, 600)
-}
-
-// Navegación hacia detalle de cuba
+// Navegación hacia detalle de cuba preservando el ID real (/cubas/:id)
 const goToDetail = (cubaId) => {
-  router.push(`/cuba-detalle?id=${cubaId}`)
+  router.push(`/cubas/${cubaId}`)
 }
+
+// Ciclo de vida y Polling reactivo cada 5 segundos
+onMounted(() => {
+  fetchCubas(true)
+
+  // Polling automático cada 5 segundos para sincronizar en vivo con simulate_esp.py
+  pollInterval = setInterval(() => {
+    fetchCubas(false)
+  }, 5000)
+
+  // Ticker de segundos para refrescar contador relativo del pie de tarjeta
+  secondTicker = setInterval(() => {
+    currentSecondsTick.value = Date.now()
+  }, 1000)
+})
+
+onBeforeUnmount(() => {
+  if (pollInterval) {
+    clearInterval(pollInterval)
+    pollInterval = null
+  }
+  if (secondTicker) {
+    clearInterval(secondTicker)
+    secondTicker = null
+  }
+})
 </script>
 
 <template>
@@ -327,6 +354,10 @@ const goToDetail = (cubaId) => {
         <div class="header-pretitle">
           <span>Monitoreo en Tiempo Real</span>
           <span class="live-dot"></span>
+          <span v-if="lastSyncTime" class="sync-badge">
+            <Radio :size="12" class="sync-icon-pulse" />
+            <span>Sincronizado {{ lastSyncTime }}</span>
+          </span>
         </div>
         <h1 class="header-title">Vista General de Cubas</h1>
         <p class="header-description">
@@ -334,15 +365,15 @@ const goToDetail = (cubaId) => {
         </p>
       </div>
 
-      <!-- Botón de actualización simulada -->
+      <!-- Botón de actualización manual -->
       <div class="header-actions">
         <button
           type="button"
           class="btn-refresh"
           :class="{ 'is-spinning': isRefreshing }"
           :disabled="isRefreshing"
-          title="Simular nueva lectura de telemetría IoT"
-          @click="simulateTelemetryRefresh"
+          title="Actualizar telemetría IoT desde el servidor"
+          @click="fetchCubas(false)"
         >
           <RefreshCw :size="15" />
           <span>{{ isRefreshing ? 'Leyendo Sensores...' : 'Actualizar Telemetría' }}</span>
@@ -352,7 +383,7 @@ const goToDetail = (cubaId) => {
 
     <!-- Barra de Métricas y Semáforos Resumen (KPIs) -->
     <section class="kpi-grid">
-      <!-- Total Cubas -->
+      <!-- Cubas Totales -->
       <div
         class="kpi-card"
         :class="{ active: selectedFilter === 'todos' }"
@@ -363,25 +394,25 @@ const goToDetail = (cubaId) => {
         </div>
         <div class="kpi-data">
           <span class="kpi-number">{{ stats.total }}</span>
-          <span class="kpi-label">Cubas en Monitoreo</span>
+          <span class="kpi-label">Cubas Totales</span>
         </div>
       </div>
 
-      <!-- Cubas Normales -->
+      <!-- En Fermentación -->
       <div
-        class="kpi-card good"
-        :class="{ active: selectedFilter === 'normal' }"
-        @click="selectedFilter = 'normal'"
+        class="kpi-card fermentation"
+        :class="{ active: selectedFilter === 'fermentacion' }"
+        @click="selectedFilter = 'fermentacion'"
       >
-        <div class="kpi-icon-box good">
-          <CheckCircle2 :size="20" />
+        <div class="kpi-icon-box fermentation">
+          <Sparkles :size="20" />
         </div>
         <div class="kpi-data">
           <div class="kpi-number-row">
-            <span class="kpi-number">{{ stats.normales }}</span>
-            <span class="kpi-indicator green"></span>
+            <span class="kpi-number">{{ stats.enFermentacion }}</span>
+            <span class="kpi-indicator wine"></span>
           </div>
-          <span class="kpi-label">En Rango Óptimo</span>
+          <span class="kpi-label">En Fermentación</span>
         </div>
       </div>
 
@@ -399,7 +430,7 @@ const goToDetail = (cubaId) => {
             <span class="kpi-number">{{ stats.advertencias }}</span>
             <span class="kpi-indicator amber"></span>
           </div>
-          <span class="kpi-label">En Advertencia</span>
+          <span class="kpi-label">Advertencias</span>
         </div>
       </div>
 
@@ -427,7 +458,7 @@ const goToDetail = (cubaId) => {
           <Thermometer :size="20" />
         </div>
         <div class="kpi-data">
-          <span class="kpi-number">{{ stats.avgTemp }}<small>°C</small></span>
+          <span class="kpi-number">{{ stats.avgTemp }}<small v-if="stats.avgTemp !== '--'">°C</small></span>
           <span class="kpi-label">Temp. Promedio Bodega</span>
         </div>
       </div>
@@ -442,7 +473,7 @@ const goToDetail = (cubaId) => {
           v-model="searchQuery"
           type="text"
           class="search-input"
-          placeholder="Buscar por cuba, cepa (ej. Cabernet, Cuba 02)..."
+          placeholder="Buscar por cuba, cepa (ej. Cabernet, CB-01)..."
         />
         <button
           v-if="searchQuery"
@@ -463,6 +494,15 @@ const goToDetail = (cubaId) => {
           @click="selectedFilter = 'todos'"
         >
           Todas ({{ stats.total }})
+        </button>
+        <button
+          type="button"
+          class="pill-btn pill-fermentation"
+          :class="{ active: selectedFilter === 'fermentacion' }"
+          @click="selectedFilter = 'fermentacion'"
+        >
+          <span class="pill-dot wine"></span>
+          En Fermentación ({{ stats.enFermentacion }})
         </button>
         <button
           type="button"
@@ -507,19 +547,77 @@ const goToDetail = (cubaId) => {
       </div>
     </section>
 
+    <!-- Alerta de Error Visual con Botón de Reintento (Criterio 3) -->
+    <section v-if="error && cubas.length === 0" class="error-state-card">
+      <div class="error-icon-box">
+        <AlertCircle :size="32" />
+      </div>
+      <div class="error-info">
+        <h3 class="error-title">No fue posible conectar con el servidor de telemetría</h3>
+        <p class="error-message">{{ error }}</p>
+        <p class="error-hint">Verifique que el backend de MOSTO esté iniciado en http://localhost:8000.</p>
+      </div>
+      <button
+        type="button"
+        class="btn-retry"
+        :disabled="loading"
+        @click="fetchCubas(true)"
+      >
+        <RefreshCw :size="16" :class="{ 'is-spinning': loading }" />
+        <span>Reintentar</span>
+      </button>
+    </section>
+
+    <!-- Banner discreto si falla el polling de fondo con datos previos cargados -->
+    <div v-if="error && cubas.length > 0" class="polling-warning-banner">
+      <AlertTriangle :size="16" />
+      <span>Error al actualizar telemetría en tiempo real: {{ error }}. Mostrando última lectura conocida.</span>
+      <button type="button" class="btn-banner-retry" @click="fetchCubas(false)">
+        Reintentar ahora
+      </button>
+    </div>
+
+    <!-- Skeleton Cards durante el loading inicial (Criterio 2) -->
+    <div v-if="loading && cubas.length === 0" class="cubas-grid" role="region" aria-label="Cargando cubas">
+      <div v-for="n in 6" :key="n" class="cuba-card skeleton-card">
+        <div class="skeleton-header">
+          <div class="skeleton-circle shimmer"></div>
+          <div class="skeleton-text-group">
+            <div class="skeleton-bar bar-title shimmer"></div>
+            <div class="skeleton-bar bar-subtitle shimmer"></div>
+          </div>
+          <div class="skeleton-badge shimmer"></div>
+        </div>
+        <div class="skeleton-subinfo shimmer"></div>
+        <div class="skeleton-metrics">
+          <div class="skeleton-metric-box shimmer"></div>
+          <div class="skeleton-metric-box shimmer"></div>
+        </div>
+        <div class="skeleton-footer">
+          <div class="skeleton-bar bar-footer shimmer"></div>
+          <div class="skeleton-bar bar-action shimmer"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Cuadrícula Responsive de Tarjetas de Cubas -->
-    <main class="cubas-grid" role="region" aria-label="Cuadrícula de cubas">
+    <main
+      v-else-if="cubas.length > 0"
+      class="cubas-grid"
+      role="region"
+      aria-label="Cuadrícula de cubas"
+    >
       <article
         v-for="cuba in filteredCubas"
         :key="cuba.id"
         class="cuba-card"
-        :class="[`card-status-${cuba.estado}`]"
+        :class="[`card-status-${cuba.estado}`, { 'cuba-card-pulse': updatedCubaIds.has(cuba.id) }]"
         @click="goToDetail(cuba.id)"
       >
         <!-- Encabezado de la Tarjeta -->
         <header class="cuba-card-header">
           <div class="cuba-ident">
-            <div class="cuba-icon-avatar">
+            <div class="cuba-icon-avatar" :class="{ 'avatar-glow': updatedCubaIds.has(cuba.id) }">
               <Cylinder :size="18" />
             </div>
             <div>
@@ -538,7 +636,10 @@ const goToDetail = (cubaId) => {
         <!-- Lote y Fase Actual -->
         <div class="cuba-subinfo">
           <span class="cuba-lot">{{ cuba.lote }}</span>
-          <span class="cuba-phase">{{ cuba.fase }} · Día {{ cuba.dia }}</span>
+          <span class="cuba-phase">
+            {{ cuba.fase }}
+            <template v-if="cuba.estado_operativo === 'en_uso'"> · Día {{ cuba.dia }}</template>
+          </span>
         </div>
 
         <!-- Banner de Alerta si aplica -->
@@ -550,7 +651,10 @@ const goToDetail = (cubaId) => {
         <!-- Medidores Principales: Temperatura y Brix -->
         <div class="metrics-container">
           <!-- Métrica: Temperatura -->
-          <div class="metric-box temp-box" :class="[`temp-${cuba.estado}`]">
+          <div
+            class="metric-box temp-box"
+            :class="[`temp-${cuba.estado}`, { 'metric-highlight': updatedCubaIds.has(cuba.id) }]"
+          >
             <div class="metric-header">
               <span class="metric-label">
                 <Thermometer :size="14" />
@@ -560,20 +664,22 @@ const goToDetail = (cubaId) => {
             </div>
 
             <div class="metric-main-value">
-              <span class="metric-digits">{{ cuba.temperatura.toFixed(1) }}</span>
+              <span class="metric-digits">
+                {{ cuba.temperatura !== null ? cuba.temperatura.toFixed(1) : '--' }}
+              </span>
               <span class="metric-unit">°C</span>
 
               <span
                 v-if="cuba.tendenciaTemp === 'alza'"
                 class="trend-tag trend-up"
-                title="Tendencia al alza"
+                title="Tendencia al alza (+ temp)"
               >
                 <TrendingUp :size="13" />
               </span>
               <span
                 v-else-if="cuba.tendenciaTemp === 'baja'"
                 class="trend-tag trend-down"
-                title="Tendencia a la baja"
+                title="Tendencia a la baja (- temp)"
               >
                 <TrendingDown :size="13" />
               </span>
@@ -584,14 +690,17 @@ const goToDetail = (cubaId) => {
               <div
                 class="temp-range-marker"
                 :style="{
-                  left: `${Math.min(95, Math.max(5, ((cuba.temperatura - 10) / 25) * 100))}%`
+                  left: `${cuba.temperatura !== null ? Math.min(95, Math.max(5, ((cuba.temperatura - 10) / 25) * 100)) : 50}%`
                 }"
               ></div>
             </div>
           </div>
 
           <!-- Métrica: Grados Brix -->
-          <div class="metric-box brix-box">
+          <div
+            class="metric-box brix-box"
+            :class="{ 'metric-highlight': updatedCubaIds.has(cuba.id) }"
+          >
             <div class="metric-header">
               <span class="metric-label">
                 <Droplets :size="14" />
@@ -601,10 +710,16 @@ const goToDetail = (cubaId) => {
             </div>
 
             <div class="metric-main-value">
-              <span class="metric-digits">{{ cuba.brix.toFixed(1) }}</span>
+              <span class="metric-digits">
+                {{ cuba.brix !== null ? cuba.brix.toFixed(1) : '--' }}
+              </span>
               <span class="metric-unit">°Bx</span>
 
-              <span class="progress-percent" title="Progreso estimado de fermentación">
+              <span
+                v-if="cuba.brix !== null"
+                class="progress-percent"
+                title="Progreso estimado de fermentación"
+              >
                 {{ getBrixProgress(cuba) }}% conv.
               </span>
             </div>
@@ -624,11 +739,14 @@ const goToDetail = (cubaId) => {
           <div class="footer-meta">
             <div class="meta-item">
               <Layers :size="13" />
-              <span>{{ ((cuba.volumenActual / cuba.volumenTotal) * 100).toFixed(0) }}% · {{ cuba.volumenActual.toLocaleString() }} L</span>
+              <span>
+                {{ cuba.volumenTotal > 0 ? ((cuba.volumenActual / cuba.volumenTotal) * 100).toFixed(0) : 0 }}% ·
+                {{ cuba.volumenActual ? cuba.volumenActual.toLocaleString() : 0 }} L
+              </span>
             </div>
-            <div class="meta-item time">
+            <div class="meta-item time" :title="cuba.ultima_lectura_timestamp || 'Sin fecha'">
               <Clock :size="13" />
-              <span>{{ cuba.ultimaLectura }}</span>
+              <span>{{ formatTiempoLectura(cuba.ultima_lectura_timestamp, cuba.estado_operativo === 'en_uso') }}</span>
             </div>
           </div>
 
@@ -641,7 +759,10 @@ const goToDetail = (cubaId) => {
     </main>
 
     <!-- Estado vacío cuando no hay resultados de búsqueda -->
-    <div v-if="filteredCubas.length === 0" class="empty-state">
+    <div
+      v-if="!loading && !error && filteredCubas.length === 0"
+      class="empty-state"
+    >
       <div class="empty-icon-box">
         <Search :size="32" />
       </div>
@@ -682,7 +803,7 @@ const goToDetail = (cubaId) => {
 .header-pretitle {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.55rem;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -698,6 +819,24 @@ const goToDetail = (cubaId) => {
   background-color: var(--status-good);
   box-shadow: 0 0 0 2px rgba(42, 102, 68, 0.25);
   animation: pulse-dot 1.8s infinite ease-in-out;
+}
+
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background-color: var(--status-good-bg);
+  border: 1px solid var(--status-good-border);
+  color: var(--status-good);
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-full);
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.sync-icon-pulse {
+  animation: pulse-dot 1.5s infinite;
 }
 
 @keyframes pulse-dot {
@@ -821,6 +960,12 @@ const goToDetail = (cubaId) => {
   border: 1px solid var(--border-color);
 }
 
+.kpi-icon-box.fermentation {
+  background-color: var(--wine-100);
+  color: var(--wine-700);
+  border: 1px solid var(--wine-600);
+}
+
 .kpi-icon-box.good {
   background-color: var(--status-good-bg);
   color: var(--status-good);
@@ -881,6 +1026,10 @@ const goToDetail = (cubaId) => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+}
+
+.kpi-indicator.wine {
+  background-color: var(--wine-700);
 }
 
 .kpi-indicator.green {
@@ -992,6 +1141,7 @@ const goToDetail = (cubaId) => {
   border-radius: 50%;
 }
 
+.pill-dot.wine { background-color: var(--wine-700); }
 .pill-dot.green { background-color: var(--status-good); }
 .pill-dot.amber { background-color: var(--status-warn); }
 .pill-dot.red { background-color: var(--status-danger); }
@@ -1024,6 +1174,103 @@ const goToDetail = (cubaId) => {
   cursor: pointer;
 }
 
+/* Estado de Error Visual */
+.error-state-card {
+  background-color: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+  border-radius: var(--radius-md);
+  padding: 1.75rem 2rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  box-shadow: var(--shadow-subtle);
+}
+
+.error-icon-box {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-full);
+  background-color: rgba(153, 27, 46, 0.12);
+  color: var(--status-danger);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.error-info {
+  flex: 1;
+}
+
+.error-title {
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--status-danger);
+  margin-bottom: 0.25rem;
+}
+
+.error-message {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.error-hint {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.btn-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: var(--wine-700);
+  color: #FFFFFF;
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 1.2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  border: none;
+}
+
+.btn-retry:hover:not(:disabled) {
+  background-color: var(--wine-800);
+  transform: translateY(-1px);
+}
+
+.btn-retry:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Banner de Alerta de Polling de Fondo */
+.polling-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background-color: var(--status-warn-bg);
+  border: 1px solid var(--status-warn-border);
+  color: var(--status-warn);
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.btn-banner-retry {
+  margin-left: auto;
+  text-decoration: underline;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--wine-800);
+  background: none;
+  border: none;
+}
+
 /* Cuadrícula de Cubas */
 .cubas-grid {
   display: grid;
@@ -1051,6 +1298,37 @@ const goToDetail = (cubaId) => {
   transform: translateY(-3px);
   box-shadow: 0 8px 24px rgba(35, 22, 28, 0.08);
   border-color: var(--wine-600);
+}
+
+/* Resplandor visual cuando la cuba recibe nueva telemetría */
+.cuba-card-pulse {
+  animation: card-glow 1.4s ease-out;
+}
+
+@keyframes card-glow {
+  0% {
+    box-shadow: 0 0 0 3px rgba(42, 102, 68, 0.4), 0 8px 24px rgba(42, 102, 68, 0.15);
+  }
+  100% {
+    box-shadow: var(--shadow-subtle);
+  }
+}
+
+.avatar-glow {
+  animation: avatar-pulse 1.4s ease-out;
+}
+
+@keyframes avatar-pulse {
+  0% {
+    background-color: var(--status-good-bg);
+    color: var(--status-good);
+    transform: scale(1.1);
+  }
+  100% {
+    background-color: var(--wine-50);
+    color: var(--wine-700);
+    transform: scale(1);
+  }
 }
 
 /* Borde semántico de acento superior */
@@ -1101,6 +1379,7 @@ const goToDetail = (cubaId) => {
   align-items: center;
   justify-content: center;
   color: var(--wine-700);
+  transition: all 0.25s ease;
 }
 
 .cuba-code {
@@ -1219,6 +1498,13 @@ const goToDetail = (cubaId) => {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  transition: all 0.25s ease;
+}
+
+/* Resplandor visual en las cajas de métricas */
+.metric-highlight {
+  border-color: var(--status-good);
+  background-color: var(--status-good-bg);
 }
 
 .metric-header {
@@ -1256,6 +1542,7 @@ const goToDetail = (cubaId) => {
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1;
+  transition: color 0.2s ease;
 }
 
 .metric-unit {
@@ -1317,6 +1604,7 @@ const goToDetail = (cubaId) => {
   border: 2px solid var(--text-primary);
   transform: translateX(-50%);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: left 0.3s ease;
 }
 
 /* Barra de progreso de Brix */
@@ -1368,6 +1656,8 @@ const goToDetail = (cubaId) => {
 
 .meta-item.time {
   color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.71rem;
 }
 
 .card-action-btn {
@@ -1438,6 +1728,110 @@ const goToDetail = (cubaId) => {
   background-color: var(--wine-800);
 }
 
+/* Skeleton Loading Cards */
+.skeleton-card {
+  pointer-events: none;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  min-height: 280px;
+}
+
+.skeleton-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.skeleton-circle {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.skeleton-text-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.skeleton-bar {
+  border-radius: var(--radius-sm);
+}
+
+.bar-title {
+  width: 60%;
+  height: 16px;
+}
+
+.bar-subtitle {
+  width: 40%;
+  height: 12px;
+}
+
+.skeleton-badge {
+  width: 65px;
+  height: 22px;
+  border-radius: var(--radius-full);
+}
+
+.skeleton-subinfo {
+  width: 75%;
+  height: 14px;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.skeleton-metric-box {
+  height: 95px;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.bar-footer {
+  width: 45%;
+  height: 14px;
+}
+
+.bar-action {
+  width: 25%;
+  height: 14px;
+}
+
+/* Animación Shimmer */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-subtle) 0%,
+    var(--border-subtle) 50%,
+    var(--bg-subtle) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-pulse 1.5s infinite;
+}
+
+@keyframes shimmer-pulse {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 /* Responsividad */
 @media (max-width: 768px) {
   .dashboard-header {
@@ -1460,6 +1854,11 @@ const goToDetail = (cubaId) => {
 
   .metrics-container {
     grid-template-columns: 1fr;
+  }
+
+  .error-state-card {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

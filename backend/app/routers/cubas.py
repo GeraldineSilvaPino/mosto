@@ -4,7 +4,7 @@ Controlador REST para monitoreo en tiempo real y curvas de fermentación.
 """
 from typing import List, Optional
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
@@ -65,8 +65,13 @@ def _mapear_cuba_out(c: Cuba, proceso_activo: Optional[ProcesoFermentacion], ult
 
 
 @router.get("", response_model=List[CubaOut], summary="Listar todas las cubas con telemetría en tiempo real")
-def listar_cubas(db: Session = Depends(get_db)):
+def listar_cubas(response: Response, db: Session = Depends(get_db)):
     """Lista todas las cubas de la bodega con su última lectura de sensores registrada."""
+    # Cabeceras explícitas para evitar que los navegadores almacenen en caché el polling
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
     cubas = db.query(Cuba).order_by(Cuba.id.asc()).all()
     resultado = []
     
@@ -84,7 +89,7 @@ def listar_cubas(db: Session = Depends(get_db)):
             ultima_lectura = (
                 db.query(LecturaTelemetria)
                 .filter(LecturaTelemetria.fermentacion_id == proceso_activo.id)
-                .order_by(desc(LecturaTelemetria.timestamp))
+                .order_by(desc(LecturaTelemetria.id))
                 .first()
             )
 
@@ -94,8 +99,12 @@ def listar_cubas(db: Session = Depends(get_db)):
 
 
 @router.get("/{cuba_id}", response_model=CubaOut, summary="Obtener detalle de una cuba por ID")
-def obtener_cuba(cuba_id: int, db: Session = Depends(get_db)):
+def obtener_cuba(cuba_id: int, response: Response, db: Session = Depends(get_db)):
     """Obtiene el estado detallado de una cuba y sus sensores."""
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
     c = db.query(Cuba).filter(Cuba.id == cuba_id).first()
     if not c:
         raise HTTPException(status_code=404, detail=f"Cuba con ID {cuba_id} no encontrada")
@@ -112,7 +121,7 @@ def obtener_cuba(cuba_id: int, db: Session = Depends(get_db)):
         ultima_lectura = (
             db.query(LecturaTelemetria)
             .filter(LecturaTelemetria.fermentacion_id == proceso_activo.id)
-            .order_by(desc(LecturaTelemetria.timestamp))
+            .order_by(desc(LecturaTelemetria.id))
             .first()
         )
 
