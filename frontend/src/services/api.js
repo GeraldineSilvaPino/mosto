@@ -19,10 +19,18 @@ export const apiClient = axios.create({
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    const errorMsg =
+    let errorMsg =
       error.response?.data?.detail ||
       error.message ||
       'Error de comunicación con el servidor MOSTO'
+
+    if (typeof errorMsg === 'object' && errorMsg !== null) {
+      if (Array.isArray(errorMsg)) {
+        errorMsg = errorMsg.map((e) => e.msg || e.message || JSON.stringify(e)).join(' | ')
+      } else {
+        errorMsg = errorMsg.message || errorMsg.msg || JSON.stringify(errorMsg)
+      }
+    }
 
     console.error(`[API Error ${error.response?.status || 'RED'}]:`, errorMsg)
     return Promise.reject(new Error(errorMsg))
