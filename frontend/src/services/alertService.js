@@ -27,10 +27,12 @@ export default {
 
   /**
    * Obtiene los KPIs globales de auditoría y la métrica MTTR calculada
-   * @param {number|null} cubaId - ID opcional de la cuba para filtrar
+   * @param {number|string|null} cubaId - ID opcional de la cuba para filtrar
    */
   obtenerMetricas(cubaId = null) {
-    const params = cubaId ? { cuba_id: cubaId } : {}
+    const params = (cubaId !== null && cubaId !== undefined && cubaId !== '' && cubaId !== 'all')
+      ? { cuba_id: Number(cubaId) }
+      : {}
     return apiClient.get('/api/alertas/metricas', { params }).then((res) => res.data)
   },
 
@@ -57,8 +59,16 @@ export default {
    * @param {Object} params - { estado, severidad, cuba_id }
    */
   async exportarCsv(params = {}) {
+    const cleanParams = {}
+    Object.keys(params).forEach((key) => {
+      const val = params[key]
+      if (val !== null && val !== undefined && val !== '' && val !== 'todas' && val !== 'todos' && val !== 'all') {
+        cleanParams[key] = val
+      }
+    })
+
     const response = await apiClient.get('/api/alertas/exportar', {
-      params,
+      params: cleanParams,
       responseType: 'blob'
     })
 
@@ -80,4 +90,3 @@ export default {
     window.URL.revokeObjectURL(url)
   }
 }
-
