@@ -298,6 +298,7 @@ const auditLogs = ref([...initialMockAuditLogs])
 const cubasList = ref([])
 const isLoading = ref(false)
 const isResolving = ref(false)
+const isExporting = ref(false)
 const resolveError = ref(null)
 const resolutionNoteInput = ref('')
 const toastMessage = ref('')
@@ -726,8 +727,10 @@ async function resolveIncident() {
   }
 }
 
-// Exportación a CSV oficial o fallback
+// Exportación a CSV oficial (GET /api/alertas/exportar) con feedback y fallback resiliente
 async function exportToCSV() {
+  if (isExporting.value) return
+  isExporting.value = true
   try {
     const params = {}
     if (filterCuba.value !== 'all') {
@@ -736,11 +739,19 @@ async function exportToCSV() {
     if (filterSeverity.value !== 'all') {
       params.severidad = filterSeverity.value === 'danger' ? 'critica' : (filterSeverity.value === 'warning' ? 'media' : 'baja')
     }
-    await alertService.exportarCsv(params)
-    showToast('Bitácora de auditoría exportada exitosamente en formato CSV.')
+    if (filterResolution.value !== 'all') {
+      if (filterResolution.value === 'resolved') params.estado = 'resuelta'
+      else if (filterResolution.value === 'mitigated') params.estado = 'atendida'
+      else if (filterResolution.value === 'pending') params.estado = 'pendiente'
+    }
+    const result = await alertService.exportarCsv(params)
+    const exportedFilename = result?.filename || 'bitacora_alertas_export.csv'
+    showToast(`Bitácora exportada exitosamente (${exportedFilename}).`)
   } catch (err) {
     console.warn('Fallo exportación remota CSV, utilizando exportación cliente fallback:', err)
     exportToCSVClientFallback()
+  } finally {
+    isExporting.value = false
   }
 }
 
@@ -777,15 +788,10 @@ function exportToCSVClientFallback() {
     `"${i.resolvedBy || ''}"`
   ])
 
-  const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\r\n')
+  const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n')
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.setAttribute('href', url)
-  link.setAttribute('download', `auditoria_alertas_mosto_${new Date().toISOString().slice(0, 10)}.csv`)
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  const fallbackName = `bitacora_alertas_export_${new Date().toISOString().slice(0, 10)}.csv`
+  alertService.descargarBlob(blob, fallbackName)
 
   showToast('Informe de auditoría exportado exitosamente en formato CSV.')
 }
@@ -825,10 +831,13 @@ function exportToCSVClientFallback() {
         <button
           class="btn-primary"
           @click="exportToCSV"
-          title="Descargar informe completo en formato CSV para Excel"
+          :disabled="isExporting"
+          :class="{ 'btn-loading': isExporting }"
+          title="Descargar bitácora histórica en formato CSV para Excel"
         >
-          <Download :size="16" />
-          <span>Exportar Informe (CSV)</span>
+          <RefreshCw v-if="isExporting" :size="16" class="spin-anim" />
+          <Download v-else :size="16" />
+          <span>{{ isExporting ? 'Generando CSV...' : 'Exportar Bitácora CSV' }}</span>
         </button>
       </div>
     </header>
@@ -1321,6 +1330,15 @@ function exportToCSVClientFallback() {
 .btn-secondary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.btn-primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn-loading {
+  pointer-events: none;
 }
 
 .spin-anim {
