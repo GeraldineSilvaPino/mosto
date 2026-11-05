@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Simulador de nodos IoT de MOSTO — TASK-BE-02A
-=============================================
+Simulador de nodos IoT de MOSTO — TASK-BE-02A / TASK-BE-02B
+=============================================================
 
 Emula los dos microcontroladores fisicos del proyecto (ver
 `backend/docs/HARDWARE_Y_TELEMETRIA.md` seccion 5) enviando telemetria
@@ -18,6 +18,12 @@ Simula una fermentacion realista:
   * Inclinacion del flotador derivada del °Brix para que el backend ejecute
     su conversion tilt -> Brix -> SG real (no se envian °Bx ni SG directos).
   * Descarga de bateria Li-Po y variacion de RSSI.
+
+TASK-BE-02B — Inyector de anomalias (pruebas de estres):
+  * `--spike-temp 33.0`    Sobrecalentamiento subito para probar el disparador
+                           de alertas termicas (temperatura_alta / critica).
+  * `--drain-battery 3.2`  Descarga de bateria para probar alertas de hardware.
+  * `--drop-ph 2.8`        Desviacion de acidez para probar alertas de pH.
 
 Uso:
     python backend/scripts/simulate_esp.py --cuba 1 --interval 5
@@ -74,7 +80,15 @@ class SimuladorFermentacion:
     Cada ciclo avanza `horas_por_ciclo` horas de fermentacion. El tiempo
     simulado sigue avanzando aunque el backend no responda, porque el
     proceso fisico es independiente de la conectividad de la red.
+
+    TASK-BE-02B: puede forzarse una o varias anomalias (fallos inyectados)
+    que sobrescriben los valores fisicos calculados y saltan los clamps de
+    seguridad, para probar el disparador de alertas de RulesEngine.
     """
+
+    # Rango fisico aceptado por la sonda DS18B20 sin clampamientos
+    TEMP_MIN_FISICO = 10.0
+    TEMP_MAX_FISICO = 40.0
 
     def __init__(self, args: argparse.Namespace) -> None:
         self.cuba_id: int = args.cuba
@@ -85,8 +99,25 @@ class SimuladorFermentacion:
         self.temp_base: float = float(args.temp_base)
         self.temp_amplitud: float = float(args.temp_amplitud)
 
+        # --- TASK-BE-02B: fallos inyectados (None = desactivado) ----------
+        self.spike_temp: Optional[float] = getattr(args, "spike_temp", None)
+        self.drain_battery: Optional[float] = getattr(args, "drain_battery", None)
+        self.drop_ph: Optional[float] = getattr(args, "drop_ph", None)
+
         self.horas_simuladas: float = 0.0
         self.ciclo: int = 0
+
+    @property
+    def fallas_activas(self) -> List[str]:
+        """Lista legible de anomalias inyectadas con `--spike-temp` etc."""
+        activas = []
+        if self.spike_temp is not None:
+            activas.append("SPIKE-TEMP {0:.1f}°C".format(self.spike_temp))
+        if self.drain_battery is not None:
+            activas.append("DRAIN-BATTERY {0:.1f}V".format(self.drain_battery))
+        if self.drop_ph is not None:
+            activas.append("DROP-PH {0:.1f}".format(self.drop_ph))
+        return activas
 
     # -- Tiempo -----------------------------------------------------------
     @property
@@ -122,10 +153,13 @@ class SimuladorFermentacion:
 
     @property
     def temperatura_vino(self) -> float:
+        # TASK-BE-02B: sobrecalentamiento forzado sin clamp ni ruido
+        if self.spike_temp is not None:
+            return round(self.spike_temp, 2)
         # Fermentacion exotermica + ciclo diario + ruido de lectura DS18B20
         ciclo_diario = self.temp_amplitud * math.sin(2.0 * math.pi * self.horas_simuladas / 24.0)
         valor = self.temp_base + ciclo_diario + random.gauss(0.0, 0.15)
-        return round(max(15.0, min(30.0, valor)), 2)
+        return round(max(self.TEMP_MIN_FISICO, min(self.TEMP_MAX_FISICO, valor)), 2)
 
     @property
     def temperatura_ambiente(self) -> float:
@@ -142,6 +176,9 @@ class SimuladorFermentacion:
 
     @property
     def ph(self) -> float:
+        # TASK-BE-02B: desviacion de acidez forzada sin clamp ni ruido
+        if self.drop_ph is not None:
+            return round(self.drop_ph, 2)
         # El mosto se acidifica levemente a medida que avanza la fermentacion
         valor = 3.60 - 0.30 * self.progreso + random.gauss(0.0, 0.01)
         return round(max(3.10, min(3.90, valor)), 2)
@@ -168,6 +205,9 @@ class SimuladorFermentacion:
 
     @property
     def bateria_voltaje(self) -> float:
+        # TASK-BE-02B: descarga de bateria forzada sin clamp ni descarga progresiva
+        if self.drain_battery is not None:
+            return round(self.drain_battery, 2)
         # Descarga progresiva de la celda Li-Po 1S durante la vendimia
         voltaje = BATERIA_V_MAX - (BATERIA_V_MAX - BATERIA_V_MIN) * self.progreso
         voltaje -= random.uniform(0.0, 0.03)
@@ -453,9 +493,13 @@ class _AyudaCompleta(argparse.HelpFormatter):
 
     def _get_help_string(self, action: argparse.Action) -> str:
         ayuda = action.help or ""
-        if action.default not in (None, False) and "%(default)" not in ayuda:
-            return "{0} (default: %(default)s)".format(ayuda)
-        return ayuda
+        if "%(default)" in ayuda:
+            return ayuda
+        # Flags con type None (strings sin type=) y flags de anomalia con
+        # default None usan otra representacion: no se les pega el default.
+        if action.type is None or action.default is None:
+            return ayuda
+        return "{0} (default: %(default)s)".format(ayuda)
 
     def _fill_text(self, text: str, width: int, indent: str) -> str:
         return "".join(indent + linea for linea in text.splitlines(True))
@@ -534,6 +578,25 @@ def parsear_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     hardware.add_argument(
         "--mac-esp8266", default="5C:CF:7F:12:34:56",
         help="Direccion MAC del ESP8266 (flotador densimetro)",
+    )
+
+    capa = parser.add_argument_group("inyector de anomalias (TASK-BE-02B)")
+    capa.add_argument(
+        "--spike-temp", type=float, default=None, metavar="CELSIUS",
+        help="SPIKE de temperatura: fuerza temp_vino a este valor (°C) en TODOS los paquetes "
+             "(p. ej. 33.0). Sin clamp ni ruido. Activa la alerta `temperatura_alta` si supera "
+             "el maximo del perfil (severidad media/alta/critica segun el desvio).",
+    )
+    capa.add_argument(
+        "--drain-battery", type=float, default=None, metavar="VOLTAJE",
+        help="DRENADO de bateria: fija bateria_voltaje a este valor (V) en TODOS los paquetes "
+             "(p. ej. 3.2, proximo al vacio de 3.30V). Prueba alertas de hardware.",
+    )
+    capa.add_argument(
+        "--drop-ph", type=float, default=None, metavar="PH",
+        help="CAIDA de pH: fuerza el pH a este valor en TODOS los paquetes "
+             "(p. ej. 2.8, bajo el minimo de operacion 3.20 del perfil). "
+             "Activa la alerta `ph_bajo` (severidad media/alta/critica segun el desvio).",
     )
 
     robustez = parser.add_argument_group("robustez y ejecucion")
