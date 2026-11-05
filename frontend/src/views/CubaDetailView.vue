@@ -37,12 +37,16 @@ import {
   Info,
   RefreshCw,
   AlertCircle,
-  Radio
+  Radio,
+  Play,
+  Square,
+  X
 } from 'lucide-vue-next'
 
 import { Chart as ChartJS, registerables } from 'chart.js'
 import cubaService from '../services/cubaService'
 import alertService from '../services/alertService'
+import processService from '../services/processService'
 
 ChartJS.register(...registerables)
 
@@ -103,6 +107,16 @@ const activeTimeRangeLabel = computed(() => {
 // ==========================================
 const tieneProcesoActivo = computed(() => {
   return Boolean(cuba.value && cuba.value.proceso_activo_id)
+})
+
+const estaDisponible = computed(() => {
+  if (!cuba.value) return false
+  const estado = String(cuba.value.estado_operativo || '').toLowerCase()
+  return (estado === 'disponible' || estado === '') && !cuba.value.proceso_activo_id
+})
+
+const capacidadMaximaLitros = computed(() => {
+  return cuba.value?.capacidad_lts ? Number(cuba.value.capacidad_lts) : 10000
 })
 
 const tieneLecturas = computed(() => {
@@ -817,6 +831,173 @@ watch(
   }
 )
 
+// ==========================================
+// CICLO DE VIDA DE PROCESOS (INICIAR / FINALIZAR)
+// ==========================================
+const isStartModalOpen = ref(false)
+const startFormSubmitting = ref(false)
+const startFormError = ref(null)
+const startForm = ref({
+  volumen_litros: '',
+  brix_inicial: 24.5,
+  brix_objetivo: 1.0,
+  dias_estimados: 14,
+  densidad_inicial_sg: 1.1000
+})
+
+const isFinishModalOpen = ref(false)
+const finishFormSubmitting = ref(false)
+const finishFormError = ref(null)
+const finishForm = ref({
+  densidad_final_sg: '',
+  brix_final: '',
+  observaciones: ''
+})
+
+const toastMessage = ref('')
+const toastType = ref('success') // 'success' | 'error' | 'warning' | 'info'
+let toastTimeout = null
+
+function showToast(message, type = 'success') {
+  toastMessage.value = message
+  toastType.value = type
+  if (toastTimeout) clearTimeout(toastTimeout)
+  toastTimeout = setTimeout(() => {
+    toastMessage.value = ''
+  }, 4000)
+}
+
+function abrirModalIniciar() {
+  if (!estaDisponible.value) {
+    showToast(`La cuba ${cubaNombre.value} no está en estado "disponible".`, 'warning')
+    return
+  }
+  startFormError.value = null
+  const cap = capacidadMaximaLitros.value
+  const sugerido = Math.round(cap * 0.8)
+  startForm.value = {
+    volumen_litros: sugerido,
+    brix_inicial: 24.5,
+    brix_objetivo: 1.0,
+    dias_estimados: 14,
+    densidad_inicial_sg: 1.1000
+  }
+  isStartModalOpen.value = true
+}
+
+function cerrarModalIniciar() {
+  isStartModalOpen.value = false
+  startFormError.value = null
+}
+
+async function ejecutarIniciarProceso() {
+  if (!estaDisponible.value) {
+    startFormError.value = 'La cuba no está disponible para iniciar una fermentación.'
+    return
+  }
+
+  const vol = Number(startForm.value.volumen_litros)
+  if (!vol || vol <= 0) {
+    startFormError.value = 'Debe ingresar un volumen en litros válido y mayor a 0.'
+    return
+  }
+
+  const capMax = capacidadMaximaLitros.value
+  if (vol > capMax) {
+    startFormError.value = `El volumen ingresado (${vol} L) supera la capacidad máxima de la cuba (${capMax} L).`
+    return
+  }
+
+  startFormSubmitting.value = true
+  startFormError.value = null
+
+  try {
+    const payload = {
+      cuba_id: selectedCubaId.value,
+      volumen_litros: vol,
+      brix_inicial: Number(startForm.value.brix_inicial),
+      brix_objetivo: Number(startForm.value.brix_objetivo),
+      dias_estimados: Number(startForm.value.dias_estimados),
+      densidad_inicial_sg: Number(startForm.value.densidad_inicial_sg) || 1.1000
+    }
+
+    await processService.iniciar(payload)
+
+    cerrarModalIniciar()
+    showToast(`¡Fermentación iniciada exitosamente! Cuba ${cuba.value?.codigo_cuba || selectedCubaId.value} ahora está en proceso.`, 'success')
+
+    // Refrescar los datos de la cuba y lista de cubas
+    await Promise.all([
+      cargarDatosCuba(selectedCubaId.value, rangoToHoras(activeTimeRange.value)),
+      cargarListaCubas()
+    ])
+  } catch (err) {
+    const msg = err.message || 'Error al iniciar el proceso de fermentación'
+    startFormError.value = msg
+    showToast(msg, 'error')
+  } finally {
+    startFormSubmitting.value = false
+  }
+}
+
+function abrirModalFinalizar() {
+  if (!tieneProcesoActivo.value) {
+    showToast('Esta cuba no cuenta con un proceso de fermentación activo para finalizar.', 'warning')
+    return
+  }
+  finishFormError.value = null
+  finishForm.value = {
+    densidad_final_sg:
+      cuba.value?.densidad_final_sg ||
+      (brixActual.value !== null ? Number((0.998 + (brixActual.value * 0.0038)).toFixed(4)) : 0.9940),
+    brix_final: brixActual.value !== null ? Number(brixActual.value.toFixed(1)) : 1.0,
+    observaciones: 'Fermentación alcohólica completada dentro de los parámetros esperados. Proceder a descube y clarificación.'
+  }
+  isFinishModalOpen.value = true
+}
+
+function cerrarModalFinalizar() {
+  isFinishModalOpen.value = false
+  finishFormError.value = null
+}
+
+async function ejecutarFinalizarProceso() {
+  const procesoId = cuba.value?.proceso_activo_id
+  if (!procesoId) {
+    finishFormError.value = 'No se encontró el ID del proceso activo a finalizar.'
+    return
+  }
+
+  finishFormSubmitting.value = true
+  finishFormError.value = null
+
+  try {
+    const payload = {
+      densidad_final_sg: finishForm.value.densidad_final_sg !== '' ? Number(finishForm.value.densidad_final_sg) : undefined,
+      brix_final: finishForm.value.brix_final !== '' ? Number(finishForm.value.brix_final) : undefined,
+      motivo: finishForm.value.observaciones || undefined,
+      observaciones: finishForm.value.observaciones || undefined
+    }
+
+    await processService.finalizar(procesoId, payload)
+
+    cerrarModalFinalizar()
+    showToast(`¡Proceso #${procesoId} finalizado exitosamente! Cuba liberada y en estado "disponible".`, 'success')
+
+    // Refrescar los datos de la cuba y lista de cubas
+    await Promise.all([
+      cargarDatosCuba(selectedCubaId.value, rangoToHoras(activeTimeRange.value)),
+      cargarListaCubas()
+    ])
+  } catch (err) {
+    const msg = err.message || 'Error al finalizar el proceso de fermentación'
+    finishFormError.value = msg
+    showToast(msg, 'error')
+  } finally {
+    finishFormSubmitting.value = false
+  }
+}
+
 onBeforeUnmount(() => {
   if (pollInterval) {
     clearInterval(pollInterval)
@@ -825,6 +1006,10 @@ onBeforeUnmount(() => {
   if (chartInstance) {
     chartInstance.destroy()
     chartInstance = null
+  }
+  if (toastTimeout) {
+    clearTimeout(toastTimeout)
+    toastTimeout = null
   }
 })
 </script>
@@ -887,6 +1072,29 @@ onBeforeUnmount(() => {
       <!-- Estado en base a reglas y sincronización en vivo -->
       <div class="header-right">
         <div class="header-actions-row">
+          <!-- Botón Iniciar Fermentación (Habilitado solo si cuba está 'disponible') -->
+          <button
+            v-if="!tieneProcesoActivo"
+            class="btn-lifecycle btn-lifecycle--start"
+            :disabled="!estaDisponible"
+            :title="estaDisponible ? 'Iniciar un nuevo ciclo de vendimia en esta cuba' : 'Esta cuba no está en estado disponible para iniciar una fermentación'"
+            @click="abrirModalIniciar"
+          >
+            <Play :size="14" />
+            <span>Iniciar Fermentación</span>
+          </button>
+
+          <!-- Botón Finalizar Fermentación (Disponible cuando hay proceso activo) -->
+          <button
+            v-if="tieneProcesoActivo"
+            class="btn-lifecycle btn-lifecycle--finish"
+            @click="abrirModalFinalizar"
+            title="Finalizar proceso activo y liberar la cuba"
+          >
+            <Square :size="13" />
+            <span>Finalizar Fermentación</span>
+          </button>
+
           <span v-if="lastSyncTime" class="sync-badge">
             <Radio :size="12" class="sync-icon-pulse" />
             <span>En vivo ({{ lastSyncTime }})</span>
@@ -1059,6 +1267,26 @@ onBeforeUnmount(() => {
                 : 'Se detectó variación térmica o estancamiento de azúcar fuera del perfil óptimo.'
             }}
           </p>
+
+          <div class="card-action-bar">
+            <button
+              v-if="!tieneProcesoActivo"
+              class="btn-card-action btn-card-action--start"
+              :disabled="!estaDisponible"
+              @click="abrirModalIniciar"
+            >
+              <Play :size="13" />
+              <span>{{ estaDisponible ? 'Iniciar Fermentación' : 'Cuba No Disponible' }}</span>
+            </button>
+            <button
+              v-else
+              class="btn-card-action btn-card-action--finish"
+              @click="abrirModalFinalizar"
+            >
+              <Square :size="13" />
+              <span>Finalizar Fermentación</span>
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -1156,6 +1384,14 @@ onBeforeUnmount(() => {
           <p v-else class="empty-desc">
             No se han registrado lecturas en la ventana seleccionada ({{ activeTimeRangeLabel }}).
           </p>
+          <button
+            v-if="estaDisponible"
+            class="btn-lifecycle btn-lifecycle--start empty-state-btn"
+            @click="abrirModalIniciar"
+          >
+            <Play :size="14" />
+            <span>Iniciar Fermentación en {{ cubaNombre }}</span>
+          </button>
         </div>
 
         <canvas ref="chartCanvasRef"></canvas>
@@ -1209,6 +1445,373 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </section>
+
+    <!-- ======================================================= -->
+    <!-- MODAL 1: INICIAR FERMENTACIÓN (VENDIMIA)                -->
+    <!-- Habilitado solo si la cuba está en estado "disponible"  -->
+    <!-- ======================================================= -->
+    <div
+      v-if="isStartModalOpen"
+      class="modal-backdrop"
+      @click.self="cerrarModalIniciar"
+    >
+      <div class="process-modal" role="dialog" aria-modal="true" aria-labelledby="start-modal-title">
+        <!-- Header -->
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="modal-icon-badge modal-icon--start">
+              <Play :size="20" />
+            </div>
+            <div>
+              <h2 id="start-modal-title" class="modal-title">Iniciar Proceso de Fermentación</h2>
+              <p class="modal-sub">
+                {{ cubaNombre }} · Capacidad máxima: {{ capacidadMaximaLitros.toLocaleString('es-CL') }} L
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="modal-close-btn"
+            @click="cerrarModalIniciar"
+            :disabled="startFormSubmitting"
+            aria-label="Cerrar modal"
+          >
+            <X :size="18" />
+          </button>
+        </div>
+
+        <!-- Banner de Error Backend -->
+        <div v-if="startFormError" class="modal-error-banner">
+          <AlertCircle :size="18" class="flex-shrink-0" />
+          <div class="error-text">
+            <strong>Error de validación:</strong>
+            <span>{{ startFormError }}</span>
+          </div>
+        </div>
+
+        <!-- Formulario con campos requeridos por Criterios de Aceptación -->
+        <form @submit.prevent="ejecutarIniciarProceso" class="modal-form">
+          <div class="modal-body">
+            <div class="form-grid">
+              <!-- Cuba ID (Informativo / Preseleccionado) -->
+              <div class="form-group form-group--full">
+                <label class="form-label">Cuba Asignada</label>
+                <div class="input-readonly-box">
+                  <Cylinder :size="16" class="text-wine" />
+                  <span><strong>{{ cubaNombre }}</strong> (ID: {{ selectedCubaId }}) · Estado actual: <span class="badge-disponible">{{ cuba?.estado_operativo || 'disponible' }}</span></span>
+                </div>
+              </div>
+
+              <!-- Volumen Litros -->
+              <div class="form-group form-group--full">
+                <label for="volumen_litros" class="form-label">
+                  Volumen de Vendimia (Litros) <span class="required">*</span>
+                </label>
+                <div class="input-with-affix">
+                  <input
+                    id="volumen_litros"
+                    v-model.number="startForm.volumen_litros"
+                    type="number"
+                    step="50"
+                    min="1"
+                    :max="capacidadMaximaLitros"
+                    placeholder="Ej: 8000"
+                    class="form-input"
+                    :class="{ 'input--invalid': Number(startForm.volumen_litros) > capacidadMaximaLitros }"
+                    required
+                  />
+                  <span class="input-suffix">Litros</span>
+                </div>
+                <small
+                  class="form-hint"
+                  :class="{ 'text-danger': Number(startForm.volumen_litros) > capacidadMaximaLitros }"
+                >
+                  Capacidad máxima de la cuba: {{ capacidadMaximaLitros.toLocaleString('es-CL') }} L
+                  <span v-if="Number(startForm.volumen_litros) > capacidadMaximaLitros"> — ¡Volumen excede la capacidad!</span>
+                </small>
+              </div>
+
+              <!-- Brix Inicial -->
+              <div class="form-group">
+                <label for="brix_inicial" class="form-label">
+                  Brix Inicial (°Bx) <span class="required">*</span>
+                </label>
+                <div class="input-with-affix">
+                  <input
+                    id="brix_inicial"
+                    v-model.number="startForm.brix_inicial"
+                    type="number"
+                    step="0.1"
+                    min="10"
+                    max="35"
+                    placeholder="24.5"
+                    class="form-input"
+                    required
+                  />
+                  <span class="input-suffix">°Bx</span>
+                </div>
+                <small class="form-hint">Azúcar inicial del mosto (Típico: 22 - 26 °Bx)</small>
+              </div>
+
+              <!-- Brix Objetivo -->
+              <div class="form-group">
+                <label for="brix_objetivo" class="form-label">
+                  Brix Objetivo (°Bx) <span class="required">*</span>
+                </label>
+                <div class="input-with-affix">
+                  <input
+                    id="brix_objetivo"
+                    v-model.number="startForm.brix_objetivo"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="10"
+                    placeholder="1.0"
+                    class="form-input"
+                    required
+                  />
+                  <span class="input-suffix">°Bx</span>
+                </div>
+                <small class="form-hint">Meta fin de fermentación (Vino seco: 0 - 2 °Bx)</small>
+              </div>
+
+              <!-- Días Estimados -->
+              <div class="form-group">
+                <label for="dias_estimados" class="form-label">
+                  Duración Estimada (Días) <span class="required">*</span>
+                </label>
+                <div class="input-with-affix">
+                  <input
+                    id="dias_estimados"
+                    v-model.number="startForm.dias_estimados"
+                    type="number"
+                    step="1"
+                    min="1"
+                    max="60"
+                    placeholder="14"
+                    class="form-input"
+                    required
+                  />
+                  <span class="input-suffix">Días</span>
+                </div>
+                <small class="form-hint">Tiempo estimado de fermentación alcohólica</small>
+              </div>
+
+              <!-- Densidad Inicial SG (opcional) -->
+              <div class="form-group">
+                <label for="densidad_inicial" class="form-label">
+                  Densidad Inicial (SG)
+                </label>
+                <div class="input-with-affix">
+                  <input
+                    id="densidad_inicial"
+                    v-model.number="startForm.densidad_inicial_sg"
+                    type="number"
+                    step="0.0001"
+                    min="1.0500"
+                    max="1.1500"
+                    placeholder="1.1000"
+                    class="form-input"
+                  />
+                  <span class="input-suffix">SG</span>
+                </div>
+                <small class="form-hint">Gravedad específica estimada (1.090 - 1.115)</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer con botones de acción -->
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn-modal-cancel"
+              @click="cerrarModalIniciar"
+              :disabled="startFormSubmitting"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              class="btn-modal-submit btn-modal-submit--start"
+              :disabled="startFormSubmitting || Number(startForm.volumen_litros) > capacidadMaximaLitros"
+            >
+              <RefreshCw v-if="startFormSubmitting" :size="15" class="spin" />
+              <Play v-else :size="15" />
+              <span>{{ startFormSubmitting ? 'Iniciando proceso...' : 'Confirmar e Iniciar' }}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ======================================================= -->
+    <!-- MODAL 2: FINALIZAR FERMENTACIÓN                         -->
+    <!-- Confirmación, captura de densidad final y observaciones -->
+    <!-- ======================================================= -->
+    <div
+      v-if="isFinishModalOpen"
+      class="modal-backdrop"
+      @click.self="cerrarModalFinalizar"
+    >
+      <div class="process-modal" role="dialog" aria-modal="true" aria-labelledby="finish-modal-title">
+        <!-- Header -->
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <div class="modal-icon-badge modal-icon--finish">
+              <CheckCircle2 :size="20" />
+            </div>
+            <div>
+              <h2 id="finish-modal-title" class="modal-title">Finalizar Fermentación y Liberar Cuba</h2>
+              <p class="modal-sub">
+                {{ cubaNombre }} · Proceso Activo #{{ cuba?.proceso_activo_id }}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="modal-close-btn"
+            @click="cerrarModalFinalizar"
+            :disabled="finishFormSubmitting"
+            aria-label="Cerrar modal"
+          >
+            <X :size="18" />
+          </button>
+        </div>
+
+        <!-- Banner de Advertencia / Confirmación -->
+        <div class="modal-warning-banner">
+          <AlertTriangle :size="20" class="flex-shrink-0 text-warn" />
+          <p>
+            ¿Confirmas la finalización del proceso de fermentación? Esta acción marcará el proceso como <strong>"finalizado"</strong>, registrará la fecha real de fin y liberará la cuba cambiando su estado operativo a <strong>"disponible"</strong>.
+          </p>
+        </div>
+
+        <!-- Banner de Error Backend -->
+        <div v-if="finishFormError" class="modal-error-banner">
+          <AlertCircle :size="18" class="flex-shrink-0" />
+          <div class="error-text">
+            <strong>Error:</strong>
+            <span>{{ finishFormError }}</span>
+          </div>
+        </div>
+
+        <!-- Resumen de Telemetría al Cierre -->
+        <div class="closeout-summary">
+          <div class="summary-item">
+            <span class="label">Temperatura Actual:</span>
+            <span class="val">{{ temperaturaActual !== null ? temperaturaActual.toFixed(1) + ' °C' : '--' }}</span>
+          </div>
+          <div class="summary-item">
+            <span class="label">Último Brix:</span>
+            <span class="val">{{ brixActual !== null ? brixActual.toFixed(1) + ' °Bx' : '--' }}</span>
+          </div>
+          <div class="summary-item">
+            <span class="label">Días Transcurridos:</span>
+            <span class="val">{{ diaFermentacion }} días</span>
+          </div>
+        </div>
+
+        <!-- Formulario de Finalización -->
+        <form @submit.prevent="ejecutarFinalizarProceso" class="modal-form">
+          <div class="modal-body">
+            <div class="form-grid">
+              <!-- Densidad Final SG -->
+              <div class="form-group">
+                <label for="densidad_final_sg" class="form-label">
+                  Densidad Final (SG)
+                </label>
+                <div class="input-with-affix">
+                  <input
+                    id="densidad_final_sg"
+                    v-model.number="finishForm.densidad_final_sg"
+                    type="number"
+                    step="0.0001"
+                    min="0.9800"
+                    max="1.1000"
+                    placeholder="Ej: 0.9940"
+                    class="form-input"
+                  />
+                  <span class="input-suffix">SG</span>
+                </div>
+                <small class="form-hint">Densidad final registrada por densímetro o picnómetro</small>
+              </div>
+
+              <!-- Brix Final -->
+              <div class="form-group">
+                <label for="brix_final" class="form-label">
+                  Grados Brix Final (°Bx)
+                </label>
+                <div class="input-with-affix">
+                  <input
+                    id="brix_final"
+                    v-model.number="finishForm.brix_final"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="10"
+                    placeholder="Ej: 1.0"
+                    class="form-input"
+                  />
+                  <span class="input-suffix">°Bx</span>
+                </div>
+                <small class="form-hint">Azúcar residual medido al cierre de fermentación</small>
+              </div>
+
+              <!-- Observaciones / Motivo -->
+              <div class="form-group form-group--full">
+                <label for="observaciones" class="form-label">
+                  Observaciones Enológicas de Cierre
+                </label>
+                <textarea
+                  id="observaciones"
+                  v-model="finishForm.observaciones"
+                  rows="3"
+                  placeholder="Detalles sobre el descube, cata sensorial, trasiego a barrica o motivo de término..."
+                  class="form-textarea"
+                ></textarea>
+                <small class="form-hint">Quedará registrado para la trazabilidad del lote y la cuba</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer con botones -->
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn-modal-cancel"
+              @click="cerrarModalFinalizar"
+              :disabled="finishFormSubmitting"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              class="btn-modal-submit btn-modal-submit--finish"
+              :disabled="finishFormSubmitting"
+            >
+              <RefreshCw v-if="finishFormSubmitting" :size="15" class="spin" />
+              <CheckCircle2 v-else :size="15" />
+              <span>{{ finishFormSubmitting ? 'Finalizando proceso...' : 'Confirmar Cierre y Liberar Cuba' }}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Toast de Notificaciones Flotante -->
+    <transition name="toast-fade">
+      <div
+        v-if="toastMessage"
+        class="toast-popup"
+        :class="'toast-popup--' + toastType"
+        role="alert"
+      >
+        <CheckCircle2 v-if="toastType === 'success'" :size="18" class="toast-icon text-good" />
+        <AlertTriangle v-else-if="toastType === 'warning'" :size="18" class="toast-icon text-warn" />
+        <AlertCircle v-else :size="18" class="toast-icon text-error" />
+        <span class="toast-text">{{ toastMessage }}</span>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -1922,5 +2525,531 @@ onBeforeUnmount(() => {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ==========================================
+   BOTONES DE CICLO DE VIDA (HEADER Y CARDS)
+   ========================================== */
+.btn-lifecycle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.42rem 0.85rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.btn-lifecycle--start {
+  background-color: var(--wine-700);
+  color: #FFFFFF;
+}
+
+.btn-lifecycle--start:hover:not(:disabled) {
+  background-color: var(--wine-800);
+  box-shadow: 0 2px 6px rgba(118, 31, 51, 0.25);
+}
+
+.btn-lifecycle--start:disabled {
+  background-color: #e9ecef;
+  color: #adb5bd;
+  border-color: #dee2e6;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.btn-lifecycle--finish {
+  background-color: #FFF1F0;
+  color: #CF1322;
+  border-color: #FFA39E;
+}
+
+.btn-lifecycle--finish:hover {
+  background-color: #CF1322;
+  color: #FFFFFF;
+  border-color: #CF1322;
+}
+
+.card-action-bar {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border-color);
+}
+
+.btn-card-action {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-card-action--start {
+  background-color: var(--wine-100);
+  color: var(--wine-800);
+  border-color: var(--wine-300);
+}
+
+.btn-card-action--start:hover:not(:disabled) {
+  background-color: var(--wine-700);
+  color: #FFFFFF;
+}
+
+.btn-card-action--start:disabled {
+  background-color: #f1f3f5;
+  color: #adb5bd;
+  border-color: #dee2e6;
+  cursor: not-allowed;
+}
+
+.btn-card-action--finish {
+  background-color: #FFF2F0;
+  color: #D4380D;
+  border-color: #FFBB96;
+}
+
+.btn-card-action--finish:hover {
+  background-color: #D4380D;
+  color: #FFFFFF;
+}
+
+.empty-state-btn {
+  margin-top: 1rem;
+}
+
+/* ==========================================
+   MODALES DE PROCESOS
+   ========================================== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(35, 22, 28, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1.5rem;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.process-modal {
+  background-color: var(--bg-surface);
+  border-radius: var(--radius-md);
+  box-shadow: 0 15px 40px rgba(35, 22, 28, 0.25);
+  border: 1px solid var(--border-color);
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.25s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.modal-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--bg-surface);
+}
+
+.modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.modal-icon-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.modal-icon--start {
+  background-color: var(--wine-100);
+  color: var(--wine-700);
+}
+
+.modal-icon--finish {
+  background-color: #E6F7ED;
+  color: #1E7E34;
+}
+
+.modal-title {
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--wine-900);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.modal-sub {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.modal-close-btn:hover:not(:disabled) {
+  background-color: var(--bg-canvas);
+  color: var(--wine-900);
+}
+
+.modal-error-banner {
+  background-color: #FFF2F0;
+  border: 1px solid #FFCCC7;
+  color: #CF1322;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.modal-error-banner .error-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.modal-warning-banner {
+  background-color: var(--status-warn-bg);
+  border-bottom: 1px solid var(--status-warn-border);
+  color: var(--status-warn);
+  padding: 0.85rem 1.35rem;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  line-height: 1.4;
+}
+
+.modal-warning-banner p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.closeout-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background-color: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.summary-item .label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.summary-item .val {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--wine-900);
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-body {
+  padding: 1.25rem 1.5rem;
+  overflow-y: auto;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-group--full {
+  grid-column: 1 / -1;
+}
+
+.form-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.form-label .required {
+  color: #CF1322;
+}
+
+.input-readonly-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  color: var(--text-primary);
+}
+
+.badge-disponible {
+  background-color: #E6F7ED;
+  color: #1E7E34;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  font-size: 0.72rem;
+}
+
+.input-with-affix {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  padding-right: 3.5rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-input:focus {
+  border-color: var(--wine-700);
+  box-shadow: 0 0 0 3px rgba(118, 31, 51, 0.1);
+}
+
+.form-input.input--invalid {
+  border-color: #CF1322;
+  background-color: #FFF2F0;
+}
+
+.input-suffix {
+  position: absolute;
+  right: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.form-textarea {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.84rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-textarea:focus {
+  border-color: var(--wine-700);
+  box-shadow: 0 0 0 3px rgba(118, 31, 51, 0.1);
+}
+
+.form-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.form-hint.text-danger {
+  color: #CF1322;
+  font-weight: 600;
+}
+
+.modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--bg-canvas);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.btn-modal-cancel {
+  padding: 0.5rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-modal-cancel:hover:not(:disabled) {
+  background-color: var(--bg-surface);
+  color: var(--wine-900);
+}
+
+.btn-modal-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 1.15rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-modal-submit--start {
+  background-color: var(--wine-700);
+  color: #FFFFFF;
+}
+
+.btn-modal-submit--start:hover:not(:disabled) {
+  background-color: var(--wine-800);
+  box-shadow: 0 2px 6px rgba(118, 31, 51, 0.25);
+}
+
+.btn-modal-submit--finish {
+  background-color: #1E7E34;
+  color: #FFFFFF;
+}
+
+.btn-modal-submit--finish:hover:not(:disabled) {
+  background-color: #155724;
+  box-shadow: 0 2px 6px rgba(30, 126, 52, 0.25);
+}
+
+.btn-modal-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ==========================================
+   TOAST FLOTANTE DE NOTIFICACIONES
+   ========================================== */
+.toast-popup {
+  position: fixed;
+  top: 1.5rem;
+  right: 1.75rem;
+  z-index: 2000;
+  padding: 0.85rem 1.25rem;
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 25px rgba(35, 22, 28, 0.18);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  max-width: 420px;
+}
+
+.toast-popup--success {
+  background-color: #0F5132;
+  color: #FFFFFF;
+  border-color: #0A3622;
+}
+
+.toast-popup--error {
+  background-color: #842029;
+  color: #FFFFFF;
+  border-color: #58151C;
+}
+
+.toast-popup--warning {
+  background-color: #664D03;
+  color: #FFFFFF;
+  border-color: #433302;
+}
+
+.toast-icon.text-good {
+  color: #75B798;
+}
+
+.toast-icon.text-error {
+  color: #EA868F;
+}
+
+.toast-icon.text-warn {
+  color: #FFDA6A;
+}
+
+.toast-text {
+  line-height: 1.35;
+}
+
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition: all 0.25s ease;
+}
+
+.toast-fade-enter-from,
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.95);
 }
 </style>
