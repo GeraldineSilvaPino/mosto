@@ -125,3 +125,4 @@ def test_master_catalogs():
     res_mat = client.get("/api/materiales-cuba")
     assert res_mat.status_code == 200
     assert len(res_mat.json()) >= 1
+

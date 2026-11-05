@@ -96,6 +96,9 @@ const setDemoCredentials = (role) => {
   } else if (role === 'admin') {
     form.email = 'admin@mosto.cl'
     form.password = 'bodega2024'
+  } else if (role === 'operador') {
+    form.email = 'operador@mosto.cl'
+    form.password = 'operador2024'
   }
 }
 
@@ -293,6 +296,14 @@ const handleLogin = async () => {
             @click="setDemoCredentials('admin')"
           >
             <strong>Admin</strong> (admin@mosto.cl)
+          </button>
+          <button
+            type="button"
+            class="demo-chip"
+            :disabled="isLoading"
+            @click="setDemoCredentials('operador')"
+          >
+            <strong>Operador</strong> (operador@mosto.cl)
           </button>
         </div>
       </div>

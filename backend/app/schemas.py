@@ -340,9 +340,11 @@ class PerfilOut(BaseModel):
 # ==========================================
 
 class LoginIn(BaseModel):
-    email: str = Field(..., example="enologo@mosto.cl")
-    password: str = Field(..., min_length=4, example="vinacura2024")
+    email: Optional[str] = Field(None, example="enologo@mosto.cl")
+    username: Optional[str] = Field(None, example="enologo@mosto.cl")
+    password: str = Field(..., min_length=1, example="vinacura2024")
     remember_me: Optional[bool] = False
+    rememberMe: Optional[bool] = False
 
 
 class UserAuthPayload(BaseModel):

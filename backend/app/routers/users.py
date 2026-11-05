@@ -172,3 +172,4 @@ def eliminar_usuario(id: int, db: Session = Depends(get_db)):
     usuario.activo = False
     db.commit()
     return {"status": "ok", "mensaje": f"Usuario {usuario.nomb_compl} suspendido correctamente."}
+

@@ -143,3 +143,4 @@ def ampliar_capacidad_cubas(payload: AmpliacionCuotaIn, db: Session = Depends(ge
         "mensaje": f"Capacidad ampliada exitosamente a {empresa.max_cubas} cubas.",
         "nueva_capacidad": empresa.max_cubas
     }
+
