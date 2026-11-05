@@ -19,12 +19,12 @@ COPY requirements.txt /app/
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copiar el código de la aplicación
+# Copiar el código de la aplicación y scripts
 COPY ./app /app/app
+COPY ./scripts /app/scripts
 
 # Exponer el puerto de FastAPI
 EXPOSE 8000
 
 # Comando para iniciar la API escuchando en todas las interfaces de red (0.0.0.0)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-

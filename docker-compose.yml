@@ -7,11 +7,30 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     env_file:
       - ./backend/.env
     volumes:
       # Montar código local para hot-reload en desarrollo
       - ./backend/app:/app/app
+      - ./backend/scripts:/app/scripts
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-
+  simulator:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mosto_simulator
+    restart: unless-stopped
+    depends_on:
+      - backend
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/scripts:/app/scripts
+    command: python scripts/simulate_esp.py --base-url http://backend:8000 --cuba 1,12,13 --interval 5 --timeout 15
