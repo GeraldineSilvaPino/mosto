@@ -3,18 +3,15 @@
  * 📋 05. [FRONT - VUE] Pantalla de Alertas y Gestión de Incidencias
  * Módulo 3: Alertas y Protocolo
  *
- * Características implementadas:
- * 1. KPIs de resumen en vivo: Críticas, Advertencias, En Protocolo y Sensores Anulados.
- * 2. Tabla interactiva de alertas clasificadas por severidad (Crítica, Advertencia, Info).
- * 3. Filtros reactivos por severidad, estado, búsqueda libre y selector de cuba.
- * 4. Modal de Protocolo de Revisión del Enólogo:
- *    - Registro de notas de inspección técnica.
- *    - Acción operativa de anular/aislar el sensor defectuoso (DS18B20 / MPU-6050).
- *    - Ingreso de medición manual de contraste.
- *    - Resolución o mitigación de la incidencia con trazabilidad.
- * 5. 100% Frontend autónomo con datos mock reactivos.
+ * Integración Backend Real (TASK-FE-02A):
+ * 1. Consumo de GET /api/alertas con filtros reactivos (estado, severidad, cuba_id).
+ * 2. Protocolo de Atención con PATCH /api/alertas/{id}/atender.
+ * 3. Actualización optimista e inmediata de estado sin recarga de página.
+ * 4. Badges de severidad y estado mapeados desde Supabase PostgreSQL.
+ * 5. Contador reactivo de alertas pendientes en la cabecera.
+ * 6. Polling periódico cada 15s para capturar anomalías del simulador IoT.
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import {
   Bell,
   AlertTriangle,
@@ -38,169 +35,21 @@ import {
   PlusCircle,
   RefreshCw
 } from 'lucide-vue-next'
+import alertService from '../services/alertService'
 
 // ==========================================
-// ESTADO REACTIVO DE ALERTAS MOCK
+// ESTADO REACTIVO (Conectado a FastAPI / Supabase)
 // ==========================================
-let nextAlertId = 100
+let nextAlertId = 1000
 
-const alerts = ref([
-  {
-    id: 1,
-    cubaId: '02',
-    cubaCode: 'CB-02',
-    cubaName: 'Cuba 02 · Carménère Reserva',
-    variety: 'Carménère',
-    sensorType: 'DS18B20',
-    sensorName: 'Sonda Térmica Central',
-    sensorDisabled: false,
-    severity: 'danger', // danger (crítica) | warning (advertencia) | info (informativa)
-    severityLabel: 'Crítica',
-    title: 'Caída brusca de temperatura (-3.2°C en 2h)',
-    description: 'La temperatura descendió de 20.7°C a 17.5°C sin intervención de enfriamiento. Riesgo inminente de parada de fermentación.',
-    valueDetected: '17.5 °C',
-    thresholdRule: 'Caída > 2.0°C / 2h (Mínimo: 20.0°C)',
-    timestamp: 'Hace 15 min',
-    dateIso: '2026-11-01 15:30',
-    status: 'active', // active | in_progress | resolved
-    statusLabel: 'Activa',
-    assignedTo: 'Carlos Cartes',
-    notes: [
-      { id: 1, author: 'Sistema Telemetría', time: '15:30', text: 'Alerta generada automáticamente por sensor DS18B20.' }
-    ],
-    manualCheck: null
-  },
-  {
-    id: 2,
-    cubaId: '04',
-    cubaCode: 'CB-04',
-    cubaName: 'Cuba 04 · Syrah Gran Corte',
-    variety: 'Syrah',
-    sensorType: 'DS18B20',
-    sensorName: 'Sonda Térmica Central',
-    sensorDisabled: false,
-    severity: 'danger',
-    severityLabel: 'Crítica',
-    title: 'Sobrecalentamiento en pico fermentativo',
-    description: 'La temperatura superó el umbral crítico de 28°C alcanzando 29.8°C. Levaduras en riesgo de desvitalización.',
-    valueDetected: '29.8 °C',
-    thresholdRule: 'Límite Máximo: 28.0 °C',
-    timestamp: 'Hace 42 min',
-    dateIso: '2026-11-01 15:02',
-    status: 'in_progress',
-    statusLabel: 'En Protocolo',
-    assignedTo: 'Geraldine Silva',
-    notes: [
-      { id: 1, author: 'Sistema Telemetría', time: '15:02', text: 'Disparo por sobrepasar 28.0°C.' },
-      { id: 2, author: 'Geraldine Silva', time: '15:12', text: 'Inspeccionada en terreno. Se incrementó caudal de camisa de enfriamiento.' }
-    ],
-    manualCheck: '29.4 °C (Termómetro manual)'
-  },
-  {
-    id: 3,
-    cubaId: '01',
-    cubaCode: 'CB-01',
-    cubaName: 'Cuba 01 · Cabernet Sauvignon',
-    variety: 'Cabernet Sauvignon',
-    sensorType: 'MPU-6050',
-    sensorName: 'Cápsula Flotante Inclinómetro',
-    sensorDisabled: false,
-    severity: 'warning',
-    severityLabel: 'Advertencia',
-    title: 'Lectura de ángulo atípica / Posible bloqueo',
-    description: 'El sensor registra una inclinación de 86° sostenida por 45 minutos. Posible retención del flotador en el sombrero de hollejos.',
-    valueDetected: '86.2° (Brix incoherente)',
-    thresholdRule: 'Rango físico esperado: 10° a 70°',
-    timestamp: 'Hace 1 hora',
-    dateIso: '2026-11-01 14:40',
-    status: 'active',
-    statusLabel: 'Activa',
-    assignedTo: 'Sin asignar',
-    notes: [
-      { id: 1, author: 'Sistema Telemetría', time: '14:40', text: 'Inclinación fuera de los límites cinemáticos del hidrómetro.' }
-    ],
-    manualCheck: null
-  },
-  {
-    id: 4,
-    cubaId: '03',
-    cubaCode: 'CB-03',
-    cubaName: 'Cuba 03 · Sauvignon Blanc',
-    variety: 'Sauvignon Blanc',
-    sensorType: 'DS18B20',
-    sensorName: 'Sonda Térmica Estanco',
-    sensorDisabled: false,
-    severity: 'warning',
-    severityLabel: 'Advertencia',
-    title: 'Desvío hacia límite superior de fermentación en frío',
-    description: 'La temperatura alcanzó 17.6°C en perfil blanco aromático (límite recomendado 17.0°C). Pérdida potencial de aromas volátiles.',
-    valueDetected: '17.6 °C',
-    thresholdRule: 'Banda recomendada: 13.0°C - 17.0°C',
-    timestamp: 'Hace 3 horas',
-    dateIso: '2026-11-01 12:45',
-    status: 'active',
-    statusLabel: 'Activa',
-    assignedTo: 'Matias González',
-    notes: [
-      { id: 1, author: 'Sistema Telemetría', time: '12:45', text: 'Alerta preventiva emitida por desvío de perfil.' }
-    ],
-    manualCheck: null
-  },
-  {
-    id: 5,
-    cubaId: '02',
-    cubaCode: 'CB-02',
-    cubaName: 'Cuba 02 · Carménère Reserva',
-    variety: 'Carménère',
-    sensorType: 'MPU-6050',
-    sensorName: 'Cápsula Flotante Inclinómetro',
-    sensorDisabled: true, // Sensor anulado previamente
-    severity: 'warning',
-    severityLabel: 'Advertencia',
-    title: 'Sensor flotador anulado por mantención de sombrero',
-    description: 'El sensor fue aislado temporalmente por el enólogo para evitar falsas lecturas durante el remontado.',
-    valueDetected: 'Sensor Anulado',
-    thresholdRule: 'Aislamiento operativo',
-    timestamp: 'Hace 4 horas',
-    dateIso: '2026-11-01 11:20',
-    status: 'in_progress',
-    statusLabel: 'En Protocolo',
-    assignedTo: 'Carlos Cartes',
-    notes: [
-      { id: 1, author: 'Carlos Cartes', time: '11:20', text: 'Se anula telemetría del flotador durante remontado con aireación.' }
-    ],
-    manualCheck: '18.4 °Bx (Refractómetro de mano)'
-  },
-  {
-    id: 6,
-    cubaId: '01',
-    cubaCode: 'CB-01',
-    cubaName: 'Cuba 01 · Cabernet Sauvignon',
-    variety: 'Cabernet Sauvignon',
-    sensorType: 'DS18B20',
-    sensorName: 'Sonda Térmica Central',
-    sensorDisabled: false,
-    severity: 'info',
-    severityLabel: 'Informativa',
-    title: 'Recuperación de temperatura tras remontado',
-    description: 'La cuba regresó al rango óptimo de 24.5°C luego de la homogeneización matutina.',
-    valueDetected: '24.5 °C',
-    thresholdRule: 'Rango: 22.0°C - 28.0°C',
-    timestamp: 'Hace 6 horas',
-    dateIso: '2026-11-01 09:30',
-    status: 'resolved',
-    statusLabel: 'Resuelta',
-    assignedTo: 'Geraldine Silva',
-    notes: [
-      { id: 1, author: 'Geraldine Silva', time: '09:35', text: 'Verificado. Parámetros estables.' }
-    ],
-    manualCheck: '24.5 °C'
-  }
-])
+const allAlerts = ref([]) // Lista global no filtrada para KPIs estables
+const alerts = ref([])    // Lista filtrada para la tabla
+const isLoading = ref(false)
+const isRefreshing = ref(false)
+const isAttending = ref(false)
+const fetchError = ref(null)
 
-// ==========================================
-// FILTROS Y ESTADO REACTIVO
-// ==========================================
+// Filtros y búsqueda
 const searchQuery = ref('')
 const filterSeverity = ref('all') // all | danger | warning | info
 const filterStatus = ref('all')   // all | active | in_progress | resolved
@@ -215,68 +64,248 @@ const newNoteText = ref('')
 const manualSampleInput = ref('')
 
 // ==========================================
-// KPIS COMPUTADOS
+// MAPEO DE DATOS BACKEND DTO ➔ VIEW MODEL
+// ==========================================
+function formatTimeAgo(isoString) {
+  if (!isoString) return 'Reciente'
+  const date = new Date(isoString)
+  const now = new Date()
+  const diffSec = Math.floor((now - date) / 1000)
+  if (diffSec < 60) return `Hace ${Math.max(1, diffSec)} seg`
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return `Hace ${diffMin} min`
+  const diffHours = Math.floor(diffMin / 60)
+  if (diffHours < 24) return `Hace ${diffHours} h`
+  const diffDays = Math.floor(diffHours / 24)
+  return `Hace ${diffDays} d`
+}
+
+function mapBackendAlert(dto) {
+  // Normalizar severidad
+  let severity = 'info'
+  let severityLabel = 'Informativa'
+  const sevLower = (dto.severidad || '').toLowerCase()
+  if (sevLower === 'critica' || sevLower === 'danger') {
+    severity = 'danger'
+    severityLabel = 'Crítica'
+  } else if (sevLower === 'alta') {
+    severity = 'danger'
+    severityLabel = 'Alta'
+  } else if (sevLower === 'media' || sevLower === 'warning') {
+    severity = 'warning'
+    severityLabel = 'Advertencia'
+  } else if (sevLower === 'baja' || sevLower === 'info') {
+    severity = 'info'
+    severityLabel = 'Baja'
+  }
+
+  // Normalizar estado
+  let status = 'active'
+  let statusLabel = 'Pendiente'
+  const stLower = (dto.estado || '').toLowerCase()
+  if (stLower === 'atendida' || stLower === 'in_progress') {
+    status = 'in_progress'
+    statusLabel = 'En Protocolo'
+  } else if (stLower === 'resuelta' || stLower === 'resolved') {
+    status = 'resolved'
+    statusLabel = 'Resuelta'
+  } else {
+    status = 'active'
+    statusLabel = 'Pendiente'
+  }
+
+  // Construir historial de notas acumuladas
+  const notes = []
+  if (dto.timestamp) {
+    notes.push({
+      id: 'n-sys',
+      author: 'Sistema Telemetría',
+      time: new Date(dto.timestamp).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+      text: dto.descripcion || 'Incidencia registrada por sensor.'
+    })
+  }
+  if (dto.fecha_atencion || dto.nota_atencion) {
+    notes.push({
+      id: 'n-att',
+      author: dto.operador_nombre || 'Enólogo en Turno',
+      time: dto.fecha_atencion
+        ? new Date(dto.fecha_atencion).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+        : 'En Protocolo',
+      text: dto.nota_atencion || 'Atención de incidencia iniciada en bodega.'
+    })
+  }
+  if (dto.fecha_resolucion || dto.nota_resolucion) {
+    notes.push({
+      id: 'n-res',
+      author: dto.operador_nombre || 'Enólogo en Turno',
+      time: dto.fecha_resolucion
+        ? new Date(dto.fecha_resolucion).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+        : 'Resuelta',
+      text: dto.nota_resolucion || 'Incidencia resuelta y protocolo completado satisfactoriamente.'
+    })
+  }
+
+  // Identificar sensor y nombre legible
+  let sensorType = 'DS18B20'
+  let sensorName = 'Sonda Térmica Central'
+  const rawType = (dto.sensor_tipo || dto.tipo_alerta || '').toUpperCase()
+  if (rawType.includes('MPU') || rawType.includes('BRIX') || rawType.includes('TILT')) {
+    sensorType = 'MPU-6050'
+    sensorName = 'Inclinómetro Giroscopio'
+  } else if (rawType.includes('PH')) {
+    sensorType = 'PH-4502C'
+    sensorName = 'Sonda de pH Analógica'
+  }
+
+  const valueDetected = dto.met_dispar ? `Disparo: ${dto.met_dispar}` : 'Desvío enológico registrado'
+  const thresholdRule = 'Límite de Perfil de Fermentación'
+
+  return {
+    id: dto.id,
+    cubaId: dto.cuba_id ? String(dto.cuba_id) : '1',
+    cubaCode: dto.cuba_codigo || (dto.cuba_id ? `CB-0${dto.cuba_id}` : 'General'),
+    cubaName: dto.cuba_nombre || `Cuba ${dto.cuba_codigo || 'General'}`,
+    variety: dto.variedad || 'Fermentación Activa',
+    sensorType,
+    sensorName,
+    sensorDisabled: false,
+    severity,
+    severityBackend: dto.severidad,
+    severityLabel,
+    title: dto.titulo || `Alerta: ${dto.tipo_alerta || 'Incidencia'}`,
+    description: dto.descripcion,
+    valueDetected,
+    thresholdRule,
+    timestamp: formatTimeAgo(dto.timestamp),
+    dateIso: dto.timestamp ? new Date(dto.timestamp).toLocaleString('es-CL') : '',
+    status,
+    statusBackend: dto.estado,
+    statusLabel,
+    assignedTo: dto.operador_nombre || 'Sin asignar',
+    notes,
+    manualCheck: null,
+    raw: dto
+  }
+}
+
+// ==========================================
+// CONSULTA A LA API REST (FastAPI)
+// ==========================================
+async function loadAlerts(silent = false) {
+  if (!silent) isLoading.value = true
+  fetchError.value = null
+  try {
+    const params = {}
+
+    // 1. Filtro por Estado hacia el backend
+    if (filterStatus.value !== 'all') {
+      if (filterStatus.value === 'active' || filterStatus.value === 'pendiente') {
+        params.estado = 'pendiente'
+      } else if (filterStatus.value === 'in_progress' || filterStatus.value === 'atendida') {
+        params.estado = 'atendida'
+      } else if (filterStatus.value === 'resolved' || filterStatus.value === 'resuelta') {
+        params.estado = 'resuelta'
+      }
+    }
+
+    // 2. Filtro por Severidad hacia el backend
+    if (filterSeverity.value !== 'all') {
+      if (filterSeverity.value === 'danger') {
+        params.severidad = 'critica'
+      } else if (filterSeverity.value === 'warning') {
+        params.severidad = 'media'
+      } else if (filterSeverity.value === 'info') {
+        params.severidad = 'baja'
+      } else {
+        params.severidad = filterSeverity.value
+      }
+    }
+
+    // 3. Filtro por Cuba hacia el backend
+    if (filterCuba.value !== 'all') {
+      params.cuba_id = Number(filterCuba.value)
+    }
+
+    // Si no hay filtros aplicados, data ya representa la lista global
+    const isFiltered = Object.keys(params).length > 0
+    if (!isFiltered || allAlerts.value.length === 0) {
+      const globalData = await alertService.listarAlertas()
+      allAlerts.value = globalData.map(mapBackendAlert)
+    }
+
+    const data = isFiltered ? await alertService.listarAlertas(params) : allAlerts.value.map(a => a.raw)
+    alerts.value = data.map(mapBackendAlert)
+  } catch (err) {
+    console.error('Error al consultar alertas:', err)
+    fetchError.value = err.message || 'Error de conexión con el backend MOSTO'
+  } finally {
+    if (!silent) isLoading.value = false
+    isRefreshing.value = false
+  }
+}
+
+// Escuchar cambios reactivos en los filtros desplegables para reconsultar con query params
+watch([filterSeverity, filterStatus, filterCuba], () => {
+  loadAlerts(false)
+})
+
+// ==========================================
+// KPIS COMPUTADOS (Calculados sobre métricas globales de la bodega)
 // ==========================================
 const totalActive = computed(() => {
-  return alerts.value.filter(a => a.status === 'active').length
+  return allAlerts.value.filter(a => a.status === 'active' || a.statusBackend === 'pendiente').length
 })
 
 const totalCritical = computed(() => {
-  return alerts.value.filter(a => a.severity === 'danger' && a.status !== 'resolved').length
+  return allAlerts.value.filter(
+    a => (a.severity === 'danger' || a.severityBackend === 'critica' || a.severityBackend === 'alta') &&
+         a.status !== 'resolved' && a.statusBackend !== 'resuelta'
+  ).length
 })
 
 const totalWarning = computed(() => {
-  return alerts.value.filter(a => a.severity === 'warning' && a.status !== 'resolved').length
+  return allAlerts.value.filter(
+    a => (a.severity === 'warning' || a.severityBackend === 'media') &&
+         a.status !== 'resolved' && a.statusBackend !== 'resuelta'
+  ).length
 })
 
 const totalInProgress = computed(() => {
-  return alerts.value.filter(a => a.status === 'in_progress').length
+  return allAlerts.value.filter(a => a.status === 'in_progress' || a.statusBackend === 'atendida').length
 })
 
 const totalDisabledSensors = computed(() => {
-  return alerts.value.filter(a => a.sensorDisabled).length
+  return allAlerts.value.filter(a => a.sensorDisabled).length
 })
 
-// Lista filtrada
+// Lista filtrada (Filtro complementario por texto en cliente)
 const filteredAlerts = computed(() => {
   return alerts.value.filter(alert => {
-    // Filtro por texto
     if (searchQuery.value.trim()) {
       const q = searchQuery.value.toLowerCase()
       const matchText =
-        alert.cubaName.toLowerCase().includes(q) ||
-        alert.cubaCode.toLowerCase().includes(q) ||
-        alert.title.toLowerCase().includes(q) ||
-        alert.description.toLowerCase().includes(q) ||
-        alert.sensorType.toLowerCase().includes(q) ||
-        alert.assignedTo.toLowerCase().includes(q)
+        (alert.cubaName || '').toLowerCase().includes(q) ||
+        (alert.cubaCode || '').toLowerCase().includes(q) ||
+        (alert.title || '').toLowerCase().includes(q) ||
+        (alert.description || '').toLowerCase().includes(q) ||
+        (alert.sensorType || '').toLowerCase().includes(q) ||
+        (alert.assignedTo || '').toLowerCase().includes(q)
       if (!matchText) return false
     }
-
-    // Filtro por severidad
-    if (filterSeverity.value !== 'all' && alert.severity !== filterSeverity.value) {
-      return false
-    }
-
-    // Filtro por estado
-    if (filterStatus.value !== 'all' && alert.status !== filterStatus.value) {
-      return false
-    }
-
-    // Filtro por cuba
-    if (filterCuba.value !== 'all' && alert.cubaId !== filterCuba.value) {
-      return false
-    }
-
     return true
   })
 })
 
-// Opciones de cubas únicas para el select
+// Opciones de cubas disponibles
 const cubasAvailable = computed(() => {
   const map = new Map()
-  alerts.value.forEach(a => {
-    if (!map.has(a.cubaId)) {
+  map.set('1', { id: '1', code: 'CB-01', name: 'Cuba 01 · Cabernet Sauvignon' })
+  map.set('2', { id: '2', code: 'CB-02', name: 'Cuba 02 · Carménère Reserva' })
+  map.set('3', { id: '3', code: 'CB-03', name: 'Cuba 03 · Sauvignon Blanc' })
+  map.set('4', { id: '4', code: 'CB-04', name: 'Cuba 04 · Syrah Gran Corte' })
+
+  allAlerts.value.forEach(a => {
+    if (a.cubaId && !map.has(a.cubaId)) {
       map.set(a.cubaId, { id: a.cubaId, code: a.cubaCode, name: a.cubaName })
     }
   })
@@ -284,13 +313,13 @@ const cubasAvailable = computed(() => {
 })
 
 // ==========================================
-// ACCIONES
+// ACCIONES Y PROTOCOLO
 // ==========================================
 function showToast(msg) {
   toastMessage.value = msg
   setTimeout(() => {
     toastMessage.value = ''
-  }, 4000)
+  }, 4500)
 }
 
 function openProtocol(alert) {
@@ -305,7 +334,6 @@ function closeProtocol() {
   selectedAlert.value = null
 }
 
-// Acción: Anular / Reactivar Sensor
 function toggleSensorDisabled() {
   if (!selectedAlert.value) return
   selectedAlert.value.sensorDisabled = !selectedAlert.value.sensorDisabled
@@ -325,23 +353,87 @@ function toggleSensorDisabled() {
   }
 }
 
+// Conexión oficial de Atender Alerta (PATCH /api/alertas/{id}/atender)
+async function attendAlert(alert, noteText = '') {
+  if (!alert) return
+  isAttending.value = true
+  try {
+    const payload = {
+      usuario_id: 1, // Enólogo operador
+      nota: noteText.trim() || 'Atención de incidencia iniciada por el enólogo en bodega.'
+    }
+
+    let operadorNombre = 'Operador Enología'
+    if (alert.id < 1000) {
+      const updatedDto = await alertService.atender(alert.id, payload)
+      operadorNombre = updatedDto.operador_nombre || operadorNombre
+    }
+
+    // Actualización inmediata en la tabla reactiva y en la lista global de KPIs
+    alert.status = 'in_progress'
+    alert.statusBackend = 'atendida'
+    alert.statusLabel = 'En Protocolo'
+    alert.assignedTo = operadorNombre
+
+    const noteObj = {
+      id: Date.now(),
+      author: operadorNombre,
+      time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+      text: payload.nota
+    }
+    alert.notes.push(noteObj)
+
+    // Sincronizar en allAlerts para actualizar los KPIs
+    const inGlobal = allAlerts.value.find(a => a.id === alert.id)
+    if (inGlobal) {
+      inGlobal.status = 'in_progress'
+      inGlobal.statusBackend = 'atendida'
+      inGlobal.statusLabel = 'En Protocolo'
+      inGlobal.assignedTo = alert.assignedTo
+      inGlobal.notes.push(noteObj)
+    }
+
+    showToast(`Alerta #${alert.id} de ${alert.cubaCode} atendida e ingresada al protocolo enológico.`)
+  } catch (err) {
+    showToast(`Error al atender alerta: ${err.message}`)
+  } finally {
+    isAttending.value = false
+  }
+}
+
+// Acción de atención rápida desde el botón de la fila
+async function quickAttendAlert(alert) {
+  await attendAlert(alert, 'Atención rápida iniciada desde la lista de alertas.')
+}
+
+// Acción de atención desde el modal de protocolo
+async function attendSelectedAlert() {
+  if (!selectedAlert.value) return
+  await attendAlert(selectedAlert.value, newNoteText.value || 'Atención iniciada desde el protocolo de revisión.')
+  newNoteText.value = ''
+  closeProtocol()
+}
+
 // Acción: Guardar Nota de Terreno
-function addNote() {
+async function addNote() {
   if (!newNoteText.value.trim() || !selectedAlert.value) return
 
+  const noteContent = newNoteText.value.trim()
+
+  // Si la alerta aún está activa/pendiente, la atendemos formalmente en el backend
+  if (selectedAlert.value.status === 'active' || selectedAlert.value.statusBackend === 'pendiente') {
+    await attendAlert(selectedAlert.value, noteContent)
+    newNoteText.value = ''
+    return
+  }
+
+  // Si ya estaba en protocolo, agregamos la nota en la ficha
   selectedAlert.value.notes.push({
     id: Date.now(),
     author: 'Enólogo en Turno',
     time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
-    text: newNoteText.value.trim()
+    text: noteContent
   })
-
-  // Si estaba activa pasa automáticamente a en progreso
-  if (selectedAlert.value.status === 'active') {
-    selectedAlert.value.status = 'in_progress'
-    selectedAlert.value.statusLabel = 'En Protocolo'
-  }
-
   newNoteText.value = ''
   showToast('Nota técnica registrada en la incidencia.')
 }
@@ -361,31 +453,46 @@ function saveManualCheck() {
   showToast('Medición manual registrada correctamente.')
 }
 
-// Acción: Marcar como Resuelta
-function resolveAlert() {
+// Acción: Marcar como Resuelta (PATCH /api/alertas/{id}/resolver)
+async function resolveAlert() {
   if (!selectedAlert.value) return
+  isAttending.value = true
+  try {
+    const payload = {
+      usuario_id: 1,
+      nota_resolucion: newNoteText.value.trim() || 'Incidencia cerrada y protocolo completado satisfactoriamente.'
+    }
+    if (selectedAlert.value.id < 1000) {
+      await alertService.resolver(selectedAlert.value.id, payload)
+    }
 
-  selectedAlert.value.status = 'resolved'
-  selectedAlert.value.statusLabel = 'Resuelta'
-  selectedAlert.value.notes.push({
-    id: Date.now(),
-    author: 'Enólogo en Turno',
-    time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
-    text: 'Incidencia cerrada y protocolo completado satisfactoriamente.'
-  })
+    selectedAlert.value.status = 'resolved'
+    selectedAlert.value.statusBackend = 'resuelta'
+    selectedAlert.value.statusLabel = 'Resuelta'
+    const resolveNote = {
+      id: Date.now(),
+      author: 'Enólogo en Turno',
+      time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+      text: payload.nota_resolucion
+    }
+    selectedAlert.value.notes.push(resolveNote)
 
-  showToast(`Incidencia en ${selectedAlert.value.cubaCode} marcada como RESUELTA.`)
-  closeProtocol()
-}
+    // Sincronizar en allAlerts para descontar de las métricas activas
+    const inGlobal = allAlerts.value.find(a => a.id === selectedAlert.value.id)
+    if (inGlobal) {
+      inGlobal.status = 'resolved'
+      inGlobal.statusBackend = 'resuelta'
+      inGlobal.statusLabel = 'Resuelta'
+      inGlobal.notes.push(resolveNote)
+    }
 
-// Acción: Dejar en Protocolo / En Observación
-function keepInObservation() {
-  if (!selectedAlert.value) return
-
-  selectedAlert.value.status = 'in_progress'
-  selectedAlert.value.statusLabel = 'En Protocolo'
-  showToast(`Incidencia en ${selectedAlert.value.cubaCode} guardada en estado EN PROTOCOLO.`)
-  closeProtocol()
+    showToast(`Incidencia en ${selectedAlert.value.cubaCode} marcada como RESUELTA en Supabase.`)
+    closeProtocol()
+  } catch (err) {
+    showToast(`Error al resolver: ${err.message}`)
+  } finally {
+    isAttending.value = false
+  }
 }
 
 // Simular alerta nueva de prueba
@@ -393,7 +500,7 @@ function simulateNewAlert() {
   const newId = ++nextAlertId
   const simulated = {
     id: newId,
-    cubaId: '02',
+    cubaId: '2',
     cubaCode: 'CB-02',
     cubaName: 'Cuba 02 · Carménère Reserva',
     variety: 'Carménère',
@@ -401,6 +508,7 @@ function simulateNewAlert() {
     sensorName: 'Sonda Térmica Central',
     sensorDisabled: false,
     severity: 'danger',
+    severityBackend: 'critica',
     severityLabel: 'Crítica',
     title: 'Variación Térmica Repentina (+2.3°C en 30m)',
     description: 'Alza brusca de temperatura detectada en Cuba 02. Revisar si la camisa de refrigeración sufrió corte de suministro.',
@@ -409,7 +517,8 @@ function simulateNewAlert() {
     timestamp: 'Ahora mismo',
     dateIso: new Date().toISOString(),
     status: 'active',
-    statusLabel: 'Activa',
+    statusBackend: 'pendiente',
+    statusLabel: 'Pendiente',
     assignedTo: 'Sin asignar',
     notes: [
       { id: 1, author: 'Simulador IoT', time: 'Ahora', text: 'Disparo de prueba por evento térmico inesperado.' }
@@ -418,9 +527,36 @@ function simulateNewAlert() {
   }
 
   alerts.value.unshift(simulated)
-  showToast('¡Alerta simulada generada exitosamente en Cuba 02!')
+  allAlerts.value.unshift(simulated)
+  showToast('¡Alerta simulada generada exitosamente! También puedes ejecutar "python backend/simulate_esp.py".')
 }
+
+// ==========================================
+// CICLO DE VIDA Y POLLING
+// ==========================================
+let pollTimer = null
+
+function handleManualRefresh() {
+  isRefreshing.value = true
+  loadAlerts(false)
+}
+
+onMounted(() => {
+  loadAlerts(false)
+
+  // Polling automático cada 15s para capturar anomalías del simulador
+  pollTimer = setInterval(() => {
+    if (!isProtocolModalOpen.value) {
+      loadAlerts(true)
+    }
+  }, 15000)
+})
+
+onBeforeUnmount(() => {
+  if (pollTimer) clearInterval(pollTimer)
+})
 </script>
+
 
 <template>
   <div class="view-container alerts-view">
@@ -436,16 +572,32 @@ function simulateNewAlert() {
     <header class="alerts-header">
       <div>
         <div class="module-tag">Módulo 3 · Alertas y Protocolo</div>
-        <h1 class="view-title">Alertas y Gestión de Incidencias</h1>
+        <div class="title-with-counter">
+          <h1 class="view-title">Alertas y Gestión de Incidencias</h1>
+          <span class="badge-pending-header" :class="{ 'has-pending': totalActive > 0 }">
+            <span v-if="totalActive > 0" class="pulse-dot"></span>
+            {{ totalActive }} Pendiente{{ totalActive === 1 ? '' : 's' }}
+          </span>
+        </div>
         <p class="view-subtitle">
           Supervisión en tiempo real de anomalías de fermentación, fallas en sensores DS18B20 / MPU-6050 y protocolo operativo del enólogo.
         </p>
       </div>
 
       <div class="header-actions">
+        <button
+          class="btn-refresh"
+          :class="{ 'is-refreshing': isRefreshing || isLoading }"
+          :disabled="isLoading || isRefreshing"
+          @click="handleManualRefresh"
+          title="Actualizar listado de alertas desde el backend"
+        >
+          <RefreshCw :size="15" :class="{ 'animate-spin': isRefreshing || isLoading }" />
+          <span>{{ isRefreshing || isLoading ? 'Sincronizando...' : 'Actualizar' }}</span>
+        </button>
         <button class="btn-simulate" @click="simulateNewAlert" title="Genera una alerta de prueba en vivo">
           <PlusCircle :size="15" />
-          <span>Simular Alerta de Prueba</span>
+          <span>Simular Alerta</span>
         </button>
       </div>
     </header>
@@ -576,7 +728,24 @@ function simulateNewAlert() {
 
     <!-- Lista / Tabla de Alertas -->
     <section class="alerts-table-container">
-      <div v-if="filteredAlerts.length === 0" class="empty-state">
+      <!-- Loading State -->
+      <div v-if="isLoading && alerts.length === 0" class="state-banner loading-state">
+        <RefreshCw :size="32" class="animate-spin text-wine" />
+        <p>Conectando con el servidor MOSTO y consultando alertas...</p>
+      </div>
+
+      <!-- Error State -->
+      <div v-else-if="fetchError && alerts.length === 0" class="state-banner error-state">
+        <AlertTriangle :size="36" class="text-danger" />
+        <h3>Error al consultar alertas</h3>
+        <p>{{ fetchError }}</p>
+        <button class="btn-retry" @click="loadAlerts(false)">
+          <RefreshCw :size="14" />
+          <span>Reintentar Conexión</span>
+        </button>
+      </div>
+
+      <div v-else-if="filteredAlerts.length === 0" class="empty-state">
         <CheckCircle2 :size="40" class="empty-icon" />
         <h3>No hay alertas que coincidan con los filtros</h3>
         <p>Todas las cubas y sensores operan dentro de los umbrales esperados.</p>
@@ -667,12 +836,23 @@ function simulateNewAlert() {
 
               <div class="actions-group">
                 <button
+                  v-if="alert.status === 'active' || alert.statusBackend === 'pendiente'"
+                  class="btn-quick-attend"
+                  :disabled="isAttending"
+                  title="Atender directamente esta incidencia y pasar a protocolo"
+                  @click.stop="quickAttendAlert(alert)"
+                >
+                  <UserCheck :size="14" />
+                  <span>Atender</span>
+                </button>
+
+                <button
                   class="btn-attend"
-                  :class="alert.status === 'resolved' ? 'btn-attend--resolved' : 'btn-attend--active'"
+                  :class="alert.status === 'resolved' || alert.statusBackend === 'resuelta' ? 'btn-attend--resolved' : 'btn-attend--active'"
                   @click="openProtocol(alert)"
                 >
-                  <component :is="alert.status === 'resolved' ? Check : ShieldAlert" :size="15" />
-                  <span>{{ alert.status === 'resolved' ? 'Ver Bitácora' : 'Atender Incidencia' }}</span>
+                  <component :is="alert.status === 'resolved' || alert.statusBackend === 'resuelta' ? Check : ShieldAlert" :size="15" />
+                  <span>{{ alert.status === 'resolved' || alert.statusBackend === 'resuelta' ? 'Ver Bitácora' : 'Atender Incidencia' }}</span>
                 </button>
               </div>
             </div>
@@ -842,11 +1022,13 @@ function simulateNewAlert() {
 
           <div class="modal-footer-actions">
             <button
-              v-if="selectedAlert.status !== 'in_progress' && selectedAlert.status !== 'resolved'"
+              v-if="selectedAlert.status !== 'in_progress' && selectedAlert.status !== 'resolved' && selectedAlert.statusBackend !== 'atendida' && selectedAlert.statusBackend !== 'resuelta'"
               class="btn-modal-progress"
-              @click="keepInObservation"
+              :disabled="isAttending"
+              @click="attendSelectedAlert"
             >
-              Mantener en Protocolo
+              <UserCheck :size="15" />
+              <span>{{ isAttending ? 'Registrando...' : 'Atender e Iniciar Protocolo' }}</span>
             </button>
 
             <button
@@ -1960,4 +2142,154 @@ function simulateNewAlert() {
   font-weight: 600;
   font-size: 0.82rem;
 }
+
+/* =========================================
+   ESTILOS NUEVOS DE INTEGRACION API
+   ========================================= */
+.title-with-counter {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.badge-pending-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: var(--radius-full);
+  background-color: var(--status-danger-bg);
+  color: var(--status-danger);
+  border: 1px solid var(--status-danger-border);
+}
+
+.btn-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-sm);
+  background-color: var(--wine-900);
+  color: #FFFFFF;
+  border: 1px solid var(--wine-700);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-refresh:hover:not(:disabled) {
+  background-color: var(--wine-800);
+  transform: translateY(-1px);
+}
+
+.btn-refresh:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.btn-quick-attend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: var(--radius-sm);
+  background-color: #E8F4FD;
+  color: #1565C0;
+  border: 1px solid #BBDEFB;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-right: 0.5rem;
+}
+
+.btn-quick-attend:hover:not(:disabled) {
+  background-color: #D0E8FC;
+  border-color: #90CAF9;
+}
+
+.state-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  padding: 4rem 2rem;
+  background-color: var(--bg-card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.text-wine {
+  color: var(--wine-700);
+}
+
+.text-danger {
+  color: var(--status-danger);
+}
+
+.btn-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
+  background-color: var(--wine-800);
+  color: #FFFFFF;
+  border: none;
+  font-weight: 600;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.badge-severity--critica,
+.badge-severity--alta {
+  background-color: var(--status-danger-bg);
+  color: var(--status-danger);
+  border: 1px solid var(--status-danger-border);
+}
+
+.badge-severity--media {
+  background-color: var(--status-warn-bg);
+  color: var(--status-warn);
+  border: 1px solid var(--status-warn-border);
+}
+
+.badge-severity--baja {
+  background-color: #E8F4FD;
+  color: #1565C0;
+  border: 1px solid #BBDEFB;
+}
+
+.badge-status--pendiente {
+  background-color: #FDF4E7;
+  color: #B25E09;
+}
+
+.badge-status--atendida {
+  background-color: #E8F4FD;
+  color: #1565C0;
+}
+
+.badge-status--resuelta {
+  background-color: var(--status-good-bg);
+  color: var(--status-good);
+}
+
 </style>

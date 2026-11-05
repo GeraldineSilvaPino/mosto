@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Grape,
@@ -16,8 +16,31 @@ import {
   KeyRound,
   ChevronRight
 } from 'lucide-vue-next'
+import alertService from '../services/alertService'
 
 const route = useRoute()
+
+// Contador reactivo de alertas pendientes en navbar/sidebar
+const pendingAlertsCount = ref(0)
+let alertPollTimer = null
+
+async function updatePendingCount() {
+  try {
+    const metricas = await alertService.obtenerMetricas()
+    pendingAlertsCount.value = metricas.alertas_activas || 0
+  } catch (err) {
+    // Si el backend aún no está listo, silencioso
+  }
+}
+
+onMounted(() => {
+  updatePendingCount()
+  alertPollTimer = setInterval(updatePendingCount, 15000)
+})
+
+onBeforeUnmount(() => {
+  if (alertPollTimer) clearInterval(alertPollTimer)
+})
 
 const navSections = [
   {
@@ -99,7 +122,10 @@ const currentTitle = computed(() => {
           >
             <component :is="item.icon" :size="16" :stroke-width="1.75" />
             <span>{{ item.name }}</span>
-            <span class="nav-badge-num">{{ item.id }}</span>
+            <span v-if="item.id === '05' && pendingAlertsCount > 0" class="nav-alert-pill" title="Alertas pendientes de atención">
+              {{ pendingAlertsCount }}
+            </span>
+            <span v-else class="nav-badge-num">{{ item.id }}</span>
           </router-link>
         </div>
       </nav>
