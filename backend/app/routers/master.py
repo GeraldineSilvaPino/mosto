@@ -55,3 +55,4 @@ def listar_materiales(db: Session = Depends(get_db)):
 
     materiales = db.query(TipoMaterialCuba).order_by(TipoMaterialCuba.id.asc()).all()
     return [TipoMaterialCubaOut(id=m.id, nombre=m.nombre) for m in materiales]
+

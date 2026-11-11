@@ -188,3 +188,4 @@ def _sembrar_bitacora_inicial(db: Session):
     except Exception as e:
         print(f"Aviso al sembrar bitácora inicial: {e}")
         db.rollback()
+

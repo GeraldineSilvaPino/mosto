@@ -36,30 +36,48 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
     Inicia sesión verificando credenciales en la base de datos de Supabase.
     Genera y retorna un token JWT válido junto con el perfil del usuario.
     """
-    email_clean = payload.email.strip().lower()
+    raw_email = payload.email or payload.username
+    if not raw_email:
+        print("[AUTH ERROR] Petición de login rechazada: correo electrónico no proporcionado.")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El correo electrónico es requerido."
+        )
+
+    email_clean = raw_email.strip().lower()
+    print(f"[AUTH INFO] Intento de login recibido para: {email_clean}")
+
     usuario = db.query(Usuario).filter(func.lower(Usuario.correo_elec) == email_clean).first()
 
     if not usuario:
+        print(f"[AUTH WARN] Login fallido: usuario '{email_clean}' no encontrado en Supabase.")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales inválidas. Comprueba tu correo y contraseña."
         )
 
     if not usuario.activo:
+        print(f"[AUTH WARN] Login bloqueado: usuario '{email_clean}' está desactivado o suspendido.")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Esta cuenta se encuentra inactiva o suspendida. Contacta al administrador."
         )
 
-    # Validar contraseña con PBKDF2-HMAC-SHA512
-    if not verify_password(usuario.password_hash or "", payload.password):
+    # Validar contraseña con PBKDF2-HMAC-SHA512 (con tolerancia a espacios accidentales)
+    pwd_valid = verify_password(usuario.password_hash or "", payload.password)
+    if not pwd_valid and payload.password:
+        pwd_valid = verify_password(usuario.password_hash or "", payload.password.strip())
+
+    if not pwd_valid:
+        print(f"[AUTH WARN] Login fallido: contraseña incorrecta para '{email_clean}'.")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales inválidas. Comprueba tu correo y contraseña."
         )
 
     # Determinar tiempo de expiración
-    if payload.remember_me:
+    remember = payload.remember_me or payload.rememberMe
+    if remember:
         exp_delta = timedelta(days=REMEMBER_ME_EXPIRE_DAYS)
     else:
         exp_delta = timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
@@ -72,7 +90,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
             nombre_vina = emp.nomb_emp
 
     token_claims = {
-        "sub": usuario.id,
+        "sub": str(usuario.id),
         "email": usuario.correo_elec,
         "name": usuario.nomb_compl,
         "role": usuario.rol or "operador",
@@ -80,6 +98,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
     }
 
     access_token = create_access_token(token_claims, expires_delta=exp_delta)
+    print(f"[AUTH SUCCESS] Login exitoso para '{usuario.correo_elec}' ({usuario.nomb_compl}) - Rol: {usuario.rol}")
 
     # Construir avatar inicial
     partes = usuario.nomb_compl.strip().split()
@@ -151,3 +170,4 @@ def obtener_perfil_actual(
         winery=nombre_vina,
         avatarInitial=avatar
     )
+
