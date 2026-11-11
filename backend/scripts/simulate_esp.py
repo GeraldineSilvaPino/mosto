@@ -90,8 +90,8 @@ class SimuladorFermentacion:
     TEMP_MIN_FISICO = 10.0
     TEMP_MAX_FISICO = 40.0
 
-    def __init__(self, args: argparse.Namespace) -> None:
-        self.cuba_id: int = args.cuba
+    def __init__(self, args: argparse.Namespace, cuba_id: Optional[int] = None) -> None:
+        self.cuba_id: int = int(cuba_id) if cuba_id is not None else int(str(args.cuba).split(",")[0])
         self.dias_totales: float = max(float(args.duracion_dias), 0.01)
         self.horas_por_ciclo: float = max(float(args.horas_por_ciclo), 0.001)
         self.brix_inicial: float = float(args.brix_inicial)
@@ -343,17 +343,20 @@ def construir_envios(
     base = args.base_url.rstrip("/")
     envios: List[Tuple[str, str, Dict[str, Any]]] = []
 
+    mac_32 = args.mac_esp32 if sim.cuba_id == 1 else args.mac_esp32[:-2] + "{0:02X}".format(sim.cuba_id % 90 + 10)
+    mac_82 = args.mac_esp8266 if sim.cuba_id == 1 else args.mac_esp8266[:-2] + "{0:02X}".format(sim.cuba_id % 90 + 10)
+
     if args.nodo in ("ambos", "esp32"):
         envios.append((
-            "ESP32",
+            "ESP32-C{0}".format(sim.cuba_id),
             base + PATH_ESP32,
-            sim.paquete_esp32(args.mac_esp32),
+            sim.paquete_esp32(mac_32),
         ))
     if args.nodo in ("ambos", "esp8266"):
         envios.append((
-            "ESP8266",
+            "ESP8266-C{0}".format(sim.cuba_id),
             base + PATH_ESP8266,
-            sim.paquete_esp8266(args.mac_esp8266),
+            sim.paquete_esp8266(mac_82),
         ))
     return envios
 
@@ -395,11 +398,12 @@ def ejecutar(args: argparse.Namespace) -> int:
     if args.seed is not None:
         random.seed(args.seed)
 
-    sim = SimuladorFermentacion(args)
+    cuba_ids = [int(x.strip()) for x in str(args.cuba).split(",") if x.strip()]
+    simuladores = [SimuladorFermentacion(args, cuba_id=cid) for cid in cuba_ids]
 
     print("Simulador IoT MOSTO — TASK-BE-02A", flush=True)
     print("  Backend      : {0}".format(args.base_url), flush=True)
-    print("  Cuba         : {0}".format(args.cuba), flush=True)
+    print("  Cubas        : {0}".format(cuba_ids), flush=True)
     print("  Nodos        : {0}".format(args.nodo), flush=True)
     print("  Intervalo    : {0} s".format(args.interval), flush=True)
     print("  Duracion     : {0} dias simulados ({1} h/ciclo)".format(
@@ -414,23 +418,24 @@ def ejecutar(args: argparse.Namespace) -> int:
     error_final = ""
 
     while True:
-        # Condicion de parada configurable (util para pruebas automatizadas)
         if args.ciclos > 0 and ciclos_ejecutados >= args.ciclos:
             break
 
-        sim.avanzar()
         ciclos_ejecutados += 1
-        envios = construir_envios(sim, args)
-        resultados: List[Tuple[str, ResultadoEnvio]] = []
         perdidas: List[Tuple[str, str]] = []
 
-        for etiqueta, url, payload in envios:
-            resultado = post_json(url, payload, timeout=args.timeout)
-            resultados.append((etiqueta, resultado))
-            if resultado.sin_conexion:
-                perdidas.append((etiqueta, resultado.detalle))
+        for sim in simuladores:
+            sim.avanzar()
+            envios = construir_envios(sim, args)
+            resultados: List[Tuple[str, ResultadoEnvio]] = []
 
-        imprimir_linea(sim, resultados)
+            for etiqueta, url, payload in envios:
+                resultado = post_json(url, payload, timeout=args.timeout)
+                resultados.append((etiqueta, resultado))
+                if resultado.sin_conexion:
+                    perdidas.append((etiqueta, resultado.detalle))
+
+            imprimir_linea(sim, resultados)
 
         # --- Backoff ante perdida de conexion (criterio de aceptacion N° 2)
         if not perdidas:
@@ -524,8 +529,8 @@ def parsear_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
     destino = parser.add_argument_group("destino y frecuencia")
     destino.add_argument(
-        "--cuba", type=int, default=1,
-        help="ID de la cuba destino de la telemetria",
+        "--cuba", default="1",
+        help="ID o lista de IDs de cubas destino (ej: 1 o 1,12,13)",
     )
     destino.add_argument(
         "--interval", type=float, default=5.0,
@@ -625,8 +630,12 @@ def parsear_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         parser.error("--ciclos no puede ser negativo")
     if args.max_fallos < 0:
         parser.error("--max-fallos no puede ser negativo")
-    if args.cuba < 1:
-        parser.error("--cuba debe ser un ID positivo")
+    try:
+        c_ids = [int(x.strip()) for x in str(args.cuba).split(",") if x.strip()]
+        if not c_ids or any(c < 1 for c in c_ids):
+            parser.error("--cuba debe contener IDs positivos separados por coma (ej: 1 o 1,12,13)")
+    except ValueError:
+        parser.error("--cuba debe ser un numero entero o lista de enteros (ej: 1,12,13)")
     if args.brix_inicial < args.brix_final:
         parser.error("--brix-inicial no puede ser menor que --brix-final")
     if not args.base_url.startswith(("http://", "https://")):

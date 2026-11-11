@@ -49,185 +49,36 @@ import deviceService from '../services/deviceService.js'
 import cubaService from '../services/cubaService.js'
 
 // ==========================================
-// DATASETS MOCK DE DISPOSITIVOS ESP32
+// DISPOSITIVOS IOT (CONECTADO A FASTAPI / SUPABASE)
 // ==========================================
-let nextDeviceId = 20
+const SINGLE_MOCK_SENSOR = {
+  id: 9999,
+  code: 'ESP32-MOCK-LAB',
+  name: 'Sensor MOCK de Calibración (Simulado)',
+  mac: 'AA:BB:CC:DD:EE:99',
+  model: 'ESP32-Virtual (Emulado)',
+  sensorType: 'DS18B20',
+  sensorLabel: 'Sonda Térmica [MOCK DEMO]',
+  assignedCubaId: null,
+  assignedCubaName: 'Sin Asignar [MOCK]',
+  status: 'online',
+  statusLabel: 'Simulado (Mock)',
+  signalRssi: -60,
+  signalQuality: 'good',
+  powerSource: 'mains',
+  batteryLevel: 99,
+  firmware: 'v1.0.0-mock',
+  lastTelemetry: 'En tiempo real',
+  lastReadingValue: '18.5 °C (Dato Mock)',
+  samplingInterval: '5 seg',
+  ipAddress: '192.168.10.99',
+  notes: '[DISPOSITIVO MOCK] Sensor virtual de prueba de laboratorio para homologación y desarrollo.'
+}
 
-const devices = ref([
-  {
-    id: 1,
-    code: 'ESP32-CB01-TEMP',
-    name: 'Nodo Térmico Cuba 01',
-    mac: '24:6F:28:B4:9C:12',
-    model: 'ESP32-WROOM-32D',
-    sensorType: 'DS18B20',
-    sensorLabel: 'Sonda Térmica Estanco DS18B20',
-    assignedCubaId: '01',
-    assignedCubaName: 'Cuba 01 · Cabernet Sauvignon',
-    status: 'online', // online | offline | maintenance
-    statusLabel: 'En Línea',
-    signalRssi: -58, // dBm
-    signalQuality: 'excellent', // excellent | good | weak | none
-    powerSource: 'mains', // mains (red eléctrica 220V) | battery
-    batteryLevel: 100,
-    firmware: 'v2.4.1-ota',
-    lastTelemetry: 'Hace 8 seg',
-    lastReadingValue: '24.6 °C',
-    samplingInterval: '1 min',
-    ipAddress: '192.168.10.41',
-    notes: 'Sonda sumergida a 1.8m de profundidad en el centro del tanque.'
-  },
-  {
-    id: 2,
-    code: 'ESP32-CB01-TILT',
-    name: 'Cápsula Flotante Cuba 01',
-    mac: '3C:71:BF:12:44:88',
-    model: 'ESP32-C3-Mini',
-    sensorType: 'MPU-6050',
-    sensorLabel: 'Inclinómetro Giroscopio MPU-6050',
-    assignedCubaId: '01',
-    assignedCubaName: 'Cuba 01 · Cabernet Sauvignon',
-    status: 'online',
-    statusLabel: 'En Línea',
-    signalRssi: -66,
-    signalQuality: 'good',
-    powerSource: 'battery',
-    batteryLevel: 82,
-    firmware: 'v2.3.0',
-    lastTelemetry: 'Hace 15 seg',
-    lastReadingValue: '42.5° (13.2 °Bx)',
-    samplingInterval: '2 min',
-    ipAddress: '192.168.10.42',
-    notes: 'Flotador hermético tipo hidrómetro con batería Li-Po de 2000mAh.'
-  },
-  {
-    id: 3,
-    code: 'ESP32-CB02-TEMP',
-    name: 'Nodo Térmico Cuba 02',
-    mac: '24:6F:28:C8:11:50',
-    model: 'ESP32-WROOM-32D',
-    sensorType: 'DS18B20',
-    sensorLabel: 'Sonda Térmica Estanco DS18B20',
-    assignedCubaId: '02',
-    assignedCubaName: 'Cuba 02 · Carménère Reserva',
-    status: 'online',
-    statusLabel: 'En Línea',
-    signalRssi: -62,
-    signalQuality: 'good',
-    powerSource: 'mains',
-    batteryLevel: 100,
-    firmware: 'v2.4.1-ota',
-    lastTelemetry: 'Hace 5 seg',
-    lastReadingValue: '17.5 °C',
-    samplingInterval: '1 min',
-    ipAddress: '192.168.10.43',
-    notes: 'Disparó alerta por gradiente térmico negativo pronunciado.'
-  },
-  {
-    id: 4,
-    code: 'ESP32-CB02-TILT',
-    name: 'Cápsula Flotante Cuba 02',
-    mac: '3C:71:BF:88:20:94',
-    model: 'ESP32-C3-Mini',
-    sensorType: 'MPU-6050',
-    sensorLabel: 'Inclinómetro Giroscopio MPU-6050',
-    assignedCubaId: '02',
-    assignedCubaName: 'Cuba 02 · Carménère Reserva',
-    status: 'maintenance',
-    statusLabel: 'En Mantención (Aislado)',
-    signalRssi: -72,
-    signalQuality: 'good',
-    powerSource: 'battery',
-    batteryLevel: 14, // Batería baja
-    firmware: 'v2.3.0',
-    lastTelemetry: 'Hace 18 min',
-    lastReadingValue: '58.2° (18.4 °Bx)',
-    samplingInterval: '5 min',
-    ipAddress: '192.168.10.44',
-    notes: 'Anulado temporalmente por enólogo para recarga de batería.'
-  },
-  {
-    id: 5,
-    code: 'ESP32-CB03-DUAL',
-    name: 'Nodo Compacto Cuba 03',
-    mac: '24:6F:28:FE:33:09',
-    model: 'ESP32-S3-DevKit',
-    sensorType: 'DUAL',
-    sensorLabel: 'Combo Dual (DS18B20 + MPU-6050)',
-    assignedCubaId: '03',
-    assignedCubaName: 'Cuba 03 · Sauvignon Blanc',
-    status: 'online',
-    statusLabel: 'En Línea',
-    signalRssi: -54,
-    signalQuality: 'excellent',
-    powerSource: 'mains',
-    batteryLevel: 100,
-    firmware: 'v2.5.0-beta',
-    lastTelemetry: 'Hace 12 seg',
-    lastReadingValue: '15.2 °C · 6.8 °Bx',
-    samplingInterval: '1 min',
-    ipAddress: '192.168.10.45',
-    notes: 'Instalado en cuba de blanco con camisa de enfriamiento permanente.'
-  },
-  {
-    id: 6,
-    code: 'ESP32-CB04-TEMP',
-    name: 'Nodo Térmico Cuba 04',
-    mac: '24:6F:28:90:AA:BC',
-    model: 'ESP32-WROOM-32D',
-    sensorType: 'DS18B20',
-    sensorLabel: 'Sonda Térmica Estanco DS18B20',
-    assignedCubaId: '04',
-    assignedCubaName: 'Cuba 04 · Syrah Gran Corte',
-    status: 'offline',
-    statusLabel: 'Desconectado',
-    signalRssi: -90,
-    signalQuality: 'none',
-    powerSource: 'mains',
-    batteryLevel: 0,
-    firmware: 'v2.4.0',
-    lastTelemetry: 'Hace 2 horas',
-    lastReadingValue: '26.8 °C (Última)',
-    samplingInterval: '1 min',
-    ipAddress: '192.168.10.46',
-    notes: 'Sin respuesta a solicitudes de ping. Verificar bornera de alimentación.'
-  },
-  {
-    id: 7,
-    code: 'ESP32-SPARE-01',
-    name: 'Nodo Móvil de Repuesto',
-    mac: '24:6F:28:11:44:00',
-    model: 'ESP32-WROOM-32D',
-    sensorType: 'DS18B20',
-    sensorLabel: 'Sonda Térmica Estanco DS18B20',
-    assignedCubaId: null,
-    assignedCubaName: 'Sin Asignar (Bodega de Repuestos)',
-    status: 'online',
-    statusLabel: 'En Reserva',
-    signalRssi: -60,
-    signalQuality: 'good',
-    powerSource: 'battery',
-    batteryLevel: 95,
-    firmware: 'v2.4.1-ota',
-    lastTelemetry: 'Hace 1 min',
-    lastReadingValue: '20.1 °C (Ambiente)',
-    samplingInterval: '5 min',
-    ipAddress: '192.168.10.99',
-    notes: 'Dispositivo configurado listo para reemplazo rápido en caso de avería.'
-  }
-])
+const devices = ref([SINGLE_MOCK_SENSOR])
 
-// ==========================================
-// CUBAS DISPONIBLES PARA EMPAREJAR (REACTIVO)
-// ==========================================
-const availableCubas = ref([
-  { id: '1', code: 'CB-01', name: 'Cuba 01 · Cabernet Sauvignon' },
-  { id: '2', code: 'CB-02', name: 'Cuba 02 · Carménère Reserva' },
-  { id: '3', code: 'CB-03', name: 'Cuba 03 · Sauvignon Blanc' },
-  { id: '4', code: 'CB-04', name: 'Cuba 04 · Syrah Gran Corte' },
-  { id: '5', code: 'CB-05', name: 'Cuba 05 · Chardonnay' },
-  { id: '6', code: 'CB-06', name: 'Cuba 06 · Malbec' }
-])
+// Cubas disponibles para emparejar (se actualizan dinámicamente desde backend)
+const availableCubas = ref([])
 
 // ==========================================
 // FILTROS Y ESTADO REACTIVO
@@ -357,8 +208,8 @@ async function loadDevices(isManual = false) {
   errorMessage.value = null
   try {
     const data = await deviceService.listarDispositivos()
-    if (Array.isArray(data) && data.length > 0) {
-      devices.value = data.map(mapBackendDevice)
+    if (Array.isArray(data)) {
+      devices.value = [...data.map(mapBackendDevice), SINGLE_MOCK_SENSOR]
     }
 
     try {
