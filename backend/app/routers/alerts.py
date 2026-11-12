@@ -62,6 +62,11 @@ def _construir_titulo_descripcion(alerta: EventoAlerta) -> Tuple[str, str]:
             "Señal Wi-Fi Inestable",
             "La intensidad de señal RSSI del nodo IoT cayó bajo el nivel mínimo para garantizar la telemetría continua."
         )
+    elif tipo in ("parada_fermentacion", "parada_fermentacion_ia", "parada"):
+        return (
+            "Predicción IA: Riesgo de Parada de Fermentación",
+            alerta.mensaje or "El modelo de Inteligencia Artificial detectó estancamiento crítico en la curva de degradación de azúcares."
+        )
     
     tipo_legible = tipo.replace("_", " ").capitalize()
     return (
@@ -100,6 +105,8 @@ def _mapear_alerta_out(alerta: EventoAlerta, db: Optional[Session] = None) -> Al
         sensor_tipo = "PH-4502C"
     elif "brix" in alerta.tipo_alerta or "tilt" in alerta.tipo_alerta:
         sensor_tipo = "MPU-6050"
+    elif "parada" in alerta.tipo_alerta or "ia" in alerta.tipo_alerta:
+        sensor_tipo = "Modelo IA (ML)"
     else:
         sensor_tipo = "Sensor IoT"
 

@@ -22,6 +22,7 @@ from app.models import (
     LecturaTelemetria,
     EventoAlerta
 )
+from app.services.ml_service import evaluar_riesgo_parada_cuba
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +265,105 @@ class RulesEngine:
 
         return alerta_reciente is not None
 
+    def evaluar_alerta_ia_parada(
+        self,
+        db: Session,
+        cuba_id: int,
+        fermentacion_id: Optional[int],
+        dispositivo_id: Optional[int] = None
+    ) -> Optional[EventoAlerta]:
+        """
+        Consulta las últimas 12 lecturas de la cuba (con proceso activo) y evalúa
+        el riesgo de parada de fermentación mediante el modelo de Machine Learning.
+        Si alerta_ia es True (riesgo_pct >= 70.0), crea automáticamente una alerta crítica
+        evitando duplicar si ya existe una alerta activa para esa fermentación.
+        """
+        if not fermentacion_id:
+            proceso = (
+                db.query(ProcesoFermentacion)
+                .filter(
+                    ProcesoFermentacion.cuba_id == cuba_id,
+                    ProcesoFermentacion.estado == "en_proceso"
+                )
+                .order_by(desc(ProcesoFermentacion.id))
+                .first()
+            )
+            if not proceso:
+                return None
+            fermentacion_id = proceso.id
+
+        # Consultar las últimas 12 lecturas con brix y temperatura
+        lecturas = (
+            db.query(LecturaTelemetria)
+            .filter(
+                LecturaTelemetria.fermentacion_id == fermentacion_id,
+                LecturaTelemetria.brix.isnot(None),
+                LecturaTelemetria.temp_mosto.isnot(None)
+            )
+            .order_by(desc(LecturaTelemetria.timestamp), desc(LecturaTelemetria.id))
+            .limit(12)
+            .all()
+        )
+
+        if len(lecturas) < 4:
+            return None
+
+        # Ordenar cronológicamente (de más antigua a más reciente)
+        lecturas_cron = list(reversed(lecturas))
+        lecturas_brix = [float(l.brix) for l in lecturas_cron]
+        lecturas_temp = [float(l.temp_mosto) for l in lecturas_cron]
+
+        prediccion = evaluar_riesgo_parada_cuba(lecturas_brix, lecturas_temp)
+
+        if not prediccion.get("alerta_ia"):
+            return None
+
+        riesgo_pct = prediccion.get("riesgo_pct", 0.0)
+
+        # Evitar duplicar alertas activas (pendiente o atendida) de parada de fermentación
+        alerta_existente = (
+            db.query(EventoAlerta)
+            .filter(
+                EventoAlerta.fermentacion_id == fermentacion_id,
+                EventoAlerta.tipo_alerta == "parada_fermentacion",
+                EventoAlerta.estado.in_(["pendiente", "atendida"])
+            )
+            .first()
+        )
+
+        if alerta_existente:
+            logger.info(
+                f"[Alertas IA] Alerta activa de parada de fermentación ya existe para cuba {cuba_id} "
+                f"(ID={alerta_existente.id}, estado={alerta_existente.estado}). No se duplica."
+            )
+            return None
+
+        mensaje = (
+            f"Predicción IA: Riesgo crítico de parada de fermentación ({riesgo_pct}%). "
+            f"Estancamiento de consumo de azúcar detectado."
+        )
+
+        nueva_alerta = EventoAlerta(
+            dispositivo_id=dispositivo_id,
+            fermentacion_id=fermentacion_id,
+            timestamp=datetime.utcnow(),
+            tipo_alerta="parada_fermentacion",
+            severidad="critica",
+            met_dispar="modelo_ia_ml",
+            mensaje=mensaje,
+            valor_registrado=riesgo_pct,
+            valor_limite=70.0,
+            estado="pendiente"
+        )
+        db.add(nueva_alerta)
+        db.commit()
+        db.refresh(nueva_alerta)
+
+        logger.warning(
+            f"[Alertas IA] ¡ALERTA CRÍTICA GENERADA! Cuba {cuba_id}, Proceso {fermentacion_id}: {mensaje}"
+        )
+        return nueva_alerta
+
     def procesar_alertas_lectura(
         self,
         db: Session,
@@ -274,6 +374,7 @@ class RulesEngine:
         """
         TASK-BE-03B: Evalúa la lectura y persiste eventos de alerta en EVENTO_ALERTA
         con estado 'pendiente', aplicando el filtro de enfriamiento de 15 minutos.
+        Incluye también la evaluación de Machine Learning para parada de fermentación.
         """
         anomalias = self.evaluar_lectura(db=db, lectura=lectura, cuba_id=cuba_id)
         alertas_generadas: List[EventoAlerta] = []
@@ -313,6 +414,19 @@ class RulesEngine:
             logger.info(
                 f"[Alertas] Se persistieron {len(alertas_generadas)} nuevas alertas para la cuba {cuba_id}."
             )
+
+        # Evaluación complementaria del modelo de Machine Learning (Parada de Fermentación)
+        try:
+            alerta_ia = self.evaluar_alerta_ia_parada(
+                db=db,
+                cuba_id=cuba_id,
+                fermentacion_id=lectura.fermentacion_id,
+                dispositivo_id=dispositivo_id or lectura.dispositivo_id
+            )
+            if alerta_ia:
+                alertas_generadas.append(alerta_ia)
+        except Exception as e:
+            logger.error(f"[RulesEngine] Error evaluando modelo IA de parada: {e}")
 
         return alertas_generadas
 

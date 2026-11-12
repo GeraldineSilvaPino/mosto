@@ -87,6 +87,19 @@ class LecturaOut(BaseModel):
         from_attributes = True
 
 
+class MLPredictionOut(BaseModel):
+    """Predicción de Machine Learning para parada temprana de fermentación."""
+    riesgo_pct: float = Field(..., example=85.4, description="Porcentaje de riesgo de parada de fermentación (0 a 100)")
+    estado_ia: str = Field(..., example="CRITICO", description="Estado IA: NORMAL, ADVERTENCIA, CRITICO, RECOLECTANDO_DATOS, FINALIZADA")
+    alerta_ia: bool = Field(..., example=True, description="Indica si el modelo disparó o debe disparar alerta")
+    mensaje: str = Field(..., example="Predicción IA: Riesgo crítico de parada...", description="Diagnóstico textual explicativo")
+    brix_suavizado: Optional[float] = Field(None, example=14.5, description="Promedio móvil de las últimas lecturas de °Brix")
+    temp_suavizada: Optional[float] = Field(None, example=31.2, description="Promedio móvil de las últimas lecturas de temperatura")
+    pendiente_brix_ventana: Optional[float] = Field(None, example=-0.002, description="Pendiente de caída de azúcar en la ventana")
+    pendiente_temp_ventana: Optional[float] = Field(None, example=0.25, description="Pendiente térmica en la ventana")
+    turbulencia_brix_std: Optional[float] = Field(None, example=0.03, description="Desviación estándar de °Brix en la ventana")
+
+
 class CubaOut(BaseModel):
     id: int
     codigo_cuba: str
@@ -111,8 +124,20 @@ class CubaOut(BaseModel):
     ultimo_ph: Optional[float] = None
     ultima_lectura_timestamp: Optional[datetime] = None
 
+    # Predicción de Machine Learning (Parada de Fermentación)
+    prediccion_ml: Optional[MLPredictionOut] = None
+
     class Config:
         from_attributes = True
+
+
+class SimulacionAnomaliaOut(BaseModel):
+    status: str = Field(..., example="ok")
+    mensaje: str = Field(..., example="Anomalía de parada de fermentación simulada con éxito")
+    cuba_id: int
+    proceso_id: Optional[int] = None
+    lecturas_inyectadas: int
+    prediccion_ml: MLPredictionOut
 
 
 class HistoricoCubaOut(BaseModel):

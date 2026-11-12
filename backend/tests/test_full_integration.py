@@ -53,7 +53,8 @@ def test_usuarios_crud_and_status():
     assert len(usuarios) >= 1
 
     # Crear nuevo usuario de prueba
-    test_email = f"test.enologo.{int(id(test_email) if 'test_email' in dir() else 9999)}@vinamosto.cl"
+    import time
+    test_email = f"test.enologo.{int(time.time() * 1000)}@vinamosto.cl"
     res_crear = client.post("/api/usuarios", json={
         "name": "Enólogo de Pruebas",
         "email": test_email,

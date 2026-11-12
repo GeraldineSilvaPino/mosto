@@ -99,6 +99,13 @@ class SimuladorFermentacion:
         self.temp_base: float = float(args.temp_base)
         self.temp_amplitud: float = float(args.temp_amplitud)
 
+        # Estado dinámico de degradación de azúcares y temperatura
+        self.current_brix: float = float(args.brix_inicial)
+        self.stuck_fermentation: bool = getattr(args, "stuck_fermentation", False)
+        self.stuck_cuba: Optional[int] = getattr(args, "stuck_cuba", None)
+        self.stuck_after: int = getattr(args, "stuck_after", 4)
+        self.stuck_temp: float = 29.5
+
         # --- TASK-BE-02B: fallos inyectados (None = desactivado) ----------
         self.spike_temp: Optional[float] = getattr(args, "spike_temp", None)
         self.drain_battery: Optional[float] = getattr(args, "drain_battery", None)
@@ -108,9 +115,17 @@ class SimuladorFermentacion:
         self.ciclo: int = 0
 
     @property
+    def is_in_stuck_mode(self) -> bool:
+        """Determina si esta cuba entró en fase de parada de fermentación (Brix plano y alta temp)."""
+        es_cuba = self.stuck_fermentation or (self.stuck_cuba is not None and self.cuba_id == self.stuck_cuba)
+        return es_cuba and (self.ciclo >= self.stuck_after)
+
+    @property
     def fallas_activas(self) -> List[str]:
         """Lista legible de anomalias inyectadas con `--spike-temp` etc."""
         activas = []
+        if self.is_in_stuck_mode:
+            activas.append("PARADA-FERMENTACION (IA ML)")
         if self.spike_temp is not None:
             activas.append("SPIKE-TEMP {0:.1f}°C".format(self.spike_temp))
         if self.drain_battery is not None:
@@ -139,11 +154,27 @@ class SimuladorFermentacion:
         self.ciclo += 1
         self.horas_simuladas += self.horas_por_ciclo
 
+        if self.is_in_stuck_mode:
+            # Estancamiento: Brix congelado alrededor de ~14.5 °Bx
+            self.current_brix = 14.50
+            # Temperatura sube progresivamente hacia 31.0°C - 33.0°C
+            if self.stuck_temp < 32.2:
+                self.stuck_temp += random.uniform(0.3, 0.7)
+        else:
+            # Caída saludable de Brix (-0.03 a -0.06 por tick de 5s en demo)
+            caida = random.uniform(0.03, 0.06)
+            self.current_brix = max(self.brix_final, self.current_brix - caida)
+
     # -- Sensores ---------------------------------------------------------
     @property
     def brix(self) -> float:
-        curva = self.brix_inicial - (self.brix_inicial - self.brix_final) * self.progreso
-        valor = curva + random.gauss(0.0, 0.05)
+        if self.is_in_stuck_mode:
+            # Parada de fermentación: Brix plano en ~14.5 con ruido mínimo N(0, 0.02)
+            valor = 14.50 + random.gauss(0.0, 0.02)
+            return round(valor, 2)
+
+        # Caída saludable con suave ruido gaussiano N(0, 0.05)
+        valor = self.current_brix + random.gauss(0.0, 0.05)
         return round(max(self.brix_final, min(self.brix_inicial, valor)), 2)
 
     @property
@@ -156,10 +187,14 @@ class SimuladorFermentacion:
         # TASK-BE-02B: sobrecalentamiento forzado sin clamp ni ruido
         if self.spike_temp is not None:
             return round(self.spike_temp, 2)
-        # Fermentacion exotermica + ciclo diario + ruido de lectura DS18B20
+        if self.is_in_stuck_mode:
+            # Parada de fermentación: temperatura elevada hacia 30°C - 33°C
+            return round(self.stuck_temp + random.gauss(0.0, 0.15), 2)
+
+        # Fermentación saludable entre 21°C y 24°C
         ciclo_diario = self.temp_amplitud * math.sin(2.0 * math.pi * self.horas_simuladas / 24.0)
         valor = self.temp_base + ciclo_diario + random.gauss(0.0, 0.15)
-        return round(max(self.TEMP_MIN_FISICO, min(self.TEMP_MAX_FISICO, valor)), 2)
+        return round(max(21.0, min(24.0, valor)), 2)
 
     @property
     def temperatura_ambiente(self) -> float:
@@ -567,11 +602,11 @@ def parsear_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Grados Brix objetivo al final de la vendimia",
     )
     curva.add_argument(
-        "--temp-base", type=float, default=18.5,
-        help="Temperatura base del mosto en grados Celsius",
+        "--temp-base", type=float, default=22.5,
+        help="Temperatura base del mosto en grados Celsius (rango optimo 21°C - 24°C)",
     )
     curva.add_argument(
-        "--temp-amplitud", type=float, default=0.8,
+        "--temp-amplitud", type=float, default=0.6,
         help="Amplitud del ciclo diario de temperatura en grados Celsius",
     )
 
@@ -583,6 +618,20 @@ def parsear_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     hardware.add_argument(
         "--mac-esp8266", default="5C:CF:7F:12:34:56",
         help="Direccion MAC del ESP8266 (flotador densimetro)",
+    )
+
+    ia_ml = parser.add_argument_group("inteligencia artificial y parada de fermentacion (ML)")
+    ia_ml.add_argument(
+        "--stuck-cuba", type=int, default=None, metavar="CUBA_ID",
+        help="ID de cuba a forzar en escenario de parada de fermentacion (Brix congelado ~14.5, Temp 30-33°C)",
+    )
+    ia_ml.add_argument(
+        "--stuck-after", type=int, default=4, metavar="TICKS",
+        help="Cantidad de ticks saludables antes de entrar en parada de fermentacion (default: 4)",
+    )
+    ia_ml.add_argument(
+        "--stuck-fermentation", action="store_true", default=False,
+        help="Fuerza inmediatamente la anomalia de parada de fermentacion en la cuba simulada",
     )
 
     capa = parser.add_argument_group("inyector de anomalias (TASK-BE-02B)")

@@ -165,6 +165,7 @@ const mapearCuba = (item, previa = null) => {
     alertaMsg,
     tendenciaTemp,
     ultima_lectura_timestamp: item.ultima_lectura_timestamp,
+    prediccion_ml: item.prediccion_ml || null,
     _haCambiado: haCambiado
   }
 }
@@ -344,6 +345,24 @@ const getStatusBadge = (estado) => {
       return { label: 'Advertencia', class: 'warn', dot: 'amber' }
     default:
       return { label: 'Normal', class: 'good', dot: 'green' }
+  }
+}
+
+const getIABadge = (pred) => {
+  if (!pred || !pred.estado_ia) return null
+  const estado = pred.estado_ia
+  const pct = typeof pred.riesgo_pct === 'number' ? pred.riesgo_pct.toFixed(0) : '0'
+  switch (estado) {
+    case 'CRITICO':
+      return { label: `IA: ${pct}% Parada`, class: 'badge-ia-critico', isCritico: true }
+    case 'ADVERTENCIA':
+      return { label: `IA: ${pct}% Riesgo`, class: 'badge-ia-advertencia', isCritico: false }
+    case 'NORMAL':
+      return { label: `IA: ${pct}% Normal`, class: 'badge-ia-normal', isCritico: false }
+    case 'FINALIZADA':
+      return { label: 'IA: Fin', class: 'badge-ia-finalizada', isCritico: false }
+    default:
+      return { label: 'IA: Calibrando', class: 'badge-ia-calibrando', isCritico: false }
   }
 }
 
@@ -752,9 +771,20 @@ onBeforeUnmount(() => {
                     {{ cuba.brix !== null ? cuba.brix.toFixed(1) + '°Bx' : '--' }}
                   </td>
                   <td>
-                    <span class="badge-status" :class="getStatusBadge(cuba.estado).class">
-                      {{ getStatusBadge(cuba.estado).label }}
-                    </span>
+                    <div style="display: flex; align-items: center; gap: 0.4rem;">
+                      <span class="badge-status" :class="getStatusBadge(cuba.estado).class">
+                        {{ getStatusBadge(cuba.estado).label }}
+                      </span>
+                      <span
+                        v-if="getIABadge(cuba.prediccion_ml)"
+                        class="badge-ia"
+                        :class="getIABadge(cuba.prediccion_ml).class"
+                        :title="cuba.prediccion_ml.mensaje"
+                      >
+                        <Sparkles :size="10" />
+                        <span>{{ cuba.prediccion_ml.riesgo_pct }}%</span>
+                      </span>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -1039,6 +1069,18 @@ onBeforeUnmount(() => {
             <span>{{ cuba.lote }}</span>
             <span class="submeta-divider">·</span>
             <span>{{ cuba.fase }} (Día {{ cuba.dia }})</span>
+          </div>
+
+          <!-- Badge Resumen Predicción IA -->
+          <div v-if="getIABadge(cuba.prediccion_ml)" class="cuba-saas-ia-row">
+            <span
+              class="badge-ia"
+              :class="getIABadge(cuba.prediccion_ml).class"
+              :title="cuba.prediccion_ml.mensaje"
+            >
+              <Sparkles :size="11" />
+              <span>{{ getIABadge(cuba.prediccion_ml).label }}</span>
+            </span>
           </div>
 
           <!-- Alerta si aplica -->
@@ -1757,5 +1799,62 @@ onBeforeUnmount(() => {
 
 .text-danger {
   color: var(--status-danger) !important;
+}
+
+/* ======================================================= */
+/* BADGES DE PREDICCIÓN IA (MACHINE LEARNING)             */
+/* ======================================================= */
+.cuba-saas-ia-row {
+  display: flex;
+  align-items: center;
+  margin-top: 0.35rem;
+  margin-bottom: 0.25rem;
+}
+
+.badge-ia {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.badge-ia-critico {
+  background: rgba(239, 68, 68, 0.16);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  animation: pulseIABadge 2s infinite ease-in-out;
+}
+
+@keyframes pulseIABadge {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 10px 2px rgba(239, 68, 68, 0.3);
+  }
+}
+
+.badge-ia-advertencia {
+  background: rgba(245, 158, 11, 0.16);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.badge-ia-normal {
+  background: rgba(16, 185, 129, 0.16);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.badge-ia-finalizada,
+.badge-ia-calibrando {
+  background: rgba(107, 114, 128, 0.16);
+  color: #9ca3af;
+  border: 1px solid rgba(107, 114, 128, 0.3);
 }
 </style>

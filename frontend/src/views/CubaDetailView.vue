@@ -40,6 +40,7 @@ import {
   Radio,
   Play,
   Square,
+  Sparkles,
   X
 } from 'lucide-vue-next'
 
@@ -74,6 +75,87 @@ const activeChartTab = ref('both') // 'both' | 'temp' | 'brix' | 'ph'
 const chartCanvasRef = ref(null)
 let chartInstance = null
 let pollInterval = null
+
+// ==========================================
+// ESTADO DE MACHINE LEARNING & PREDICCIÓN IA
+// ==========================================
+const isSimulatingAnomaly = ref(false)
+const isRestoringNormality = ref(false)
+const iaToastMessage = ref('')
+
+const prediccionML = computed(() => {
+  return (
+    cuba.value?.prediccion_ml || {
+      riesgo_pct: 0.0,
+      estado_ia: 'RECOLECTANDO_DATOS',
+      alerta_ia: false,
+      mensaje: 'Calibrando ventana temporal (mínimo 4 lecturas)...',
+      brix_suavizado: null,
+      temp_suavizada: null,
+      pendiente_brix_ventana: null,
+      pendiente_temp_ventana: null,
+      turbulencia_brix_std: null
+    }
+  )
+})
+
+const iaStatusClass = computed(() => {
+  const estado = prediccionML.value?.estado_ia || 'RECOLECTANDO_DATOS'
+  switch (estado) {
+    case 'CRITICO':
+      return 'ia-status--critico'
+    case 'ADVERTENCIA':
+      return 'ia-status--advertencia'
+    case 'NORMAL':
+      return 'ia-status--normal'
+    case 'FINALIZADA':
+      return 'ia-status--finalizada'
+    default:
+      return 'ia-status--calibrando'
+  }
+})
+
+const iaGaugeColor = computed(() => {
+  const pct = Number(prediccionML.value?.riesgo_pct) || 0
+  if (pct >= 70) return '#ef4444' // Rojo
+  if (pct >= 40) return '#f59e0b' // Ámbar
+  return '#10b981' // Verde
+})
+
+const ejecutarSimularAnomalia = async () => {
+  if (isSimulatingAnomaly.value) return
+  try {
+    isSimulatingAnomaly.value = true
+    await cubaService.simularAnomalia(selectedCubaId.value)
+    // Refrescar inmediatamente datos de la cuba y gráfico
+    await cargarDatosCuba(selectedCubaId.value, false)
+    iaToastMessage.value = '¡Anomalía inyectada! El modelo IA detectó riesgo crítico y generó alerta.'
+    setTimeout(() => {
+      iaToastMessage.value = ''
+    }, 5000)
+  } catch (err) {
+    console.error('Error al simular anomalía de parada:', err)
+  } finally {
+    isSimulatingAnomaly.value = false
+  }
+}
+
+const ejecutarRestaurarNormalidad = async () => {
+  if (isRestoringNormality.value) return
+  try {
+    isRestoringNormality.value = true
+    await cubaService.restaurarNormalidad(selectedCubaId.value)
+    await cargarDatosCuba(selectedCubaId.value, false)
+    iaToastMessage.value = 'Cinética saludable restablecida con éxito.'
+    setTimeout(() => {
+      iaToastMessage.value = ''
+    }, 5000)
+  } catch (err) {
+    console.error('Error al restaurar normalidad:', err)
+  } finally {
+    isRestoringNormality.value = false
+  }
+}
 
 // ==========================================
 // UTILITARIOS Y MAPEO DE TIEMPO
@@ -1286,6 +1368,229 @@ onBeforeUnmount(() => {
               <Square :size="13" />
               <span>Finalizar Fermentación</span>
             </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN PREDICCIÓN IA: Detección Temprana de Parada de Fermentación (Machine Learning) -->
+    <section
+      class="ai-prediction-card"
+      :class="{ 'ai-prediction-card--critical': prediccionML.estado_ia === 'CRITICO' }"
+    >
+      <!-- Cabecera de la Tarjeta IA -->
+      <div class="ai-card-header">
+        <div class="ai-header-left">
+          <div class="ai-icon-badge" :class="iaStatusClass">
+            <Sparkles :size="20" />
+          </div>
+          <div>
+            <div class="ai-title-row">
+              <h2 class="ai-title">Predicción IA — Riesgo de Parada de Fermentación</h2>
+              <span class="ai-badge" :class="iaStatusClass">
+                <span class="ai-badge-dot"></span>
+                {{ prediccionML.estado_ia }}
+              </span>
+            </div>
+            <p class="ai-subtitle">
+              Modelo GradientBoostingClassifier para detección temprana de estancamiento cinético (Stuck Fermentation)
+            </p>
+          </div>
+        </div>
+
+        <!-- Botones de Acción para Demostración en Vivo -->
+        <div class="ai-actions">
+          <button
+            class="btn-demo-simular"
+            :disabled="isSimulatingAnomaly"
+            @click="ejecutarSimularAnomalia"
+            title="Inyecta lecturas de Brix plano (~14.5) y alta temperatura para demostrar la detección de la IA"
+          >
+            <Activity :size="14" :class="{ 'spin-icon': isSimulatingAnomaly }" />
+            <span>{{ isSimulatingAnomaly ? 'Inyectando...' : 'Simular Parada (Demo IA)' }}</span>
+          </button>
+
+          <button
+            v-if="prediccionML.estado_ia === 'CRITICO' || prediccionML.riesgo_pct >= 50"
+            class="btn-demo-reset"
+            :disabled="isRestoringNormality"
+            @click="ejecutarRestaurarNormalidad"
+            title="Restaura la cinética saludable de fermentación y resuelve la alerta"
+          >
+            <RefreshCw :size="13" :class="{ 'spin-icon': isRestoringNormality }" />
+            <span>Restaurar</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Feedback de simulación -->
+      <transition name="toast-fade">
+        <div v-if="iaToastMessage" class="ai-toast-message">
+          <Info :size="15" />
+          <span>{{ iaToastMessage }}</span>
+        </div>
+      </transition>
+
+      <!-- Cuerpo de la Tarjeta: Medidor de Riesgo e Indicadores Técnicos -->
+      <div class="ai-card-body">
+        <!-- Columna Izquierda: Medidor Circular Grande y Barra de Progreso -->
+        <div class="ai-gauge-column">
+          <div class="ai-circular-meter">
+            <svg class="ai-meter-svg" viewBox="0 0 120 120">
+              <circle
+                class="ai-meter-bg"
+                cx="60"
+                cy="60"
+                r="50"
+                fill="none"
+                stroke-width="10"
+              />
+              <circle
+                class="ai-meter-fill"
+                cx="60"
+                cy="60"
+                r="50"
+                fill="none"
+                stroke-width="10"
+                stroke-dasharray="314.159"
+                :stroke-dashoffset="314.159 - (314.159 * Math.min(100, Math.max(0, prediccionML.riesgo_pct || 0)) / 100)"
+                :stroke="iaGaugeColor"
+                stroke-linecap="round"
+              />
+            </svg>
+            <div class="ai-meter-center">
+              <span class="ai-meter-num" :style="{ color: iaGaugeColor }">
+                {{ (prediccionML.riesgo_pct || 0).toFixed(1) }}%
+              </span>
+              <span class="ai-meter-lbl">Riesgo Parada</span>
+            </div>
+          </div>
+
+          <div class="ai-progress-bar-wrap">
+            <div class="ai-progress-bar-labels">
+              <span>0% Normal</span>
+              <span>40% Alerta</span>
+              <span>70% Crítico</span>
+            </div>
+            <div class="ai-progress-track">
+              <div
+                class="ai-progress-bar-fill"
+                :style="{ width: `${Math.min(100, Math.max(0, prediccionML.riesgo_pct || 0))}%`, backgroundColor: iaGaugeColor }"
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Columna Derecha: Features Técnicas Explicativas y Diagnóstico -->
+        <div class="ai-metrics-column">
+          <div class="ai-features-grid">
+            <!-- Feature 1: Velocidad de caída Brix (Pendiente) -->
+            <div class="ai-feature-card">
+              <div class="ai-feat-top">
+                <span class="ai-feat-name">
+                  <TrendingDown :size="13" /> Velocidad Caída Brix (Pendiente)
+                </span>
+                <span
+                  v-if="prediccionML.pendiente_brix_ventana !== null && prediccionML.pendiente_brix_ventana !== undefined"
+                  class="ai-feat-tag"
+                  :class="prediccionML.pendiente_brix_ventana >= -0.01 ? 'tag-crit' : 'tag-good'"
+                >
+                  {{ prediccionML.pendiente_brix_ventana >= -0.01 ? 'Estancada' : 'Saludable' }}
+                </span>
+              </div>
+              <div class="ai-feat-val-row">
+                <span class="ai-feat-val font-mono">
+                  {{
+                    prediccionML.pendiente_brix_ventana !== null && prediccionML.pendiente_brix_ventana !== undefined
+                      ? `${prediccionML.pendiente_brix_ventana > 0 ? '+' : ''}${prediccionML.pendiente_brix_ventana.toFixed(4)}`
+                      : '--'
+                  }}
+                </span>
+                <span class="ai-feat-unit">°Bx / muestra</span>
+              </div>
+              <span class="ai-feat-hint">Esperado normal: &lt; -0.0300</span>
+            </div>
+
+            <!-- Feature 2: Brix Suavizado -->
+            <div class="ai-feature-card">
+              <div class="ai-feat-top">
+                <span class="ai-feat-name">
+                  <Droplets :size="13" /> Brix Suavizado (3 lecturas)
+                </span>
+              </div>
+              <div class="ai-feat-val-row">
+                <span class="ai-feat-val font-mono">
+                  {{
+                    prediccionML.brix_suavizado !== null && prediccionML.brix_suavizado !== undefined
+                      ? prediccionML.brix_suavizado.toFixed(2)
+                      : '--'
+                  }}
+                </span>
+                <span class="ai-feat-unit">°Bx</span>
+              </div>
+              <span class="ai-feat-hint">Promedio móvil de consumo</span>
+            </div>
+
+            <!-- Feature 3: Temperatura Suavizada -->
+            <div class="ai-feature-card">
+              <div class="ai-feat-top">
+                <span class="ai-feat-name">
+                  <Thermometer :size="13" /> Temperatura Suavizada
+                </span>
+                <span
+                  v-if="prediccionML.temp_suavizada !== null && prediccionML.temp_suavizada !== undefined"
+                  class="ai-feat-tag"
+                  :class="prediccionML.temp_suavizada > 28.0 ? 'tag-crit' : 'tag-good'"
+                >
+                  {{ prediccionML.temp_suavizada > 28.0 ? 'Sobrecalentamiento' : 'Óptima' }}
+                </span>
+              </div>
+              <div class="ai-feat-val-row">
+                <span class="ai-feat-val font-mono">
+                  {{
+                    prediccionML.temp_suavizada !== null && prediccionML.temp_suavizada !== undefined
+                      ? prediccionML.temp_suavizada.toFixed(2)
+                      : '--'
+                  }}
+                </span>
+                <span class="ai-feat-unit">°C</span>
+              </div>
+              <span class="ai-feat-hint">Banda óptima: 21.0°C - 26.0°C</span>
+            </div>
+
+            <!-- Feature 4: Turbulencia Brix -->
+            <div class="ai-feature-card">
+              <div class="ai-feat-top">
+                <span class="ai-feat-name">
+                  <Activity :size="13" /> Turbulencia Brix (Std)
+                </span>
+              </div>
+              <div class="ai-feat-val-row">
+                <span class="ai-feat-val font-mono">
+                  {{
+                    prediccionML.turbulencia_brix_std !== null && prediccionML.turbulencia_brix_std !== undefined
+                      ? prediccionML.turbulencia_brix_std.toFixed(4)
+                      : '--'
+                  }}
+                </span>
+                <span class="ai-feat-unit">σ</span>
+              </div>
+              <span class="ai-feat-hint">Estabilidad de ventana temporal</span>
+            </div>
+          </div>
+
+          <!-- Diagnóstico Textual Asistido -->
+          <div class="ai-diagnosis-banner" :class="iaStatusClass">
+            <div class="ai-diag-icon">
+              <AlertTriangle v-if="prediccionML.estado_ia === 'CRITICO'" :size="18" />
+              <AlertCircle v-else-if="prediccionML.estado_ia === 'ADVERTENCIA'" :size="18" />
+              <CheckCircle2 v-else-if="prediccionML.estado_ia === 'NORMAL'" :size="18" />
+              <Info v-else :size="18" />
+            </div>
+            <div class="ai-diag-text">
+              <span class="ai-diag-label">Diagnóstico IA en tiempo real:</span>
+              <p class="ai-diag-desc">{{ prediccionML.mensaje }}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -3051,5 +3356,441 @@ onBeforeUnmount(() => {
 .toast-fade-leave-to {
   opacity: 0;
   transform: translateY(-10px) scale(0.95);
+}
+
+/* ======================================================= */
+/* ESTILOS DE LA TARJETA DE PREDICCIÓN IA (ML)            */
+/* ======================================================= */
+.ai-prediction-card {
+  position: relative;
+  background: linear-gradient(135deg, rgba(20, 24, 39, 0.95) 0%, rgba(13, 17, 28, 0.95) 100%);
+  border: 1px solid rgba(75, 85, 99, 0.35);
+  border-radius: 14px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.ai-prediction-card--critical {
+  border-color: rgba(239, 68, 68, 0.65);
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.25);
+  animation: aiPulseRed 2.5s infinite ease-in-out;
+}
+
+@keyframes aiPulseRed {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 35px rgba(239, 68, 68, 0.45);
+    border-color: rgba(239, 68, 68, 0.9);
+  }
+}
+
+.ai-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+}
+
+.ai-header-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.ai-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  flex-shrink: 0;
+}
+
+.ai-icon-badge.ia-status--critico {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.ai-icon-badge.ia-status--advertencia {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.ai-icon-badge.ia-status--normal {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.ai-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.ai-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.ai-subtitle {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin: 0.25rem 0 0 0;
+}
+
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ai-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+.ia-status--critico {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.ia-status--advertencia {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.ia-status--normal {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.ia-status--calibrando,
+.ia-status--finalizada {
+  background: rgba(107, 114, 128, 0.18);
+  color: #d1d5db;
+  border: 1px solid rgba(107, 114, 128, 0.4);
+}
+
+.ai-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: auto;
+}
+
+.btn-demo-simular {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: rgba(220, 38, 38, 0.15);
+  color: #fca5a5;
+  border: 1px solid rgba(220, 38, 38, 0.4);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-demo-simular:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.28);
+  border-color: #ef4444;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.btn-demo-simular:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-demo-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  background: rgba(75, 85, 99, 0.2);
+  color: #9ca3af;
+  border: 1px solid rgba(75, 85, 99, 0.35);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-demo-reset:hover:not(:disabled) {
+  background: rgba(75, 85, 99, 0.35);
+  color: #f3f4f6;
+}
+
+.ai-toast-message {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1rem;
+  margin-top: 1rem;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  font-size: 0.85rem;
+}
+
+.ai-card-body {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 2rem;
+  align-items: center;
+  padding-top: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .ai-card-body {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+}
+
+.ai-gauge-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.ai-circular-meter {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+
+.ai-meter-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.ai-meter-bg {
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.ai-meter-fill {
+  transition: stroke-dashoffset 0.8s ease, stroke 0.4s ease;
+}
+
+.ai-meter-center {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.ai-meter-num {
+  font-size: 1.45rem;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-meter-lbl {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+
+.ai-progress-bar-wrap {
+  width: 100%;
+}
+
+.ai-progress-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: #6b7280;
+  margin-bottom: 0.25rem;
+}
+
+.ai-progress-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.ai-progress-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.8s ease, background-color 0.4s ease;
+}
+
+.ai-metrics-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ai-features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+}
+
+.ai-feature-card {
+  background: rgba(31, 41, 55, 0.4);
+  border: 1px solid rgba(75, 85, 99, 0.25);
+  border-radius: 10px;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ai-feat-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.74rem;
+  color: #9ca3af;
+}
+
+.ai-feat-name {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 500;
+}
+
+.ai-feat-tag {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.tag-good {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.tag-warn {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.tag-crit {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.ai-feat-val-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.ai-feat-val {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #f9fafb;
+}
+
+.ai-feat-unit {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.ai-feat-hint {
+  font-size: 0.68rem;
+  color: #6b7280;
+}
+
+.ai-diagnosis-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1.1rem;
+  border-radius: 10px;
+}
+
+.ai-diag-icon {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.ai-diag-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+}
+
+.ai-diag-label {
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.9;
+}
+
+.ai-diag-desc {
+  margin: 0;
+  line-height: 1.4;
+  color: inherit;
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
