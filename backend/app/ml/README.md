@@ -126,3 +126,4 @@ pytest tests/test_ml_prediction.py -v
    python scripts/simulate_esp.py --stuck-cuba 1 --stuck-after 8
    ```
 3. O bien, desde la interfaz web en el detalle de la cuba, presionar el botón **"Simular Parada (Demo IA)"**.
+

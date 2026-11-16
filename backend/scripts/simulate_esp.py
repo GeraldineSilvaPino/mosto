@@ -34,6 +34,7 @@ Python 3.8+.
 
 from __future__ import annotations
 
+import os
 import argparse
 import json
 import math
@@ -329,7 +330,7 @@ def post_json(url: str, payload: Dict[str, Any], timeout: float) -> ResultadoEnv
     peticion = url_request.Request(
         url,
         data=cuerpo,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers={"Content-Type": "application/json", "Accept": "application/json", "X-Mosto-Simulator-Key": os.environ.get("MOSTO_SIMULATOR_KEY", "")},
         method="POST",
     )
 
@@ -695,6 +696,9 @@ def parsear_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = parsear_args(argv)
+    if len(os.environ.get("MOSTO_SIMULATOR_KEY", "")) < 32:
+        print("Configure MOSTO_SIMULATOR_KEY for the isolated demo backend.", file=sys.stderr)
+        return 2
     try:
         return ejecutar(args)
     except KeyboardInterrupt:

@@ -9,7 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.database import get_db
+from app.services.demo_access import require_demo_mode, require_legacy_tank
+from app.services.access import business_db
 from app.models import (
     Cuba,
     ProcesoFermentacion,
@@ -20,9 +21,11 @@ from app.models import (
     EmpresaCliente,
     ModeloDispositivo
 )
+from app.models import MensajeTelemetria
 from app.schemas import CubaOut, LecturaOut, HistoricoCubaOut, MLPredictionOut, SimulacionAnomaliaOut
 from app.services.ml_service import evaluar_riesgo_parada_cuba
 from app.services.rules_engine import rules_engine
+from app.services.telemetry_v2 import aware, utc_now
 
 router = APIRouter(prefix="/api/cubas", tags=["Cubas y Monitoreo"])
 
@@ -43,7 +46,7 @@ def _resolver_dispositivo_cuba(db: Session, cuba_id: int) -> int:
     if asig:
         return asig.dispositivo_id
 
-    disp = db.query(Dispositivo).first()
+    disp = db.query(Dispositivo).filter(Dispositivo.origen.is_(None)).first()
     if not disp:
         empresa = db.query(EmpresaCliente).first()
         modelo = db.query(ModeloDispositivo).first()
@@ -73,6 +76,9 @@ def _calcular_prediccion_ml(db: Session, proceso_id: Optional[int]) -> Optional[
     """Calcula la predicción de Machine Learning a partir de las últimas 12 lecturas del proceso."""
     if not proceso_id:
         return None
+    if db.query(MensajeTelemetria.id).filter_by(fermentacion_id=proceso_id).first():
+        return MLPredictionOut(riesgo_pct=None, estado_ia="NO_VALIDADO", alerta_ia=False,
+            mensaje="La telemetría v2 requiere el nuevo modelo temporal; el baseline sintético no está validado para estos datos.")
 
     lecturas = (
         db.query(LecturaTelemetria)
@@ -175,7 +181,7 @@ def _mapear_cuba_out(
 
 
 @router.get("", response_model=List[CubaOut], summary="Listar todas las cubas con telemetría en tiempo real")
-def listar_cubas(response: Response, db: Session = Depends(get_db)):
+def listar_cubas(response: Response, db: Session = Depends(business_db("demo"))):
     """Lista todas las cubas de la bodega con su última lectura de sensores registrada e inferencia IA."""
     # Cabeceras explícitas para evitar que los navegadores almacenen en caché el polling
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -211,7 +217,7 @@ def listar_cubas(response: Response, db: Session = Depends(get_db)):
 
 
 @router.get("/{cuba_id}", response_model=CubaOut, summary="Obtener detalle de una cuba por ID")
-def obtener_cuba(cuba_id: int, response: Response, db: Session = Depends(get_db)):
+def obtener_cuba(cuba_id: int, response: Response, db: Session = Depends(business_db("demo"))):
     """Obtiene el estado detallado de una cuba, sus sensores y predicción de IA."""
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
@@ -245,8 +251,8 @@ def obtener_cuba(cuba_id: int, response: Response, db: Session = Depends(get_db)
 @router.get("/{cuba_id}/historico", response_model=HistoricoCubaOut, summary="Curvas históricas de telemetría (para Chart.js)")
 def obtener_historico_cuba(
     cuba_id: int,
-    rango_horas: int = Query(24, description="Ventana de tiempo en horas (24, 48, 168)"),
-    db: Session = Depends(get_db)
+    rango_horas: int = Query(24, ge=1, le=168, description="Ventana de tiempo en horas, de 1 a 168"),
+    db: Session = Depends(business_db("demo"))
 ):
     """
     Entrega series temporales de temperatura de vino, grados Brix y pH
@@ -281,37 +287,34 @@ def obtener_historico_cuba(
             brix=[]
         )
 
-    desde_tiempo = datetime.utcnow() - timedelta(hours=rango_horas)
+    hasta_tiempo = utc_now()
+    desde_tiempo = hasta_tiempo - timedelta(hours=rango_horas)
 
     # Filtrar por proceso activo y ventana temporal solicitada
     lecturas = (
         db.query(LecturaTelemetria)
         .filter(
             LecturaTelemetria.fermentacion_id == proceso_activo.id,
-            LecturaTelemetria.timestamp >= desde_tiempo
+            LecturaTelemetria.timestamp >= desde_tiempo,
+            LecturaTelemetria.timestamp <= hasta_tiempo
         )
         .order_by(desc(LecturaTelemetria.timestamp))
-        .limit(200)
+        .limit(10001)
         .all()
     )
 
-    # Si no hay lecturas dentro de la ventana exacta (entorno local o pruebas),
-    # obtener las más recientes del proceso para visualización continua
-    if not lecturas:
-        lecturas = (
-            db.query(LecturaTelemetria)
-            .filter(LecturaTelemetria.fermentacion_id == proceso_activo.id)
-            .order_by(desc(LecturaTelemetria.timestamp))
-            .limit(50)
-            .all()
-        )
+    # Enough for the full seven-day v2 window (2016 samples). Higher-rate legacy
+    # history is bounded explicitly, without silently pretending it is complete.
+    truncated = len(lecturas) > 10000
+    lecturas = lecturas[:10000]
 
     # Ordenar cronológicamente (de izquierda a derecha para Chart.js)
     lecturas = list(reversed(lecturas))
 
     # Formateo de marcas temporales: horario si es <= 24h, fecha/hora si es mayor
     formato_fecha = "%H:%M:%S" if rango_horas <= 24 else "%d/%m %H:%M"
-    timestamps_list = [l.timestamp.strftime(formato_fecha) if l.timestamp else "" for l in lecturas]
+    timestamps_list = [aware(l.timestamp).isoformat() for l in lecturas]
+    labels_list = [aware(l.timestamp).strftime(formato_fecha) for l in lecturas]
     temp_list = [float(l.temp_mosto) if l.temp_mosto is not None else None for l in lecturas]
     brix_list = [float(l.brix) if l.brix is not None else None for l in lecturas]
     ph_list = [float(l.ph) if l.ph is not None else None for l in lecturas]
@@ -326,14 +329,15 @@ def obtener_historico_cuba(
         temperaturas_vino=temp_list,
         grados_brix=brix_list,
         valores_ph=ph_list,
-        labels=timestamps_list,
+        labels=labels_list,
+        truncated=truncated,
         temp=temp_list,
         brix=brix_list
     )
 
 
 @router.get("/{cuba_id}/ml-prediction", response_model=MLPredictionOut, summary="Predicción de Machine Learning para parada de fermentación")
-def obtener_prediccion_ml(cuba_id: int, response: Response, db: Session = Depends(get_db)):
+def obtener_prediccion_ml(cuba_id: int, response: Response, db: Session = Depends(business_db("demo"))):
     """
     Retorna la inferencia en tiempo real del modelo GradientBoostingClassifier para la cuba especificada,
     incluyendo porcentaje de riesgo, clasificación de severidad y métricas de cinética de fermentación.
@@ -367,7 +371,7 @@ def obtener_prediccion_ml(cuba_id: int, response: Response, db: Session = Depend
 
 
 @router.post("/{cuba_id}/simular-anomalia", response_model=SimulacionAnomaliaOut, summary="Inyectar escenario de parada de fermentación para demo en vivo")
-def simular_anomalia_parada(cuba_id: int, db: Session = Depends(get_db)):
+def simular_anomalia_parada(cuba_id: int, db: Session = Depends(business_db("demo")), _demo=Depends(require_demo_mode)):
     """
     Inyecta una secuencia de telemetría con consumo de azúcar estancado (~14.5 °Bx) y alta temperatura (~31.5 °C - 32.5 °C)
     para provocar que el modelo de Machine Learning clasifique estado CRITICO (riesgo >= 70%) y
@@ -376,6 +380,8 @@ def simular_anomalia_parada(cuba_id: int, db: Session = Depends(get_db)):
     c = db.query(Cuba).filter(Cuba.id == cuba_id).first()
     if not c:
         raise HTTPException(status_code=404, detail=f"Cuba con ID {cuba_id} no encontrada")
+
+    require_legacy_tank(db, c.id)
 
     proceso_activo = (
         db.query(ProcesoFermentacion)
@@ -451,7 +457,7 @@ def simular_anomalia_parada(cuba_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{cuba_id}/restaurar-normalidad", summary="Restaurar cinética normal de fermentación para resetear la demo")
-def restaurar_normalidad_cuba(cuba_id: int, db: Session = Depends(get_db)):
+def restaurar_normalidad_cuba(cuba_id: int, db: Session = Depends(business_db("demo")), _demo=Depends(require_demo_mode)):
     """
     Inyecta lecturas con cinética saludable (caída sostenida de Brix a ~22 °C)
     y resuelve las alertas pendientes de parada de fermentación para restaurar la cuba.
@@ -459,6 +465,8 @@ def restaurar_normalidad_cuba(cuba_id: int, db: Session = Depends(get_db)):
     c = db.query(Cuba).filter(Cuba.id == cuba_id).first()
     if not c:
         raise HTTPException(status_code=404, detail=f"Cuba con ID {cuba_id} no encontrada")
+
+    require_legacy_tank(db, c.id)
 
     proceso_activo = (
         db.query(ProcesoFermentacion)

@@ -4,12 +4,14 @@ Gestiona el timeline cronológico de notas, alertas, cambios de configuración y
 """
 from typing import List, Optional
 from datetime import datetime, timedelta
+import re
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 
-from app.database import get_db
-from app.models import BitacoraIntervencion, Usuario, Cuba, ProcesoFermentacion
+from app.services.access import business_db, actor_id
+from app.services.telemetry_v2 import aware, utc_now
+from app.models import BitacoraIntervencion, Usuario, Cuba, ProcesoFermentacion, EventoAlerta
 from app.schemas import BitacoraOut, BitacoraCreateIn
 
 router = APIRouter(prefix="/api/bitacora", tags=["Bitácora Enológica"])
@@ -31,18 +33,18 @@ def _resolver_cuba_id(cuba_slug: Optional[str], db: Session) -> Optional[int]:
     """Convierte un slug como 'cuba-01' o '1' a un ID numérico de cuba en DB."""
     if not cuba_slug or cuba_slug == "general":
         return None
-    # Extraer dígitos
-    num_str = "".join(ch for ch in cuba_slug if ch.isdigit())
-    if num_str:
-        num = int(num_str)
-        cuba = db.query(Cuba).filter(Cuba.id == num).first()
-        if cuba:
-            return cuba.id
-        # Buscar por código
-        cuba_cod = db.query(Cuba).filter(func.lower(Cuba.codigo).like(f"%{num:02d}%")).first()
-        if cuba_cod:
-            return cuba_cod.id
-    return None
+    match = re.fullmatch(r"(?:cuba-)?(\d+)", cuba_slug.lower())
+    query = db.query(Cuba)
+    if match:
+        query = query.filter(Cuba.id == int(match.group(1)))
+    else:
+        query = query.filter(func.lower(Cuba.codigo) == cuba_slug.lower())
+    matches = query.limit(2).all()
+    if len(matches) == 1:
+        return matches[0].id
+    if len(matches) > 1:
+        raise HTTPException(422, "Código de cuba ambiguo; use el identificador numérico")
+    raise HTTPException(404, "Cuba inexistente o fuera del ámbito autorizado")
 
 
 def _mapear_bitacora_out(b: BitacoraIntervencion, db: Session) -> BitacoraOut:
@@ -51,8 +53,9 @@ def _mapear_bitacora_out(b: BitacoraIntervencion, db: Session) -> BitacoraOut:
 
     return BitacoraOut(
         id=b.id,
+        alerta_id=b.alerta_id, fermentacion_id=b.fermentacion_id,
         type=b.tipo_intervencion or "nota",
-        timestamp=b.fecha_registro,
+        timestamp=aware(b.fecha_registro) if b.fecha_registro else None,
         cuba=cuba_slug,
         message=b.descripcion,
         author=autor_nombre,
@@ -65,14 +68,16 @@ def listar_entradas_bitacora(
     tipo: Optional[str] = Query(None, description="Filtro por tipo: nota, alerta, config, lectura"),
     cuba: Optional[str] = Query(None, description="Filtro por cuba: general, cuba-01, etc."),
     search: Optional[str] = Query(None, description="Búsqueda por texto libre"),
-    db: Session = Depends(get_db)
+    alerta_id: Optional[int] = Query(None, gt=0),
+    fermentacion_id: Optional[int] = Query(None, gt=0),
+    db: Session = Depends(business_db("operations"))
 ):
     """Retorna la lista cronológica de entradas de la bitácora enológica."""
-    # Si la tabla está vacía, sembrar entradas iniciales
-    if db.query(BitacoraIntervencion).count() == 0:
-        _sembrar_bitacora_inicial(db)
-
     query = db.query(BitacoraIntervencion)
+    if isinstance(alerta_id, int):
+        query = query.filter(BitacoraIntervencion.alerta_id == alerta_id)
+    if isinstance(fermentacion_id, int):
+        query = query.filter(BitacoraIntervencion.fermentacion_id == fermentacion_id)
 
     if tipo and tipo not in ("todos", "all"):
         query = query.filter(BitacoraIntervencion.tipo_intervencion == tipo.lower().strip())
@@ -93,21 +98,27 @@ def listar_entradas_bitacora(
 
 
 @router.post("", response_model=BitacoraOut, status_code=status.HTTP_201_CREATED)
-def crear_entrada_bitacora(payload: BitacoraCreateIn, db: Session = Depends(get_db)):
+def crear_entrada_bitacora(payload: BitacoraCreateIn, db: Session = Depends(business_db("operations"))):
     """Registra una nueva entrada o intervención enológica en Supabase."""
-    # Resolver usuario autor
-    usuario = None
-    if payload.author:
-        usuario = db.query(Usuario).filter(func.lower(Usuario.nomb_compl).like(f"%{payload.author.strip().lower()}%")).first()
-    if not usuario:
-        usuario = db.query(Usuario).first()
-    if not usuario:
-        raise HTTPException(status_code=400, detail="No se encontró un usuario para registrar la entrada.")
+    usuario = db.query(Usuario).filter(Usuario.id == actor_id(db)).one()
 
     # Resolver cuba y fermentación activa
     cuba_id = _resolver_cuba_id(payload.cuba, db)
     fermentacion_id = None
-    if cuba_id:
+    if payload.alerta_id is not None or payload.fermentacion_id is not None:
+        episode = db.query(EventoAlerta).filter_by(id=payload.alerta_id).first() if payload.alerta_id else None
+        if payload.alerta_id and (episode is None or episode.fermentacion_id is None):
+            raise HTTPException(404, "Episodio con proceso no encontrado")
+        target = payload.fermentacion_id or episode.fermentacion_id
+        if episode and episode.fermentacion_id != target:
+            raise HTTPException(409, "La intervención y el episodio deben pertenecer al mismo proceso")
+        process = db.query(ProcesoFermentacion).filter_by(id=target).first()
+        if process is None:
+            raise HTTPException(404, "Proceso no encontrado")
+        if cuba_id is not None and cuba_id != process.cuba_id:
+            raise HTTPException(409, "La cuba no corresponde al proceso de la intervención")
+        cuba_id, fermentacion_id = process.cuba_id, process.id
+    elif cuba_id:
         proceso = (
             db.query(ProcesoFermentacion)
             .filter(ProcesoFermentacion.cuba_id == cuba_id, ProcesoFermentacion.estado == "en_proceso")
@@ -124,7 +135,8 @@ def crear_entrada_bitacora(payload: BitacoraCreateIn, db: Session = Depends(get_
         usuario_id=usuario.id,
         cuba_id=cuba_id,
         fermentacion_id=fermentacion_id,
-        fecha_registro=datetime.utcnow()
+        alerta_id=payload.alerta_id,
+        fecha_registro=utc_now()
     )
 
     db.add(nueva_entrada)
@@ -132,60 +144,4 @@ def crear_entrada_bitacora(payload: BitacoraCreateIn, db: Session = Depends(get_
     db.refresh(nueva_entrada)
 
     return _mapear_bitacora_out(nueva_entrada, db)
-
-
-def _sembrar_bitacora_inicial(db: Session):
-    """Siembra datos iniciales de bitácora enológica para reflejar el historial de bodega."""
-    usuario = db.query(Usuario).first()
-    if not usuario:
-        return
-
-    ahora = datetime.utcnow()
-    cuba = db.query(Cuba).first()
-    cuba_id = cuba.id if cuba else None
-
-    entradas_demo = [
-        BitacoraIntervencion(
-            tipo_intervencion="alerta",
-            descripcion="Temperatura elevada detectada: 30.1°C (umbral máx: 28°C)",
-            usuario_id=usuario.id,
-            cuba_id=cuba_id,
-            fecha_registro=ahora - timedelta(hours=2)
-        ),
-        BitacoraIntervencion(
-            tipo_intervencion="nota",
-            descripcion="Agregado SO₂ correctivo (35 mg/L). Mosto en buenas condiciones generales.",
-            dosis_aplicada="35 mg/L",
-            usuario_id=usuario.id,
-            cuba_id=cuba_id,
-            fecha_registro=ahora - timedelta(hours=5)
-        ),
-        BitacoraIntervencion(
-            tipo_intervencion="lectura",
-            descripcion="Lectura manual: 17.5°C / 18.5 °Bx. Fermentación activa día 3.",
-            usuario_id=usuario.id,
-            cuba_id=cuba_id,
-            fecha_registro=ahora - timedelta(hours=8)
-        ),
-        BitacoraIntervencion(
-            tipo_intervencion="config",
-            descripcion="Umbral de pH ajustado de 3.2 a 3.4 para todas las cubas de tinto.",
-            usuario_id=usuario.id,
-            cuba_id=None,
-            fecha_registro=ahora - timedelta(days=1, hours=3)
-        ),
-        BitacoraIntervencion(
-            tipo_intervencion="nota",
-            descripcion="Fermentación entrando en fase final. Brix en 3.4, cercano a sequedad.",
-            usuario_id=usuario.id,
-            cuba_id=cuba_id,
-            fecha_registro=ahora - timedelta(days=1, hours=6)
-        )
-    ]
-    try:
-        db.add_all(entradas_demo)
-        db.commit()
-    except Exception as e:
-        print(f"Aviso al sembrar bitácora inicial: {e}")
-        db.rollback()
 

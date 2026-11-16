@@ -337,8 +337,11 @@ const rankingCubas = computed(() => {
     .slice(0, 6)
 })
 
-const getStatusBadge = (estado) => {
-  switch (estado) {
+const getStatusBadge = (cuba) => {
+  if (cuba.estado === 'normal' && cuba.prediccion_ml?.estado_ia === 'NO_VALIDADO') {
+    return { label: 'Sin diagnóstico', class: '', dot: 'gray' }
+  }
+  switch (cuba.estado) {
     case 'critico':
       return { label: 'Crítico', class: 'danger', dot: 'red' }
     case 'advertencia':
@@ -359,6 +362,8 @@ const getIABadge = (pred) => {
       return { label: `IA: ${pct}% Riesgo`, class: 'badge-ia-advertencia', isCritico: false }
     case 'NORMAL':
       return { label: `IA: ${pct}% Normal`, class: 'badge-ia-normal', isCritico: false }
+    case 'NO_VALIDADO':
+      return { label: 'IA: Sin modelo validado', class: 'badge-ia-calibrando', isCritico: false }
     case 'FINALIZADA':
       return { label: 'IA: Fin', class: 'badge-ia-finalizada', isCritico: false }
     default:
@@ -772,8 +777,8 @@ onBeforeUnmount(() => {
                   </td>
                   <td>
                     <div style="display: flex; align-items: center; gap: 0.4rem;">
-                      <span class="badge-status" :class="getStatusBadge(cuba.estado).class">
-                        {{ getStatusBadge(cuba.estado).label }}
+                      <span class="badge-status" :class="getStatusBadge(cuba).class">
+                        {{ getStatusBadge(cuba).label }}
                       </span>
                       <span
                         v-if="getIABadge(cuba.prediccion_ml)"
@@ -782,7 +787,7 @@ onBeforeUnmount(() => {
                         :title="cuba.prediccion_ml.mensaje"
                       >
                         <Sparkles :size="10" />
-                        <span>{{ cuba.prediccion_ml.riesgo_pct }}%</span>
+                        <span>{{ cuba.prediccion_ml.riesgo_pct == null ? 'N/D' : `${cuba.prediccion_ml.riesgo_pct}%` }}</span>
                       </span>
                     </div>
                   </td>
@@ -1059,8 +1064,8 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <span class="badge-status" :class="getStatusBadge(cuba.estado).class">
-              {{ getStatusBadge(cuba.estado).label }}
+            <span class="badge-status" :class="getStatusBadge(cuba).class">
+              {{ getStatusBadge(cuba).label }}
             </span>
           </header>
 
@@ -1111,7 +1116,7 @@ onBeforeUnmount(() => {
             <div class="cuba-metric-box">
               <div class="metric-top">
                 <span class="metric-lbl"><Droplets :size="13" /> Brix</span>
-                <span class="metric-range">{{ getBrixProgress(cuba) }}% conv.</span>
+                <span class="metric-range">{{ cuba.prediccion_ml?.estado_ia === 'NO_VALIDADO' ? 'Aparente' : `${getBrixProgress(cuba)}% conv.` }}</span>
               </div>
               <div class="metric-val-row">
                 <span class="metric-val-num">

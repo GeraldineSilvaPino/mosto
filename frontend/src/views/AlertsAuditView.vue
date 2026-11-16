@@ -42,261 +42,16 @@ import {
   RefreshCw
 } from 'lucide-vue-next'
 import alertService from '../services/alertService'
+import EpisodeEvidence from '../components/EpisodeEvidence.vue'
 import cubaService from '../services/cubaService'
 
 // ==========================================
-// REGISTROS HISTÓRICOS DE AUDITORÍA MOCK (FALLBACK RESILIENTE)
-// ==========================================
-const initialMockAuditLogs = [
-  {
-    id: 'INC-1048',
-    rawId: 1048,
-    cubaId: '02',
-    cubaCode: 'CB-02',
-    cubaName: 'Cuba 02 · Carménère Reserva',
-    variety: 'Carménère',
-    lot: 'Lote CM-2026-B',
-    sensorType: 'DS18B20',
-    sensorName: 'Sonda Térmica Central',
-    severity: 'danger',
-    severityLabel: 'Crítica',
-    title: 'Caída brusca de temperatura (-3.2°C en 2h)',
-    triggerValue: '17.5 °C',
-    thresholdRule: 'Caída > 2.0°C / 2h (Mín. 20.0°C)',
-    detectedAt: '2026-11-01 15:30',
-    detectedAtRaw: '2026-11-01T15:30:00Z',
-    resolvedAt: '2026-11-01 15:52',
-    resolvedAtRaw: '2026-11-01T15:52:00Z',
-    resolutionTimeMin: 22,
-    status: 'resolved',
-    statusBackend: 'resuelta',
-    resolutionType: 'mitigated',
-    resolutionLabel: 'Mitigada en Terreno',
-    resolvedBy: 'Carlos Cartes',
-    role: 'Enólogo de Turno',
-    summaryResolution: 'Ajuste de camisa térmica y adición de nutrientes para prevenir parada.',
-    nota_resolucion: 'Ajuste de camisa térmica y adición de nutrientes para prevenir parada.',
-    timeline: [
-      { time: '15:30', author: 'Sistema Telemetría', text: 'Disparo automático de alerta por gradiente térmico negativo brusco.' },
-      { time: '15:38', author: 'Carlos Cartes', text: 'Inspección física en bodega. Medición manual confirma 17.6°C con termómetro analógico.' },
-      { time: '15:45', author: 'Carlos Cartes', text: 'Se cerró válvula de glicol de la camisa exterior para permitir atemperamiento natural.' },
-      { time: '15:52', author: 'Carlos Cartes', text: 'Temperatura estabilizada en 18.2°C. Incidencia mitigada y bajo observación.' }
-    ]
-  },
-  {
-    id: 'INC-1047',
-    rawId: 1047,
-    cubaId: '04',
-    cubaCode: 'CB-04',
-    cubaName: 'Cuba 04 · Syrah Gran Corte',
-    variety: 'Syrah',
-    lot: 'Lote SY-2026-C',
-    sensorType: 'DS18B20',
-    sensorName: 'Sonda Térmica Central',
-    severity: 'danger',
-    severityLabel: 'Crítica',
-    title: 'Sobrecalentamiento en pico fermentativo',
-    triggerValue: '29.8 °C',
-    thresholdRule: 'Límite Máximo: 28.0 °C',
-    detectedAt: '2026-11-01 15:02',
-    detectedAtRaw: '2026-11-01T15:02:00Z',
-    resolvedAt: '2026-11-01 15:36',
-    resolvedAtRaw: '2026-11-01T15:36:00Z',
-    resolutionTimeMin: 34,
-    status: 'resolved',
-    statusBackend: 'resuelta',
-    resolutionType: 'resolved',
-    resolutionLabel: 'Resuelta',
-    resolvedBy: 'Geraldine Silva',
-    role: 'Enóloga Asistente',
-    summaryResolution: 'Aumento de caudal de refrigeración y remontado cerrado para homogenizar.',
-    nota_resolucion: 'Aumento de caudal de refrigeración y remontado cerrado para homogenizar.',
-    timeline: [
-      { time: '15:02', author: 'Sistema Telemetría', text: 'Temperatura supera los 28.0°C alcanzando 29.8°C.' },
-      { time: '15:12', author: 'Geraldine Silva', text: 'Apertura manual al 100% de electroválvula de enfriamiento.' },
-      { time: '15:25', author: 'Geraldine Silva', text: 'Remontado de 15 minutos para disipar bolsa de calor del sombrero.' },
-      { time: '15:36', author: 'Geraldine Silva', text: 'Temperatura estabilizada en 26.5°C. Incidencia cerrada.' }
-    ]
-  },
-  {
-    id: 'INC-1046',
-    rawId: 1046,
-    cubaId: '01',
-    cubaCode: 'CB-01',
-    cubaName: 'Cuba 01 · Cabernet Sauvignon',
-    variety: 'Cabernet Sauvignon',
-    lot: 'Lote CS-2026-A',
-    sensorType: 'MPU-6050',
-    sensorName: 'Cápsula Flotante Inclinómetro',
-    severity: 'warning',
-    severityLabel: 'Advertencia',
-    title: 'Lectura de ángulo atípica / Sensor retenido',
-    triggerValue: '86.2° (Fuera de rango)',
-    thresholdRule: 'Rango cinemático: 10° a 70°',
-    detectedAt: '2026-11-01 14:40',
-    detectedAtRaw: '2026-11-01T14:40:00Z',
-    resolvedAt: '2026-11-01 15:05',
-    resolvedAtRaw: '2026-11-01T15:05:00Z',
-    resolutionTimeMin: 25,
-    status: 'resolved',
-    statusBackend: 'resuelta',
-    resolutionType: 'false_alarm',
-    resolutionLabel: 'Sensor Descalibrado / Aislado',
-    resolvedBy: 'Matias González',
-    role: 'Técnico de Bodega',
-    summaryResolution: 'Flotador trabado en hollejos. Se liberó manualmente y se limpió cápsula.',
-    nota_resolucion: 'Flotador trabado en hollejos. Se liberó manualmente y se limpió cápsula.',
-    timeline: [
-      { time: '14:40', author: 'Sistema Telemetría', text: 'Inclinación angular anormal de 86.2° reportada sostenidamente.' },
-      { time: '14:50', author: 'Matias González', text: 'Inspección ocular: Cápsula atrapada en el sombrero tras pisado.' },
-      { time: '15:00', author: 'Matias González', text: 'Sensor reposicionado libremente en el mosto líquido.' },
-      { time: '15:05', author: 'Matias González', text: 'Ángulo normalizado a 42.5° (13.2 °Bx). Caso cerrado como falso positivo.' }
-    ]
-  },
-  {
-    id: 'INC-1045',
-    rawId: 1045,
-    cubaId: '03',
-    cubaCode: 'CB-03',
-    cubaName: 'Cuba 03 · Sauvignon Blanc',
-    variety: 'Sauvignon Blanc',
-    lot: 'Lote SB-2026-F',
-    sensorType: 'DS18B20',
-    sensorName: 'Sonda Térmica Estanco',
-    severity: 'warning',
-    severityLabel: 'Advertencia',
-    title: 'Desvío hacia límite superior de blanco aromático',
-    triggerValue: '17.6 °C',
-    thresholdRule: 'Banda máxima: 17.0 °C',
-    detectedAt: '2026-10-31 09:15',
-    detectedAtRaw: '2026-10-31T09:15:00Z',
-    resolvedAt: '2026-10-31 09:40',
-    resolvedAtRaw: '2026-10-31T09:40:00Z',
-    resolutionTimeMin: 25,
-    status: 'resolved',
-    statusBackend: 'resuelta',
-    resolutionType: 'resolved',
-    resolutionLabel: 'Resuelta',
-    resolvedBy: 'Carlos Cartes',
-    role: 'Enólogo de Turno',
-    summaryResolution: 'Activación de camisa de frío auxiliar a 12°C. Temperatura recuperada a 15.1°C.',
-    nota_resolucion: 'Activación de camisa de frío auxiliar a 12°C. Temperatura recuperada a 15.1°C.',
-    timeline: [
-      { time: '09:15', author: 'Sistema Telemetría', text: 'Alerta por rebase térmico en vino blanco.' },
-      { time: '09:22', author: 'Carlos Cartes', text: 'Ajuste de consigna de chiller de bodega.' },
-      { time: '09:40', author: 'Carlos Cartes', text: 'Cuba operando en 15.1°C óptimo.' }
-    ]
-  },
-  {
-    id: 'INC-1044',
-    rawId: 1044,
-    cubaId: '02',
-    cubaCode: 'CB-02',
-    cubaName: 'Cuba 02 · Carménère Reserva',
-    variety: 'Carménère',
-    lot: 'Lote CM-2026-B',
-    sensorType: 'MPU-6050',
-    sensorName: 'Cápsula Flotante Inclinómetro',
-    severity: 'warning',
-    severityLabel: 'Advertencia',
-    title: 'Estancamiento de Grados Brix prolongado (>14h)',
-    triggerValue: '18.4 °Bx (Sin cambio)',
-    thresholdRule: 'Horas máx. sin consumo: 12h',
-    detectedAt: '2026-10-30 22:10',
-    detectedAtRaw: '2026-10-30T22:10:00Z',
-    resolvedAt: '2026-10-31 01:15',
-    resolvedAtRaw: '2026-10-31T01:15:00Z',
-    resolutionTimeMin: 185,
-    status: 'resolved',
-    statusBackend: 'resuelta',
-    resolutionType: 'mitigated',
-    resolutionLabel: 'Mitigada en Terreno',
-    resolvedBy: 'Carlos Cartes',
-    role: 'Enólogo de Turno',
-    summaryResolution: 'Inoculación de levaduras reactivadas y aireación suave del mosto.',
-    nota_resolucion: 'Inoculación de levaduras reactivadas y aireación suave del mosto.',
-    timeline: [
-      { time: '22:10', author: 'Sistema Telemetría', text: 'Curva de Brix plana por 14 horas consecutivas.' },
-      { time: '23:00', author: 'Carlos Cartes', text: 'Toma de muestra de laboratorio: Azúcares reductores confirmados en 18.4 °Bx.' },
-      { time: '00:15', author: 'Carlos Cartes', text: 'Pie de cuba añadido para resembrar fermentación.' },
-      { time: '01:15', author: 'Carlos Cartes', text: 'Comienza reinicio de desprendimiento de CO₂.' }
-    ]
-  },
-  {
-    id: 'INC-1043',
-    rawId: 1043,
-    cubaId: '05',
-    cubaCode: 'CB-05',
-    cubaName: 'Cuba 05 · Chardonnay Finca',
-    variety: 'Chardonnay',
-    lot: 'Lote CH-2026-D',
-    sensorType: 'MPU-6050',
-    sensorName: 'Cápsula Flotante Inclinómetro',
-    severity: 'info',
-    severityLabel: 'Informativa',
-    title: 'Batería baja en módulo flotante IoT (< 15%)',
-    triggerValue: '14% Batería',
-    thresholdRule: 'Umbral de advertencia: 20%',
-    detectedAt: '2026-10-29 11:00',
-    detectedAtRaw: '2026-10-29T11:00:00Z',
-    resolvedAt: '2026-10-29 11:30',
-    resolvedAtRaw: '2026-10-29T11:30:00Z',
-    resolutionTimeMin: 30,
-    status: 'resolved',
-    statusBackend: 'resuelta',
-    resolutionType: 'resolved',
-    resolutionLabel: 'Resuelta',
-    resolvedBy: 'Matias González',
-    role: 'Técnico de Bodega',
-    summaryResolution: 'Reemplazo de cápsula por unidad de repuesto de bodega y puesta a cargar.',
-    nota_resolucion: 'Reemplazo de cápsula por unidad de repuesto de bodega y puesta a cargar.',
-    timeline: [
-      { time: '11:00', author: 'Sistema Telemetría', text: 'Nivel de batería en 14%.' },
-      { time: '11:20', author: 'Matias González', text: 'Se extrae cápsula flotante y se coloca nodo de repuesto ESP32-SPARE-01.' },
-      { time: '11:30', author: 'Matias González', text: 'Calibración OK y telemetría restablecida.' }
-    ]
-  },
-  {
-    id: 'INC-1042',
-    rawId: 1042,
-    cubaId: '01',
-    cubaCode: 'CB-01',
-    cubaName: 'Cuba 01 · Cabernet Sauvignon',
-    variety: 'Cabernet Sauvignon',
-    lot: 'Lote CS-2026-A',
-    sensorType: 'DS18B20',
-    sensorName: 'Sonda Térmica Central',
-    severity: 'info',
-    severityLabel: 'Informativa',
-    title: 'Oscilación térmica transitoria por remontado',
-    triggerValue: '25.8 °C',
-    thresholdRule: 'Banda: 22.0°C - 28.0°C',
-    detectedAt: '2026-10-28 17:00',
-    detectedAtRaw: '2026-10-28T17:00:00Z',
-    resolvedAt: '2026-10-28 17:18',
-    resolvedAtRaw: '2026-10-28T17:18:00Z',
-    resolutionTimeMin: 18,
-    status: 'resolved',
-    statusBackend: 'resuelta',
-    resolutionType: 'resolved',
-    resolutionLabel: 'Resuelta',
-    resolvedBy: 'Geraldine Silva',
-    role: 'Enóloga Asistente',
-    summaryResolution: 'Normalización automática al finalizar la recirculación de la bomba.',
-    nota_resolucion: 'Normalización automática al finalizar la recirculación de la bomba.',
-    timeline: [
-      { time: '17:00', author: 'Sistema Telemetría', text: 'Incremento de 0.8°C durante operación de bombeo.' },
-      { time: '17:18', author: 'Geraldine Silva', text: 'Masa térmica equilibrada tras homogeneización.' }
-    ]
-  }
-]
-
-// ==========================================
-// ESTADO REACTIVO
-// ==========================================
-const auditLogs = ref([...initialMockAuditLogs])
+// Auditoría respaldada exclusivamente por respuestas del servidor.
+const auditLogs = ref([])
 const cubasList = ref([])
 const isLoading = ref(false)
+const loadError = ref('')
+const metricsError = ref('')
 const isResolving = ref(false)
 const isExporting = ref(false)
 const resolveError = ref(null)
@@ -309,7 +64,7 @@ const metricas = ref({
   alertas_activas: 0,
   alertas_criticas: 0,
   total_resueltas: 0,
-  mttr_promedio_minutos: 0,
+  mttr_promedio_minutos: null,
   tasa_resolucion_pct: 0
 })
 
@@ -393,10 +148,10 @@ function mapBackendAlertToAudit(dto) {
   }
 
   // Tiempo de resolución en minutos si está resuelta
-  let resolutionTimeMin = 0
+  let resolutionTimeMin = null
   if (dto.timestamp && dto.fecha_resolucion) {
     const diffMs = new Date(dto.fecha_resolucion) - new Date(dto.timestamp)
-    resolutionTimeMin = Math.max(1, Math.round(diffMs / 60000))
+    if (Number.isFinite(diffMs) && diffMs >= 0) resolutionTimeMin = Number((diffMs / 60000).toFixed(1))
   }
 
   // Línea de tiempo
@@ -413,7 +168,7 @@ function mapBackendAlertToAudit(dto) {
       time: dto.fecha_atencion
         ? new Date(dto.fecha_atencion).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
         : 'En Protocolo',
-      author: dto.operador_nombre || 'Operador Enológico Principal',
+      author: dto.operador_nombre || 'Sin identificación',
       text: dto.nota_atencion || 'Atención técnica iniciada e inspección de cuba.'
     })
   }
@@ -422,7 +177,7 @@ function mapBackendAlertToAudit(dto) {
       time: dto.fecha_resolucion
         ? new Date(dto.fecha_resolucion).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
         : 'Resuelta',
-      author: dto.operador_nombre || 'Operador Enológico Principal',
+      author: dto.resolvedor_nombre || 'Sin identificación',
       text: dto.nota_resolucion || 'Incidencia resuelta y protocolo completado satisfactoriamente.'
     })
   }
@@ -436,8 +191,8 @@ function mapBackendAlertToAudit(dto) {
     cubaId: String(dto.cuba_id || '1'),
     cubaCode,
     cubaName,
-    variety: dto.variedad || 'Cabernet Sauvignon',
-    lot: `Lote ${cubaCode}-2026`,
+    variety: dto.variedad || 'Sin variedad registrada',
+    lot: dto.fermentacion_id ? `Proceso #${dto.fermentacion_id}` : 'Sin proceso vinculado',
     sensorType,
     sensorName,
     severity,
@@ -454,11 +209,12 @@ function mapBackendAlertToAudit(dto) {
     statusBackend: dto.estado,
     resolutionType,
     resolutionLabel,
-    resolvedBy: dto.operador_nombre || (status === 'resolved' ? 'Operador Enológico Principal' : 'Sin asignar'),
-    role: dto.operador_nombre ? 'Operador de Bodega' : (status === 'resolved' ? 'Enólogo de Turno' : 'Pendiente'),
+    resolvedBy: dto.resolvedor_nombre || (status === 'resolved' ? 'Sin identificación' : 'Sin resolución'),
+    role: '',
     summaryResolution: dto.nota_resolucion || dto.nota_atencion || (status === 'resolved' ? 'Incidencia resuelta.' : 'Incidencia activa.'),
     nota_resolucion: dto.nota_resolucion || '',
-    timeline
+    timeline,
+    raw: dto
   }
 }
 
@@ -466,6 +222,7 @@ function mapBackendAlertToAudit(dto) {
 // CARGA DE DATOS Y CONSUMO DE ENDPOINTS
 // ==========================================
 async function loadMetricas() {
+  metricsError.value = ''
   try {
     const cubaIdParam = filterCuba.value !== 'all' ? filterCuba.value : null
     const data = await alertService.obtenerMetricas(cubaIdParam)
@@ -475,36 +232,13 @@ async function loadMetricas() {
         alertas_activas: data.alertas_activas ?? 0,
         alertas_criticas: data.alertas_criticas ?? 0,
         total_resueltas: data.total_resueltas ?? 0,
-        mttr_promedio_minutos: typeof data.mttr_promedio_minutos === 'number' ? Number(data.mttr_promedio_minutos.toFixed(1)) : 0,
+        mttr_promedio_minutos: typeof data.mttr_promedio_minutos === 'number' ? Number(data.mttr_promedio_minutos.toFixed(1)) : null,
         tasa_resolucion_pct: typeof data.tasa_resolucion_pct === 'number' ? Number(data.tasa_resolucion_pct.toFixed(1)) : 0
       }
     }
   } catch (err) {
-    console.error('Error al cargar métricas MTTR del backend:', err)
-  }
-}
-
-function calcularMetricasFallback() {
-  const total = auditLogs.value.length
-  const resueltas = auditLogs.value.filter(i => i.status === 'resolved' || i.resolutionType === 'resolved').length
-  const activas = total - resueltas
-  const criticas = auditLogs.value.filter(
-    i => (i.severity === 'danger' || i.severityLabel === 'Crítica' || i.severityLabel === 'Alta') &&
-         i.resolutionType !== 'resolved'
-  ).length
-  const sumaMin = auditLogs.value
-    .filter(i => i.resolutionType === 'resolved')
-    .reduce((acc, curr) => acc + (Number(curr.resolutionTimeMin) || 0), 0)
-  const mttr = resueltas > 0 ? Number((sumaMin / resueltas).toFixed(1)) : 0
-  const tasa = total > 0 ? Number(((resueltas / total) * 100).toFixed(1)) : 0
-
-  metricas.value = {
-    total_alertas: total,
-    alertas_activas: activas,
-    alertas_criticas: criticas,
-    total_resueltas: resueltas,
-    mttr_promedio_minutos: mttr,
-    tasa_resolucion_pct: tasa
+    metricsError.value = 'Métricas no disponibles; no se pudo consultar el servidor.'
+    metricas.value = { total_alertas: null, alertas_activas: null, alertas_criticas: null, total_resueltas: null, mttr_promedio_minutos: null, tasa_resolucion_pct: null }
   }
 }
 
@@ -515,12 +249,10 @@ async function loadData(showToastFeedback = false) {
     await loadMetricas()
 
     // 2. Cargar historial completo de alertas (GET /api/alertas)
-    const alertsData = await alertService.listarAlertas()
-    if (Array.isArray(alertsData) && alertsData.length > 0) {
-      auditLogs.value = alertsData.map(mapBackendAlertToAudit)
-    } else if (auditLogs.value.length === 0) {
-      auditLogs.value = [...initialMockAuditLogs]
-    }
+    const alertsData = await alertService.listarAlertas({ limit: 500 })
+    if (!Array.isArray(alertsData)) throw new Error('Respuesta de auditoría inválida')
+    auditLogs.value = alertsData.map(mapBackendAlertToAudit)
+    loadError.value = ''
 
     // 3. Cargar lista de cubas disponibles para el filtro
     try {
@@ -536,11 +268,7 @@ async function loadData(showToastFeedback = false) {
       showToast('Auditoría y métricas MTTR actualizadas.')
     }
   } catch (err) {
-    console.warn('Backend MOSTO no disponible, manteniendo datos locales:', err)
-    if (auditLogs.value.length === 0) {
-      auditLogs.value = [...initialMockAuditLogs]
-    }
-    calcularMetricasFallback()
+    loadError.value = 'No se pudo actualizar la auditoría. Los registros visibles corresponden a la última consulta exitosa.'
   } finally {
     isLoading.value = false
   }
@@ -610,7 +338,8 @@ const filteredLogs = computed(() => {
 
     // Rango de fechas (presets)
     if (datePreset.value === '7d') {
-      if (!item.detectedAt.includes('2026-11') && !item.detectedAt.includes('2026-10-31')) return false
+      const age = Date.now() - new Date(item.detectedAtRaw).getTime()
+      if (!Number.isFinite(age) || age < 0 || age > 7 * 86400000) return false
     }
 
     return true
@@ -667,52 +396,19 @@ async function resolveIncident() {
     ? incidentRawId
     : parseInt(String(incidentRawId).replace(/\D/g, ''), 10)
 
-  const nota = resolutionNoteInput.value.trim() || 'Acción correctiva aplicada en bodega. Parámetros estabilizados.'
-
+  const nota = resolutionNoteInput.value.trim()
+  if (nota.length < 10) {
+    resolveError.value = 'Describe la revisión y las acciones realizadas en al menos 10 caracteres.'
+    return
+  }
   isResolving.value = true
   resolveError.value = null
-
   try {
-    let updatedDto = null
-    if (numericId && !isNaN(numericId)) {
-      updatedDto = await alertService.resolver(numericId, {
-        usuario_id: 1,
-        nota_resolucion: nota
-      })
-    }
-
-    // Actualizar estado del incidente localmente
-    selectedIncident.value.status = 'resolved'
-    selectedIncident.value.statusBackend = 'resuelta'
-    selectedIncident.value.resolutionType = 'resolved'
-    selectedIncident.value.resolutionLabel = 'Resuelta'
-    selectedIncident.value.summaryResolution = nota
-    selectedIncident.value.nota_resolucion = nota
-    selectedIncident.value.resolvedBy = (updatedDto && updatedDto.operador_nombre) || 'Operador Enológico Principal'
-    selectedIncident.value.role = 'Enólogo de Bodega'
-
-    const now = new Date()
-    selectedIncident.value.resolvedAt = formatDateTime(now)
-
-    if (selectedIncident.value.detectedAtRaw) {
-      const diffMin = Math.max(1, Math.round((now - new Date(selectedIncident.value.detectedAtRaw)) / 60000))
-      selectedIncident.value.resolutionTimeMin = diffMin
-    }
-
-    if (!selectedIncident.value.timeline) {
-      selectedIncident.value.timeline = []
-    }
-    selectedIncident.value.timeline.push({
-      time: now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
-      author: selectedIncident.value.resolvedBy,
-      text: `Incidencia resuelta: ${nota}`
-    })
-
-    // Sincronizar en la lista local auditLogs
-    const targetIdx = auditLogs.value.findIndex(item => item.id === selectedIncident.value.id)
-    if (targetIdx !== -1) {
-      auditLogs.value[targetIdx] = { ...selectedIncident.value }
-    }
+    if (!Number.isInteger(numericId) || numericId < 1) throw new Error('Identificador de incidencia inválido')
+    const updated = mapBackendAlertToAudit(await alertService.resolver(numericId, { nota_resolucion: nota }))
+    const targetIdx = auditLogs.value.findIndex(item => item.rawId === numericId)
+    if (targetIdx !== -1) auditLogs.value[targetIdx] = updated
+    selectedIncident.value = updated
 
     // Actualizar los KPIs automáticamente desde el backend (Criterio 4)
     await loadMetricas()
@@ -808,6 +504,9 @@ function exportToCSVClientFallback() {
     </transition>
 
     <!-- Header Principal -->
+    <p v-if="metricsError" role="alert" class="audit-load-error">{{ metricsError }}</p>
+    <p class="metrics-scope">Métricas del historial completo de la cuba seleccionada. La tabla muestra hasta 500 registros recientes; sus filtros de texto, severidad y fecha no modifican las métricas.</p>
+    <p v-if="loadError" role="alert" class="audit-load-error">{{ loadError }}</p>
     <header class="audit-header">
       <div>
         <div class="module-tag">Módulo 5 · Administración SaaS y Gestión de Empresa</div>
@@ -852,7 +551,7 @@ function exportToCSVClientFallback() {
             <Clock :size="18" />
           </div>
         </div>
-        <div class="kpi-number">{{ metricas.mttr_promedio_minutos }} <span class="kpi-unit">min</span></div>
+        <div class="kpi-number">{{ metricas.mttr_promedio_minutos ?? 'N/D' }} <span class="kpi-unit">min</span></div>
         <div class="kpi-sub">
           <span>Fórmula oficial MTTR calculada</span>
         </div>
@@ -1046,7 +745,7 @@ function exportToCSVClientFallback() {
 
               <!-- Tiempo -->
               <td>
-                <span class="time-cell">{{ log.resolutionTimeMin ? log.resolutionTimeMin + ' min' : '-' }}</span>
+                <span class="time-cell">{{ log.resolutionTimeMin !== null ? log.resolutionTimeMin + ' min' : 'N/D' }}</span>
               </td>
 
               <!-- Dictamen -->
@@ -1112,6 +811,7 @@ function exportToCSVClientFallback() {
 
         <!-- Cuerpo del Modal -->
         <div class="modal-body">
+          <EpisodeEvidence :alert="selectedIncident.raw" />
           <!-- Datos del Tanque e Instalación -->
           <div class="audit-meta-grid">
             <div class="meta-box">
@@ -1176,7 +876,7 @@ function exportToCSVClientFallback() {
               </div>
             </div>
             <textarea
-              v-model="resolutionNoteInput"
+              v-model="resolutionNoteInput" maxlength="4000"
               rows="3"
               class="resolve-textarea"
               placeholder="Describa la acción correctiva realizada (ej: purga de camisa de refrigeración, ajuste de consigna a 18°C, adición de nutrientes)..."
@@ -1186,7 +886,7 @@ function exportToCSVClientFallback() {
           </div>
 
           <!-- Línea de Tiempo de Intervención -->
-          <div class="timeline-section">
+          <div v-if="!selectedIncident.raw.version_regla" class="timeline-section">
             <h4 class="timeline-title">Línea de Tiempo y Trazabilidad Operativa</h4>
             <div class="audit-timeline">
               <div
@@ -1228,6 +928,7 @@ function exportToCSVClientFallback() {
 </template>
 
 <style scoped>
+.audit-load-error { padding: 12px; color: #92400e; background: #fffbeb; border: 1px solid #f59e0b; border-radius: 8px; }
 /* =========================================
    ESTILOS DE HISTORIAL DE ALERTAS / AUDITORÍA
    ========================================= */

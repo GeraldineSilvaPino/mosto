@@ -13,7 +13,7 @@ Este documento describe la arquitectura, entidades, restricciones CHECK y dispar
   * El servicio de **Pooler** (`aws-0-us-west-2.pooler.supabase.com:6543`) cuenta con soporte dual IPv4/IPv6 y gestiona eficientemente el ciclo de vida de conexiones concurrentes.
 * **Cadena de Conexion en `.env`:**
   ```env
-  DATABASE_URL="postgresql+psycopg2://postgres.bbzhnfoyasvgxwftuked:12345Mosto54321%21@aws-0-us-west-2.pooler.supabase.com:6543/postgres"
+  DATABASE_URL="postgresql+psycopg2://postgres.bbzhnfoyasvgxwftuked:TU_PASSWORD_AQUI@aws-0-us-west-2.pooler.supabase.com:6543/postgres"
   ```
   *(Nota: El signo de exclamacion `!` debe codificarse en formato URL como `%21` para evitar interpretaciones erroneas del analizador sintactico).*
 

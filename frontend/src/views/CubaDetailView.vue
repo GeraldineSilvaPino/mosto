@@ -48,6 +48,7 @@ import { Chart as ChartJS, registerables } from 'chart.js'
 import cubaService from '../services/cubaService'
 import alertService from '../services/alertService'
 import processService from '../services/processService'
+import SimulationStatus from '../components/SimulationStatus.vue'
 
 ChartJS.register(...registerables)
 
@@ -99,6 +100,8 @@ const prediccionML = computed(() => {
   )
 })
 
+const sinModeloValidado = computed(() => prediccionML.value.estado_ia === 'NO_VALIDADO')
+
 const iaStatusClass = computed(() => {
   const estado = prediccionML.value?.estado_ia || 'RECOLECTANDO_DATOS'
   switch (estado) {
@@ -116,6 +119,7 @@ const iaStatusClass = computed(() => {
 })
 
 const iaGaugeColor = computed(() => {
+  if (prediccionML.value?.riesgo_pct == null) return '#64748b'
   const pct = Number(prediccionML.value?.riesgo_pct) || 0
   if (pct >= 70) return '#ef4444' // Rojo
   if (pct >= 40) return '#f59e0b' // Ámbar
@@ -305,6 +309,7 @@ const statusOperativo = computed(() => {
   if (temp !== null && temp !== undefined && (temp < min || temp > max)) {
     return 'warning'
   }
+  if (sinModeloValidado.value) return 'no_evaluado'
   return 'optimal'
 })
 
@@ -316,6 +321,8 @@ const statusLabel = computed(() => {
       return 'Alerta · Desviación de Parámetros'
     case 'optimal':
       return 'Normal · Fermentación Activa'
+    case 'no_evaluado':
+      return 'Monitoreo · Diagnóstico pendiente'
     default:
       return 'Monitoreo en Curso'
   }
@@ -374,18 +381,15 @@ const brixDeltaText = computed(() => {
     const valid = brixs.filter((b) => b !== null && b !== undefined)
     if (valid.length >= 2) {
       const diff = valid[valid.length - 1] - valid[0]
-      return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)} °Bx en ${activeTimeRangeLabel.value}`
+      return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)} °Bx entre muestras disponibles`
     }
   }
-  return 'Sin variación relevante'
+  return 'Sin muestras suficientes'
 })
 
 const tiltAngleCalculado = computed(() => {
-  if (brixActual.value !== null && brixActual.value !== undefined) {
-    const brix = Number(brixActual.value)
-    return (22 + brix * 1.7).toFixed(1) + '°'
-  }
-  return '--'
+  // The summary API does not expose measured tilt; do not reverse an invented curve.
+  return 'No informada'
 })
 
 const alertsList = computed(() => {
@@ -1278,7 +1282,7 @@ onBeforeUnmount(() => {
         <div class="metric-card-top">
           <div>
             <span class="sensor-tag">Sensor MPU-6050</span>
-            <h3 class="metric-title">Azúcar y Densidad (Brix)</h3>
+            <h3 class="metric-title">Brix aparente</h3>
           </div>
           <div class="metric-icon metric-icon-brix">
             <Compass :size="22" />
@@ -1294,10 +1298,10 @@ onBeforeUnmount(() => {
 
         <div class="metric-details">
           <div class="tilt-info">
-            <span>Inclinación calculada:</span>
+            <span>Inclinación medida:</span>
             <strong>{{ tiltAngleCalculado }}</strong>
           </div>
-          <span class="metric-subtext">Ritmo: {{ brixDeltaText }}</span>
+          <span class="metric-subtext">Variación: {{ brixDeltaText }}</span>
         </div>
       </div>
 
@@ -1313,7 +1317,7 @@ onBeforeUnmount(() => {
             :class="{
               'metric-icon-good': statusOperativo === 'optimal',
               'metric-icon-warn': statusOperativo === 'warning',
-              'metric-icon-neutral': statusOperativo === 'disponible' || statusOperativo === 'loading'
+              'metric-icon-neutral': ['disponible', 'loading', 'no_evaluado'].includes(statusOperativo)
             }"
           >
             <Activity :size="22" />
@@ -1326,12 +1330,14 @@ onBeforeUnmount(() => {
             :class="{
               'summary-optimal': statusOperativo === 'optimal',
               'summary-warning': statusOperativo === 'warning',
-              'summary-neutral': statusOperativo === 'disponible'
+              'summary-neutral': ['disponible', 'no_evaluado'].includes(statusOperativo)
             }"
           >
             {{
               !tieneProcesoActivo
                 ? 'Cuba Disponible'
+                : sinModeloValidado
+                ? (statusOperativo === 'warning' ? 'Temperatura fuera de perfil' : 'Diagnóstico pendiente')
                 : statusOperativo === 'optimal'
                 ? 'Fermentación Normal'
                 : 'Riesgo / Desviación'
@@ -1344,6 +1350,8 @@ onBeforeUnmount(() => {
             {{
               !tieneProcesoActivo
                 ? 'Cuba en reposo o higienización, lista para recibir una nueva vendimia.'
+                : sinModeloValidado
+                ? 'Telemetría v2 recibida. Las alertas térmicas usan el perfil del proceso y persistencia temporal; la evaluación cinética y la predicción de parada aún están pendientes.'
                 : statusOperativo === 'optimal'
                 ? 'El consumo de azúcar es continuo y la temperatura se mantiene estable dentro de la banda enológica.'
                 : 'Se detectó variación térmica o estancamiento de azúcar fuera del perfil óptimo.'
@@ -1393,13 +1401,13 @@ onBeforeUnmount(() => {
               </span>
             </div>
             <p class="ai-subtitle">
-              Modelo GradientBoostingClassifier para detección temprana de estancamiento cinético (Stuck Fermentation)
+              {{ sinModeloValidado ? 'Evaluación pendiente de un modelo temporal validado para telemetría v2.' : 'Clasificador experimental de regímenes sintéticos; sin validación de anticipación en fermentaciones reales.' }}
             </p>
           </div>
         </div>
 
         <!-- Botones de Acción para Demostración en Vivo -->
-        <div class="ai-actions">
+        <div v-if="!sinModeloValidado" class="ai-actions">
           <button
             class="btn-demo-simular"
             :disabled="isSimulatingAnomaly"
@@ -1460,13 +1468,13 @@ onBeforeUnmount(() => {
             </svg>
             <div class="ai-meter-center">
               <span class="ai-meter-num" :style="{ color: iaGaugeColor }">
-                {{ (prediccionML.riesgo_pct || 0).toFixed(1) }}%
+                {{ prediccionML.riesgo_pct == null ? 'N/D' : `${prediccionML.riesgo_pct.toFixed(1)}%` }}
               </span>
               <span class="ai-meter-lbl">Riesgo Parada</span>
             </div>
           </div>
 
-          <div class="ai-progress-bar-wrap">
+          <div v-if="!sinModeloValidado" class="ai-progress-bar-wrap">
             <div class="ai-progress-bar-labels">
               <span>0% Normal</span>
               <span>40% Alerta</span>
@@ -1483,7 +1491,7 @@ onBeforeUnmount(() => {
 
         <!-- Columna Derecha: Features Técnicas Explicativas y Diagnóstico -->
         <div class="ai-metrics-column">
-          <div class="ai-features-grid">
+          <div v-if="!sinModeloValidado" class="ai-features-grid">
             <!-- Feature 1: Velocidad de caída Brix (Pendiente) -->
             <div class="ai-feature-card">
               <div class="ai-feat-top">
@@ -1596,13 +1604,15 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <SimulationStatus v-if="cuba?.proceso_activo_id" :key="cuba.proceso_activo_id" :process-id="cuba.proceso_activo_id" />
+
     <!-- Gráficos de Telemetría Chart.js -->
     <section class="chart-section">
       <div class="chart-header">
         <div>
           <h2 class="chart-main-title">Evolución Temporal de la Cuba</h2>
           <p class="chart-main-subtitle">
-            Curva de temperatura (DS18B20) y descenso de azúcar (MPU-6050)
+            Temperatura del mosto y evolución de Brix aparente · horas en UTC
           </p>
         </div>
 
@@ -1669,6 +1679,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <p v-if="historico?.truncated" role="status">La ventana supera 10.000 muestras; se muestran las más recientes.</p>
       <!-- Canvas de Chart.js y Estados de Carga / Vacío -->
       <div class="chart-wrapper">
         <!-- Indicador de carga al cambiar rango -->
@@ -1709,11 +1720,11 @@ onBeforeUnmount(() => {
         </div>
         <div class="legend-item">
           <span class="legend-color legend-brix"></span>
-          <span><strong>Azúcar (°Bx):</strong> Grados Brix calculados por el flotador MPU-6050.</span>
+          <span><strong>Brix aparente (°Bx):</strong> Medida derivada del flotador; requiere calibración.</span>
         </div>
         <div
           class="legend-item"
-          v-if="activeChartTab === 'ph' || (historico?.valores_ph && historico.valores_ph.length > 0)"
+          v-if="activeChartTab === 'ph' || historico?.valores_ph?.some(value => value != null)"
         >
           <span class="legend-color legend-ph"></span>
           <span><strong>Acidez (pH):</strong> Sensor de pH sumergible PH-4502C.</span>

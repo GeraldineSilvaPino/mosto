@@ -9,10 +9,10 @@ from app.services.ml_service import evaluar_riesgo_parada_cuba
 from app.database import SessionLocal
 from app.models import Cuba, ProcesoFermentacion, LecturaTelemetria, EventoAlerta
 
-client = TestClient(app)
 
 
-def test_ml_service_insuficientes_lecturas():
+
+def test_ml_service_insuficientes_lecturas(client):
     """Valida que con menos de 4 lecturas históricas retorne estado RECOLECTANDO_DATOS."""
     res = evaluar_riesgo_parada_cuba([20.0, 19.5, 19.0], [22.0, 22.1, 22.0])
     assert res["estado_ia"] == "RECOLECTANDO_DATOS"
@@ -21,7 +21,7 @@ def test_ml_service_insuficientes_lecturas():
     assert "mínimo 4" in res["mensaje"]
 
 
-def test_ml_service_fermentacion_finalizada():
+def test_ml_service_fermentacion_finalizada(client):
     """Valida que si brix_suavizado <= 2.5 retorne estado FINALIZADA."""
     res = evaluar_riesgo_parada_cuba([3.0, 2.4, 2.2, 2.0], [21.0, 21.0, 21.0, 21.0])
     assert res["estado_ia"] == "FINALIZADA"
@@ -30,7 +30,7 @@ def test_ml_service_fermentacion_finalizada():
     assert res["brix_suavizado"] <= 2.5
 
 
-def test_ml_service_fermentacion_saludable():
+def test_ml_service_fermentacion_saludable(client):
     """Valida que con caída constante de Brix el modelo prediga riesgo NORMAL (< 40%)."""
     # 8 lecturas con pendiente negativa pronunciada y temp normal
     brix_saludable = [22.0, 21.2, 20.4, 19.6, 18.8, 18.0, 17.2, 16.4]
@@ -42,7 +42,7 @@ def test_ml_service_fermentacion_saludable():
     assert res["pendiente_brix_ventana"] < -0.05
 
 
-def test_ml_service_parada_critica():
+def test_ml_service_parada_critica(client):
     """Valida que con azúcar estancado (~14.5) y alta temperatura el modelo prediga CRITICO (>= 70%)."""
     brix_estancado = [14.51, 14.50, 14.49, 14.50, 14.50, 14.52, 14.50, 14.51]
     temp_elevada = [29.0, 30.0, 30.8, 31.5, 32.0, 32.3, 32.5, 32.8]
@@ -53,7 +53,7 @@ def test_ml_service_parada_critica():
     assert "Riesgo crítico de parada" in res["mensaje"]
 
 
-def test_api_obtener_prediccion_ml():
+def test_api_obtener_prediccion_ml(client):
     """Valida el endpoint GET /api/cubas/{id}/ml-prediction."""
     res = client.get("/api/cubas/1/ml-prediction")
     assert res.status_code == 200
@@ -64,7 +64,7 @@ def test_api_obtener_prediccion_ml():
     assert "mensaje" in data
 
 
-def test_api_simular_anomalia_y_generacion_alerta():
+def test_api_simular_anomalia_y_generacion_alerta(client):
     """Valida el endpoint POST /api/cubas/{id}/simular-anomalia y creación de alerta."""
     cuba_id = 1
     res = client.post(f"/api/cubas/{cuba_id}/simular-anomalia")
@@ -117,7 +117,7 @@ def test_api_simular_anomalia_y_generacion_alerta():
         db.close()
 
 
-def test_api_restaurar_normalidad():
+def test_api_restaurar_normalidad(client):
     """Valida el endpoint POST /api/cubas/{id}/restaurar-normalidad."""
     cuba_id = 1
     res = client.post(f"/api/cubas/{cuba_id}/restaurar-normalidad")

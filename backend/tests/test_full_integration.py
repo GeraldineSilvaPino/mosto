@@ -6,46 +6,46 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 
-client = TestClient(app)
 
 
-def test_auth_login_success_and_me():
+
+def test_auth_login_success_and_me(client):
     # 1. Login con enólogo
     res_enologo = client.post("/api/auth/login", json={
-        "email": "enologo@mosto.cl",
-        "password": "vinacura2024",
+        "email": "demo@example.invalid",
+        "password": "test-only-password-2026",
         "remember_me": True
     })
     assert res_enologo.status_code == 200
     data_enologo = res_enologo.json()
     assert "access_token" in data_enologo
-    assert data_enologo["user"]["email"] == "enologo@mosto.cl"
+    assert data_enologo["user"]["email"] == "demo@example.invalid"
 
     token = data_enologo["access_token"]
 
     # 2. Consultar perfil con Bearer token
     res_me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert res_me.status_code == 200
-    assert res_me.json()["email"] == "enologo@mosto.cl"
+    assert res_me.json()["email"] == "demo@example.invalid"
 
 
-def test_auth_login_invalid_credentials():
+def test_auth_login_invalid_credentials(client):
     res = client.post("/api/auth/login", json={
-        "email": "enologo@mosto.cl",
+        "email": "demo@example.invalid",
         "password": "clave_totalmente_incorrecta"
     })
     assert res.status_code == 401
 
 
-def test_auth_password_recovery():
+def test_auth_password_recovery(client):
     res = client.post("/api/auth/recuperar-password", json={
-        "email": "enologo@mosto.cl"
+        "email": "demo@example.invalid"
     })
     assert res.status_code == 200
     assert res.json()["status"] == "ok"
 
 
-def test_usuarios_crud_and_status():
+def test_usuarios_crud_and_status(client):
     # Listar
     res_list = client.get("/api/usuarios")
     assert res_list.status_code == 200
@@ -75,7 +75,7 @@ def test_usuarios_crud_and_status():
     assert res_estado.json()["active"] is False
 
 
-def test_company_config_and_upgrade():
+def test_company_config_and_upgrade(client):
     # Obtener configuración
     res_get = client.get("/api/empresa")
     assert res_get.status_code == 200
@@ -98,7 +98,7 @@ def test_company_config_and_upgrade():
     assert res_up.json()["nueva_capacidad"] == capacidad_actual + 6
 
 
-def test_binnacle_flow():
+def test_binnacle_flow(client):
     # Listar entradas
     res_list = client.get("/api/bitacora")
     assert res_list.status_code == 200
@@ -118,7 +118,7 @@ def test_binnacle_flow():
     assert "Prueba automatizada" in entry["message"]
 
 
-def test_master_catalogs():
+def test_master_catalogs(client):
     res_cepas = client.get("/api/cepas")
     assert res_cepas.status_code == 200
     assert len(res_cepas.json()) >= 1

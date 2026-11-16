@@ -22,6 +22,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copiar el código de la aplicación y scripts
 COPY ./app /app/app
 COPY ./scripts /app/scripts
+COPY ./migrations /app/migrations
+COPY ./alembic.ini /app/alembic.ini
 
 # Exponer el puerto de FastAPI
 EXPOSE 8000

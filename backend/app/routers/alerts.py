@@ -21,16 +21,29 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.database import get_db
-from app.models import EventoAlerta, ProcesoFermentacion, Cuba, Usuario, Dispositivo
+from app.services.access import business_db, actor_id
+from app.models import EventoAlerta, ProcesoFermentacion, Cuba, Usuario, Dispositivo, AuditoriaAlerta, BitacoraIntervencion
+from app.services.telemetry_v2 import aware, utc_now
+from app.services.episodes import record_action
 from app.schemas import AlertaOut, AlertaAtenderIn, AlertaResolverIn, AlertasMetricasOut
 
 router = APIRouter(prefix="/api/alertas", tags=["Alertas e Incidencias"])
 
 
+def _extra_filters(query, estado=None, severidad=None, tipo_alerta=None, origen=None):
+    for value, column in ((estado, EventoAlerta.estado), (severidad, EventoAlerta.severidad),
+                          (tipo_alerta, EventoAlerta.tipo_alerta), (origen, EventoAlerta.origen)):
+        if isinstance(value, str) and value.strip():
+            query = query.filter(column == value.strip().lower())
+    return query
+
+
 def _construir_titulo_descripcion(alerta: EventoAlerta) -> Tuple[str, str]:
     """Genera título y descripción descriptiva en base al tipo de alerta y severidad."""
     tipo = alerta.tipo_alerta or "desconocida"
+    if alerta.version_regla:
+        return ("Temperatura sobre el perfil" if tipo == "temperatura_alta" else "Temperatura bajo el perfil",
+                alerta.mensaje or "Desviación térmica observada; revisar la evidencia del episodio.")
     
     if tipo == "temp_alta":
         return (
@@ -121,9 +134,17 @@ def _mapear_alerta_out(alerta: EventoAlerta, db: Optional[Session] = None) -> Al
         operador_nombre = f"Operador #{alerta.atendida_por}"
 
     titulo, descripcion = _construir_titulo_descripcion(alerta)
+    resolvedor = db.query(Usuario).filter_by(id=alerta.resuelta_por).first() if db and alerta.resuelta_por else None
 
     return AlertaOut(
         id=alerta.id,
+        resuelta_por=alerta.resuelta_por,
+        resolvedor_nombre=resolvedor.nomb_compl if resolvedor else None,
+        version_regla=alerta.version_regla, origen=alerta.origen,
+        inicio_condicion=aware(alerta.inicio_condicion) if alerta.inicio_condicion else None,
+        fin_condicion=aware(alerta.fin_condicion) if alerta.fin_condicion else None,
+        ultima_observacion=aware(alerta.ultima_observacion) if alerta.ultima_observacion else None,
+        estado_condicion=alerta.estado_condicion, evidencia=alerta.evidencia,
         dispositivo_id=alerta.dispositivo_id,
         fermentacion_id=alerta.fermentacion_id,
         cuba_id=cuba_id,
@@ -137,11 +158,11 @@ def _mapear_alerta_out(alerta: EventoAlerta, db: Optional[Session] = None) -> Al
         met_dispar=alerta.met_dispar,
         titulo=titulo,
         descripcion=descripcion,
-        timestamp=alerta.timestamp,
+        timestamp=aware(alerta.timestamp) if alerta.timestamp else None,
         atendida_por=alerta.atendida_por,
         operador_nombre=operador_nombre,
-        fecha_atencion=alerta.fecha_atencion,
-        fecha_resolucion=alerta.fecha_resolucion,
+        fecha_atencion=aware(alerta.fecha_atencion) if alerta.fecha_atencion else None,
+        fecha_resolucion=aware(alerta.fecha_resolucion) if alerta.fecha_resolucion else None,
         nota_atencion=alerta.nota_atencion,
         nota_resolucion=alerta.nota_resolucion
     )
@@ -153,15 +174,16 @@ def listar_alertas(
     severidad: Optional[str] = Query(None, description="Filtrar por severidad: 'baja', 'media', 'alta', 'critica'"),
     cuba_id: Optional[int] = Query(None, description="Filtrar por ID de la cuba asociada"),
     tipo_alerta: Optional[str] = Query(None, description="Filtrar por código de anomalía (ej: 'temp_alta', 'ph_bajo')"),
+    origen: Optional[str] = Query(None, description="fisico o simulado; omitir incluye legacy"),
     limit: int = Query(50, ge=1, le=500, description="Límite máximo de alertas a retornar (paginación)"),
     offset: int = Query(0, ge=0, description="Cantidad de registros a omitir para paginación"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(business_db("operations"))
 ):
     """
     Retorna la lista de alertas generadas en la bodega para consumo en `AlertsView.vue`.
     Permite filtrar dinámicamente por estado, severidad o cuba y cuenta con paginación parametrizable.
     """
-    query = db.query(EventoAlerta)
+    query = _extra_filters(db.query(EventoAlerta), origen=origen)
 
     # 1. Filtro por estado ('pendiente', 'atendida', 'resuelta')
     if isinstance(estado, str) and estado.strip():
@@ -197,7 +219,9 @@ def listar_alertas(
 @router.get("/metricas", response_model=AlertasMetricasOut, summary="Obtener KPIs de auditoría y cálculo MTTR")
 def obtener_metricas_alertas(
     cuba_id: Optional[int] = Query(None, description="Filtrar métricas por ID de cuba específica"),
-    db: Session = Depends(get_db)
+    estado: Optional[str] = Query(None), severidad: Optional[str] = Query(None),
+    tipo_alerta: Optional[str] = Query(None), origen: Optional[str] = Query(None),
+    db: Session = Depends(business_db("operations"))
 ):
     """
     Calcula los KPIs de auditoría para la vista `AlertsAuditView.vue`:
@@ -209,7 +233,7 @@ def obtener_metricas_alertas(
         MTTR = sum(fecha_resolucion - fecha_generacion) / Total Resueltas (en minutos)
     - Tasa de resolución porcentual.
     """
-    query = db.query(EventoAlerta)
+    query = _extra_filters(db.query(EventoAlerta), estado, severidad, tipo_alerta, origen)
     if isinstance(cuba_id, int):
         query = (
             query.join(ProcesoFermentacion, EventoAlerta.fermentacion_id == ProcesoFermentacion.id)
@@ -231,14 +255,17 @@ def obtener_metricas_alertas(
     # MTTR = sum(fecha_resolucion - fecha_generacion) / Total Resueltas
     # ==========================================
     suma_minutos = 0.0
+    muestras_mttr = 0
     for a in alertas_resueltas:
         f_generacion = a.timestamp
         f_resolucion = a.fecha_resolucion
         if f_generacion and f_resolucion:
-            segundos = (f_resolucion - f_generacion).total_seconds()
-            suma_minutos += max(0.0, segundos / 60.0)
+            segundos = (aware(f_resolucion) - aware(f_generacion)).total_seconds()
+            if segundos >= 0:
+                suma_minutos += segundos / 60.0
+                muestras_mttr += 1
 
-    mttr_promedio = round(suma_minutos / total_resueltas, 2) if total_resueltas > 0 else 0.0
+    mttr_promedio = round(suma_minutos / muestras_mttr, 2) if muestras_mttr else None
     tasa_resolucion = round((total_resueltas / total_alertas) * 100.0, 1) if total_alertas > 0 else 0.0
 
     return AlertasMetricasOut(
@@ -247,6 +274,9 @@ def obtener_metricas_alertas(
         alertas_criticas=total_criticas,
         total_resueltas=total_resueltas,
         mttr_promedio_minutos=mttr_promedio,
+        muestras_mttr=muestras_mttr,
+        resueltas_sin_tiempos_validos=total_resueltas - muestras_mttr,
+        condiciones_sin_recuperacion=sum(1 for a in todas_alertas if a.version_regla and a.fin_condicion is None),
         tasa_resolucion_pct=tasa_resolucion
     )
 
@@ -256,13 +286,14 @@ def exportar_bitacora_alertas_csv(
     estado: Optional[str] = Query(None, description="Filtrar por estado ('pendiente', 'atendida', 'resuelta')"),
     severidad: Optional[str] = Query(None, description="Filtrar por severidad ('baja', 'media', 'alta', 'critica')"),
     cuba_id: Optional[int] = Query(None, description="Filtrar por ID de cuba"),
-    db: Session = Depends(get_db)
+    tipo_alerta: Optional[str] = Query(None), origen: Optional[str] = Query(None),
+    db: Session = Depends(business_db("operations"))
 ):
     """
     Retorna la bitácora histórica completa en formato `text/csv` con descarga directa en el navegador.
     Cumple con el criterio de cabecera `Content-Type: text/csv` y `Content-Disposition: attachment`.
     """
-    query = db.query(EventoAlerta)
+    query = _extra_filters(db.query(EventoAlerta), tipo_alerta=tipo_alerta, origen=origen)
 
     if isinstance(estado, str) and estado.strip():
         query = query.filter(EventoAlerta.estado == estado.strip().lower())
@@ -298,7 +329,7 @@ def exportar_bitacora_alertas_csv(
         "Tiempo Resolucion (min)",
         "Operador",
         "Nota Atencion",
-        "Accion Correctiva / Nota Resolucion"
+        "Accion Correctiva / Nota Resolucion", "Origen", "Estado Condicion", "Resuelto Por"
     ])
 
     for a in alertas:
@@ -307,8 +338,8 @@ def exportar_bitacora_alertas_csv(
         # Cálculo de tiempo de resolución si está disponible
         tiempo_res_str = ""
         if a.timestamp and a.fecha_resolucion:
-            minutos = max(0.0, (a.fecha_resolucion - a.timestamp).total_seconds() / 60.0)
-            tiempo_res_str = f"{round(minutos, 1)}"
+            minutos = (aware(a.fecha_resolucion) - aware(a.timestamp)).total_seconds() / 60.0
+            tiempo_res_str = f"{round(minutos, 1)}" if minutos >= 0 else ""
 
         writer.writerow([
             dto.id,
@@ -324,7 +355,7 @@ def exportar_bitacora_alertas_csv(
             tiempo_res_str,
             dto.operador_nombre or "N/A",
             dto.nota_atencion or "",
-            dto.nota_resolucion or ""
+            dto.nota_resolucion or "", dto.origen or "legacy", dto.estado_condicion or "", dto.resolvedor_nombre or ""
         ])
 
     timestamp_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -341,7 +372,7 @@ def exportar_bitacora_alertas_csv(
 
 
 @router.get("/{id}", response_model=AlertaOut, summary="Obtener detalle de una alerta")
-def obtener_alerta(id: int, db: Session = Depends(get_db)):
+def obtener_alerta(id: int, db: Session = Depends(business_db("operations"))):
     """Retorna el detalle completo de una alerta individual por su identificador primario."""
     alerta = db.query(EventoAlerta).filter(EventoAlerta.id == id).first()
     if not alerta:
@@ -356,7 +387,7 @@ def obtener_alerta(id: int, db: Session = Depends(get_db)):
 def atender_alerta(
     id: int,
     payload: Optional[AlertaAtenderIn] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(business_db("operations"))
 ):
     """
     Registra el inicio de atención/protocolo de una alerta por parte de un operador o enólogo:
@@ -364,7 +395,7 @@ def atender_alerta(
     - Cumple estrictamente la restricción de base de datos `ck_alerta_atencion`:
       al poblar `atendida_por`, es mandatorio registrar `fecha_atencion` con el timestamp actual.
     """
-    alerta = db.query(EventoAlerta).filter(EventoAlerta.id == id).first()
+    alerta = db.query(EventoAlerta).filter(EventoAlerta.id == id).with_for_update().first()
     if not alerta:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -378,16 +409,22 @@ def atender_alerta(
             detail=f"La alerta #{id} ya se encuentra resuelta y no puede volver a estado 'atendida'."
         )
 
-    # Obtener ID del operador responsable (default = 1 si no se envía)
-    operador_id = payload.usuario_id if (payload and payload.usuario_id) else (alerta.atendida_por or 1)
+    if alerta.estado == "atendida":
+        if payload and payload.nota and payload.nota.strip() != (alerta.nota_atencion or ""):
+            raise HTTPException(409, "La atención ya fue registrada; añada una intervención a la bitácora")
+        return _mapear_alerta_out(alerta, db)
+
+    # Actor from authenticated membership, never a client-provided ID.
+    operador_id = actor_id(db)
 
     # Actualización atómica garantizando la restricción CHECK ck_alerta_atencion
     alerta.estado = "atendida"
-    alerta.fecha_atencion = datetime.utcnow()
+    alerta.fecha_atencion = utc_now()
     alerta.atendida_por = operador_id
 
     if payload and payload.nota:
         alerta.nota_atencion = payload.nota.strip()
+    record_action(db, alerta, "atendida", actor=operador_id, detail={"nota": alerta.nota_atencion}, registered=alerta.fecha_atencion)
 
     db.commit()
     db.refresh(alerta)
@@ -399,7 +436,7 @@ def atender_alerta(
 def resolver_alerta(
     id: int,
     payload: Optional[AlertaResolverIn] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(business_db("operations"))
 ):
     """
     TASK-BE-04B: Registra la resolución formal de una alerta enológica:
@@ -408,32 +445,53 @@ def resolver_alerta(
     - Si no tenía `fecha_atencion`, se fija para consistencia con `ck_alerta_atencion`.
     - Guarda la nota o acción correctiva en `nota_resolucion` para la auditoría de MTTR.
     """
-    alerta = db.query(EventoAlerta).filter(EventoAlerta.id == id).first()
+    alerta = db.query(EventoAlerta).filter(EventoAlerta.id == id).with_for_update().first()
     if not alerta:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Alerta con ID {id} no encontrada."
         )
 
-    ahora = datetime.utcnow()
+    if alerta.estado == "resuelta":
+        if payload and payload.nota_resolucion and payload.nota_resolucion.strip() != (alerta.nota_resolucion or ""):
+            raise HTTPException(409, "La resolución ya fue registrada; añada una intervención a la bitácora")
+        return _mapear_alerta_out(alerta, db)
+    note = payload.nota_resolucion.strip() if payload and payload.nota_resolucion else ""
+    if alerta.version_regla and len(note) < 10:
+        raise HTTPException(422, "Describa la revisión o intervención en al menos 10 caracteres")
+    ahora = utc_now()
     alerta.estado = "resuelta"
     alerta.fecha_resolucion = ahora
+    alerta.resuelta_por = actor_id(db)
 
     # Si no tenía fecha_atencion, registrarla para consistencia de auditoría y CHECKs
     if not alerta.fecha_atencion:
         alerta.fecha_atencion = ahora
 
-    # Asignar operador si viene en el payload
-    if payload and payload.usuario_id and not alerta.atendida_por:
-        alerta.atendida_por = payload.usuario_id
-    elif not alerta.atendida_por:
-        alerta.atendida_por = 1
+    if not alerta.atendida_por:
+        alerta.atendida_por = actor_id(db)
 
     # Registrar nota de acción correctiva
     if payload and payload.nota_resolucion:
         alerta.nota_resolucion = payload.nota_resolucion.strip()
+    record_action(db, alerta, "resuelta", actor=actor_id(db), detail={"nota": alerta.nota_resolucion,
+                  "estado_condicion": alerta.estado_condicion}, registered=ahora)
+    if alerta.version_regla:
+        db.add(BitacoraIntervencion(alerta_id=alerta.id, fermentacion_id=alerta.fermentacion_id,
+            cuba_id=alerta.fermentacion.cuba_id, usuario_id=actor_id(db), fecha_registro=ahora,
+            tipo_intervencion="nota", descripcion=f"Revisión del episodio #{alerta.id}: {note}"))
 
     db.commit()
     db.refresh(alerta)
 
     return _mapear_alerta_out(alerta, db)
+
+
+@router.get("/{id}/eventos")
+def eventos_alerta(id: int, db: Session = Depends(business_db("operations"))):
+    if not db.query(EventoAlerta).filter_by(id=id).first():
+        raise HTTPException(404, "Alerta no encontrada")
+    events = db.query(AuditoriaAlerta).filter_by(alerta_id=id).order_by(AuditoriaAlerta.id).all()
+    return [{"id": e.id, "accion": e.accion, "registrado_en": aware(e.registrado_en),
+             "observado_en": aware(e.observado_en) if e.observado_en else None,
+             "usuario_id": e.usuario_id, "mensaje_id": e.mensaje_id, "detalle": e.detalle} for e in events]

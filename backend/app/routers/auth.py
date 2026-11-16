@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
-from app.models import Usuario, EmpresaCliente
+from app.models import Usuario, EmpresaCliente, Bodega, UsuarioBodega, Rol
+from app.services.access import normalize_role, KNOWN_ROLES
 from app.schemas import LoginIn, LoginOut, UserAuthPayload, PasswordResetIn
 from app.services.auth_service import (
     verify_password,
@@ -28,6 +29,29 @@ ROLE_LABEL_MAP = {
     "operador": "Operario de Bodega",
     "operario": "Operario de Bodega"
 }
+
+
+def _auth_payload(db, user):
+    company = db.query(EmpresaCliente).filter_by(id=user.empresa_id, activo=True).first()
+    if company is None:
+        raise HTTPException(403, "Empresa inactiva o sin configurar")
+    rows = db.query(UsuarioBodega.bodega_id, Bodega.nombre, Rol.codigo).join(
+        Bodega, UsuarioBodega.bodega_id == Bodega.id).join(Rol).filter(
+        UsuarioBodega.usuario_id == user.id, Bodega.empresa_id == company.id).all()
+    ids = [row[0] for row in rows]
+    codes = {normalize_role(row[2]) for row in rows}
+    if not rows or len(set(ids)) != len(ids) or not codes.issubset(KNOWN_ROLES):
+        raise HTTPException(403, "Sin asignaciones válidas a bodegas")
+    company_ids = {row[0] for row in db.query(Bodega.id).filter_by(empresa_id=company.id)}
+    company_admin = set(ids) == company_ids and codes == {"admin"}
+    code = next(iter(codes)) if len(codes) == 1 else "Roles por bodega"
+    parts = user.nomb_compl.split()
+    avatar = "".join(part[0] for part in parts[:2]).upper() or "MO"
+    return UserAuthPayload(id=user.id, name=user.nomb_compl, email=user.correo_elec,
+        role=ROLE_LABEL_MAP.get(code, "Solo lectura" if code == "lector" else code),
+        winery=company.nomb_emp, avatarInitial=avatar, company_admin=company_admin,
+        memberships=[{"bodega_id": ident, "bodega_nombre": name, "role": normalize_role(role)}
+                     for ident, name, role in rows])
 
 
 @router.post("/login", response_model=LoginOut)
@@ -82,41 +106,17 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
     else:
         exp_delta = timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
 
-    # Buscar nombre de la empresa / viña
-    nombre_vina = "Viña Santa Emiliana"
-    if usuario.empresa_id:
-        emp = db.query(EmpresaCliente).filter(EmpresaCliente.id == usuario.empresa_id).first()
-        if emp and emp.nomb_emp:
-            nombre_vina = emp.nomb_emp
+    user_payload = _auth_payload(db, usuario)
 
     token_claims = {
         "sub": str(usuario.id),
         "email": usuario.correo_elec,
         "name": usuario.nomb_compl,
-        "role": usuario.rol or "operador",
         "empresa_id": usuario.empresa_id
     }
 
     access_token = create_access_token(token_claims, expires_delta=exp_delta)
     print(f"[AUTH SUCCESS] Login exitoso para '{usuario.correo_elec}' ({usuario.nomb_compl}) - Rol: {usuario.rol}")
-
-    # Construir avatar inicial
-    partes = usuario.nomb_compl.strip().split()
-    if len(partes) >= 2:
-        avatar = (partes[0][0] + partes[1][0]).upper()
-    elif len(partes) == 1 and len(partes[0]) >= 2:
-        avatar = partes[0][:2].upper()
-    else:
-        avatar = "MO"
-
-    user_payload = UserAuthPayload(
-        id=usuario.id,
-        name=usuario.nomb_compl,
-        email=usuario.correo_elec,
-        role=ROLE_LABEL_MAP.get(usuario.rol, usuario.rol or "Operario"),
-        winery=nombre_vina,
-        avatarInitial=avatar
-    )
 
     return LoginOut(
         access_token=access_token,
@@ -153,21 +153,4 @@ def obtener_perfil_actual(
     db: Session = Depends(get_db)
 ):
     """Retorna el perfil del usuario autenticado a través del token Bearer."""
-    nombre_vina = "Viña Santa Emiliana"
-    if usuario_actual.empresa_id:
-        emp = db.query(EmpresaCliente).filter(EmpresaCliente.id == usuario_actual.empresa_id).first()
-        if emp and emp.nomb_emp:
-            nombre_vina = emp.nomb_emp
-
-    partes = usuario_actual.nomb_compl.strip().split()
-    avatar = (partes[0][0] + partes[1][0]).upper() if len(partes) >= 2 else "MO"
-
-    return UserAuthPayload(
-        id=usuario_actual.id,
-        name=usuario_actual.nomb_compl,
-        email=usuario_actual.correo_elec,
-        role=ROLE_LABEL_MAP.get(usuario_actual.rol, usuario_actual.rol or "Operario"),
-        winery=nombre_vina,
-        avatarInitial=avatar
-    )
-
+    return _auth_payload(db, usuario_actual)

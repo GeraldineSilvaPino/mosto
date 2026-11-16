@@ -1,3 +1,11 @@
+> **Continuación por otro desarrollador/Codex:** [Guía de traspaso](../CONTINUAR_MOSTO.md) y [estado actual](docs/ESTADO_PLAN_MAESTRO.md).
+
+> **Arranque actualizado:** consulta [Base segura y reproducible](docs/BASE_SEGURA_Y_REPRODUCIBLE.md). Ya no se crean tablas/datos al arrancar; se requiere JWT_SECRET_KEY y la ingesta legacy es solo demo.
+
+> **Canal IoT actual:** [Telemetría v2](docs/TELEMETRIA_V2.md) documenta credenciales individuales, calibración, idempotencia, pruebas y límites. Aplicar las [migraciones locales](docs/MIGRACIONES_Y_POSTGRESQL.md) antes de arrancar una demo nueva.
+
+> **Demostración de bodega:** [Simulador enológico continuo](docs/SIMULADOR_ENOLOGICO.md), con cinco escenarios virtuales, historial reanudable por HTTP y una reserva física sin mediciones ficticias. Este es el flujo nuevo; `simulate_esp.py` se conserva como demo legacy.
+
 # MOSTO - Backend API (FastAPI)
 
 Backend en Python con **FastAPI**, **SQLAlchemy** y **SQLite** para la plataforma de monitoreo vitivinícola e ingesta de telemetría IoT.
@@ -88,4 +96,8 @@ Si tienes **Docker Desktop** instalado:
     "az": 0.74
   }
   ```
+
+# Migraciones y PostgreSQL
+
+La inicialización local y las pruebas utilizan Alembic. Consulta [revisiones, comandos, diferencias con Supabase y validación](docs/MIGRACIONES_Y_POSTGRESQL.md) antes de inicializar una base. El baseline solo admite bases vacías; no se ha migrado Supabase.
 

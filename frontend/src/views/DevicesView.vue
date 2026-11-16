@@ -51,31 +51,7 @@ import cubaService from '../services/cubaService.js'
 // ==========================================
 // DISPOSITIVOS IOT (CONECTADO A FASTAPI / SUPABASE)
 // ==========================================
-const SINGLE_MOCK_SENSOR = {
-  id: 9999,
-  code: 'ESP32-MOCK-LAB',
-  name: 'Sensor MOCK de Calibración (Simulado)',
-  mac: 'AA:BB:CC:DD:EE:99',
-  model: 'ESP32-Virtual (Emulado)',
-  sensorType: 'DS18B20',
-  sensorLabel: 'Sonda Térmica [MOCK DEMO]',
-  assignedCubaId: null,
-  assignedCubaName: 'Sin Asignar [MOCK]',
-  status: 'online',
-  statusLabel: 'Simulado (Mock)',
-  signalRssi: -60,
-  signalQuality: 'good',
-  powerSource: 'mains',
-  batteryLevel: 99,
-  firmware: 'v1.0.0-mock',
-  lastTelemetry: 'En tiempo real',
-  lastReadingValue: '18.5 °C (Dato Mock)',
-  samplingInterval: '5 seg',
-  ipAddress: '192.168.10.99',
-  notes: '[DISPOSITIVO MOCK] Sensor virtual de prueba de laboratorio para homologación y desarrollo.'
-}
-
-const devices = ref([SINGLE_MOCK_SENSOR])
+const devices = ref([])
 
 // Cubas disponibles para emparejar (se actualizan dinámicamente desde backend)
 const availableCubas = ref([])
@@ -172,25 +148,12 @@ const filteredDevices = computed(() => {
 // CONEXIÓN AL BACKEND & POLLING
 // ==========================================
 function mapBackendDevice(d) {
-  const ipAddress = d.ipAddress || (d.id ? `192.168.10.${40 + (d.id % 50)}` : '192.168.10.x')
-
-  let lastReadingValue = d.lastReadingValue
-  if (!lastReadingValue) {
-    if (d.sensorType === 'DS18B20') {
-      lastReadingValue = d.status === 'online' ? '21.5 °C' : 'Último dato'
-    } else if (d.sensorType === 'MPU-6050') {
-      lastReadingValue = d.status === 'online' ? '42.0° (13.5 °Bx)' : 'Último dato'
-    } else if (d.sensorType === 'PH-4502C') {
-      lastReadingValue = d.status === 'online' ? '3.42 pH' : 'Último dato'
-    } else {
-      lastReadingValue = d.status === 'online' ? 'Telemetría activa' : 'Sin señal'
-    }
-  }
-
-  const samplingInterval = d.samplingInterval || (d.powerSource === 'battery' ? '2 min' : '1 min')
+  const ipAddress = d.ipAddress || 'No informada'
+  const lastReadingValue = d.lastReadingValue || 'Sin medición válida'
+  const samplingInterval = d.samplingInterval || 'No informada'
   const notes = d.notes || (d.assignedCubaName
-    ? `Asignado operativamente a ${d.assignedCubaName}. Sincronizado con broker IoT.`
-    : 'Dispositivo disponible en inventario técnico.')
+    ? `Asignado a ${d.assignedCubaName}.`
+    : 'Dispositivo disponible en inventario.')
 
   return {
     ...d,
@@ -209,7 +172,7 @@ async function loadDevices(isManual = false) {
   try {
     const data = await deviceService.listarDispositivos()
     if (Array.isArray(data)) {
-      devices.value = [...data.map(mapBackendDevice), SINGLE_MOCK_SENSOR]
+      devices.value = data.map(mapBackendDevice)
     }
 
     try {
@@ -325,46 +288,11 @@ async function handleSaveNewDevice() {
 
 // Simular Ping a dispositivo
 function handlePing(device) {
-  isPinging.value = true
-  pingResult.value = { deviceId: device.id, status: 'loading' }
-
-  setTimeout(() => {
-    isPinging.value = false
-    if (device.status === 'offline') {
-      pingResult.value = {
-        deviceId: device.id,
-        status: 'error',
-        msg: `Fallo de ping a ${device.ipAddress} (${device.code}): Tiempo de espera agotado (Timeout 2000ms).`
-      }
-      showToast(`Error: ${device.code} no respondió al ping ICMP.`)
-    } else {
-      const ms = Math.floor(Math.random() * 25) + 18
-      pingResult.value = {
-        deviceId: device.id,
-        status: 'success',
-        msg: `Ping exitoso a ${device.ipAddress} (${device.code}): Tiempo de respuesta ${ms} ms · Paquetes 4/4 (0% pérdida).`
-      }
-      showToast(`Ping OK: ${device.code} respondió en ${ms} ms.`)
-    }
-
-    setTimeout(() => {
-      pingResult.value = null
-    }, 5000)
-  }, 700)
+  showToast(`Diagnóstico remoto de ${device.code} no disponible: el dispositivo aún no implementa este comando.`)
 }
 
-// Simular Reinicio de dispositivo
 function handleRestart(device) {
-  showToast(`Enviando señal de reinicio (Soft Reset) a ${device.code}...`)
-  device.status = 'maintenance'
-  device.statusLabel = 'Reiniciando...'
-
-  setTimeout(() => {
-    device.status = 'online'
-    device.statusLabel = 'En Línea'
-    device.lastTelemetry = 'Ahora mismo'
-    showToast(`Dispositivo ${device.code} reiniciado y reconectado al broker MQTT.`)
-  }, 1800)
+  showToast(`Reinicio remoto de ${device.code} no disponible: requiere confirmación del firmware.`)
 }
 
 // ==========================================
@@ -662,7 +590,7 @@ async function handleConfirmUnlink() {
         class="device-card"
         :class="[
           'device-card--' + device.status,
-          { 'device-card--low-battery': device.powerSource === 'battery' && device.batteryLevel < 20 }
+          { 'device-card--low-battery': device.powerSource === 'battery' && device.batteryLevel != null && device.batteryLevel < 20 }
         ]"
       >
         <!-- Top de la Tarjeta -->
@@ -682,6 +610,7 @@ async function handleConfirmUnlink() {
               <div class="device-code-row">
                 <h3 class="device-code">{{ device.code }}</h3>
                 <span class="device-model-tag">{{ device.model }}</span>
+                <span class="device-model-tag">{{ device.source === 'fisico' ? 'Físico' : device.source === 'simulado' ? 'Simulado' : 'Sin aprovisionar' }}</span>
               </div>
               <p class="device-mac">{{ device.mac }} · IP: {{ device.ipAddress }}</p>
             </div>
@@ -731,7 +660,7 @@ async function handleConfirmUnlink() {
               <SignalMedium v-else-if="device.signalQuality === 'good'" :size="16" class="signal-icon signal-good" />
               <SignalLow v-else-if="device.signalQuality === 'weak'" :size="16" class="signal-icon signal-weak" />
               <SignalZero v-else :size="16" class="signal-icon signal-none" />
-              <span class="signal-rssi">{{ device.signalRssi }} dBm</span>
+              <span class="signal-rssi">{{ device.signalRssi == null ? 'Sin dato' : `${device.signalRssi} dBm` }}</span>
             </div>
           </div>
 
@@ -741,14 +670,14 @@ async function handleConfirmUnlink() {
             <div class="power-indicator">
               <Zap v-if="device.powerSource === 'mains'" :size="15" class="power-icon mains-icon" />
               <component
-                v-else
+                v-else-if="device.batteryLevel != null"
                 :is="device.batteryLevel < 20 ? BatteryWarning : BatteryMedium"
                 :size="16"
                 class="power-icon"
                 :class="device.batteryLevel < 20 ? 'battery-low' : 'battery-normal'"
               />
               <span class="power-text">
-                {{ device.powerSource === 'mains' ? 'Red 220V' : `${device.batteryLevel}%` }}
+                {{ device.batteryLevel == null ? 'Sin dato' : `${device.batteryLevel}%` }}
               </span>
             </div>
           </div>
@@ -1025,7 +954,7 @@ async function handleConfirmUnlink() {
               </div>
               <div class="summary-field">
                 <span class="field-label">Fuente de Energía:</span>
-                <span class="field-value">{{ selectedDeviceToAssign.powerSource === 'mains' ? 'Red Eléctrica (220V)' : 'Batería (' + selectedDeviceToAssign.batteryLevel + '%)' }}</span>
+                <span class="field-value">{{ selectedDeviceToAssign.powerSource === 'mains' ? 'Red eléctrica' : selectedDeviceToAssign.batteryLevel != null ? `Batería (${selectedDeviceToAssign.batteryLevel}%)` : 'No informada' }}</span>
               </div>
             </div>
           </div>

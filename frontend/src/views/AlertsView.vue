@@ -36,11 +36,13 @@ import {
   RefreshCw
 } from 'lucide-vue-next'
 import alertService from '../services/alertService'
+import binnacleService from '../services/binnacleService'
+import EpisodeEvidence from '../components/EpisodeEvidence.vue'
 
 // ==========================================
 // ESTADO REACTIVO (Conectado a FastAPI / Supabase)
 // ==========================================
-let nextAlertId = 1000
+const evidenceRevision = ref(0)
 
 const allAlerts = ref([]) // Lista global no filtrada para KPIs estables
 const alerts = ref([])    // Lista filtrada para la tabla
@@ -127,7 +129,7 @@ function mapBackendAlert(dto) {
   if (dto.fecha_atencion || dto.nota_atencion) {
     notes.push({
       id: 'n-att',
-      author: dto.operador_nombre || 'Enólogo en Turno',
+      author: dto.operador_nombre || 'Sin identificación',
       time: dto.fecha_atencion
         ? new Date(dto.fecha_atencion).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
         : 'En Protocolo',
@@ -137,7 +139,7 @@ function mapBackendAlert(dto) {
   if (dto.fecha_resolucion || dto.nota_resolucion) {
     notes.push({
       id: 'n-res',
-      author: dto.operador_nombre || 'Enólogo en Turno',
+      author: dto.resolvedor_nombre || 'Sin identificación',
       time: dto.fecha_resolucion
         ? new Date(dto.fecha_resolucion).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
         : 'Resuelta',
@@ -162,7 +164,7 @@ function mapBackendAlert(dto) {
 
   return {
     id: dto.id,
-    cubaId: dto.cuba_id ? String(dto.cuba_id) : '1',
+    cubaId: dto.cuba_id ? String(dto.cuba_id) : '',
     cubaCode: dto.cuba_codigo || (dto.cuba_id ? `CB-0${dto.cuba_id}` : 'General'),
     cubaName: dto.cuba_nombre || `Cuba ${dto.cuba_codigo || 'General'}`,
     variety: dto.variedad || 'Fermentación Activa',
@@ -195,46 +197,9 @@ async function loadAlerts(silent = false) {
   if (!silent) isLoading.value = true
   fetchError.value = null
   try {
-    const params = {}
-
-    // 1. Filtro por Estado hacia el backend
-    if (filterStatus.value !== 'all') {
-      if (filterStatus.value === 'active' || filterStatus.value === 'pendiente') {
-        params.estado = 'pendiente'
-      } else if (filterStatus.value === 'in_progress' || filterStatus.value === 'atendida') {
-        params.estado = 'atendida'
-      } else if (filterStatus.value === 'resolved' || filterStatus.value === 'resuelta') {
-        params.estado = 'resuelta'
-      }
-    }
-
-    // 2. Filtro por Severidad hacia el backend
-    if (filterSeverity.value !== 'all') {
-      if (filterSeverity.value === 'danger') {
-        params.severidad = 'critica'
-      } else if (filterSeverity.value === 'warning') {
-        params.severidad = 'media'
-      } else if (filterSeverity.value === 'info') {
-        params.severidad = 'baja'
-      } else {
-        params.severidad = filterSeverity.value
-      }
-    }
-
-    // 3. Filtro por Cuba hacia el backend
-    if (filterCuba.value !== 'all') {
-      params.cuba_id = Number(filterCuba.value)
-    }
-
-    // Si no hay filtros aplicados, data ya representa la lista global
-    const isFiltered = Object.keys(params).length > 0
-    if (!isFiltered || allAlerts.value.length === 0) {
-      const globalData = await alertService.listarAlertas()
-      allAlerts.value = globalData.map(mapBackendAlert)
-    }
-
-    const data = isFiltered ? await alertService.listarAlertas(params) : allAlerts.value.map(a => a.raw)
-    alerts.value = data.map(mapBackendAlert)
+    const data = await alertService.listarAlertas({ limit: 500 })
+    allAlerts.value = data.map(mapBackendAlert)
+    alerts.value = allAlerts.value
   } catch (err) {
     console.error('Error al consultar alertas:', err)
     fetchError.value = err.message || 'Error de conexión con el backend MOSTO'
@@ -243,11 +208,6 @@ async function loadAlerts(silent = false) {
     isRefreshing.value = false
   }
 }
-
-// Escuchar cambios reactivos en los filtros desplegables para reconsultar con query params
-watch([filterSeverity, filterStatus, filterCuba], () => {
-  loadAlerts(false)
-})
 
 // ==========================================
 // KPIS COMPUTADOS (Calculados sobre métricas globales de la bodega)
@@ -274,13 +234,14 @@ const totalInProgress = computed(() => {
   return allAlerts.value.filter(a => a.status === 'in_progress' || a.statusBackend === 'atendida').length
 })
 
-const totalDisabledSensors = computed(() => {
-  return allAlerts.value.filter(a => a.sensorDisabled).length
-})
+const totalOpenConditions = computed(() => allAlerts.value.filter(a => a.raw.version_regla && !a.raw.fin_condicion).length)
 
 // Lista filtrada (Filtro complementario por texto en cliente)
 const filteredAlerts = computed(() => {
   return alerts.value.filter(alert => {
+    if (filterSeverity.value !== 'all' && alert.severity !== filterSeverity.value) return false
+    if (filterStatus.value !== 'all' && alert.status !== filterStatus.value) return false
+    if (filterCuba.value !== 'all' && alert.cubaId !== filterCuba.value) return false
     if (searchQuery.value.trim()) {
       const q = searchQuery.value.toLowerCase()
       const matchText =
@@ -299,11 +260,6 @@ const filteredAlerts = computed(() => {
 // Opciones de cubas disponibles
 const cubasAvailable = computed(() => {
   const map = new Map()
-  map.set('1', { id: '1', code: 'CB-01', name: 'Cuba 01 · Cabernet Sauvignon' })
-  map.set('2', { id: '2', code: 'CB-02', name: 'Cuba 02 · Carménère Reserva' })
-  map.set('3', { id: '3', code: 'CB-03', name: 'Cuba 03 · Sauvignon Blanc' })
-  map.set('4', { id: '4', code: 'CB-04', name: 'Cuba 04 · Syrah Gran Corte' })
-
   allAlerts.value.forEach(a => {
     if (a.cubaId && !map.has(a.cubaId)) {
       map.set(a.cubaId, { id: a.cubaId, code: a.cubaCode, name: a.cubaName })
@@ -334,201 +290,73 @@ function closeProtocol() {
   selectedAlert.value = null
 }
 
-function toggleSensorDisabled() {
-  if (!selectedAlert.value) return
-  selectedAlert.value.sensorDisabled = !selectedAlert.value.sensorDisabled
-
-  const actionName = selectedAlert.value.sensorDisabled ? 'ANULADO (aislado)' : 'REACTIVADO'
-  selectedAlert.value.notes.push({
-    id: Date.now(),
-    author: 'Enólogo en Turno',
-    time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
-    text: `Sensor ${selectedAlert.value.sensorType} (${selectedAlert.value.sensorName}) ${actionName} en protocolo de revisión.`
-  })
-
-  if (selectedAlert.value.sensorDisabled) {
-    showToast(`Sensor ${selectedAlert.value.sensorType} de ${selectedAlert.value.cubaCode} ha sido ANULADO. Se ignoran alertas falsas.`)
-  } else {
-    showToast(`Sensor ${selectedAlert.value.sensorType} de ${selectedAlert.value.cubaCode} ha sido REACTIVADO para telemetría en vivo.`)
+function syncAlert(dto) {
+  const updated = mapBackendAlert(dto)
+  for (const list of [alerts, allAlerts]) {
+    const index = list.value.findIndex(item => item.id === dto.id)
+    if (index >= 0) list.value[index] = updated
   }
+  if (selectedAlert.value?.id === dto.id) selectedAlert.value = updated
+  evidenceRevision.value++
 }
 
-// Conexión oficial de Atender Alerta (PATCH /api/alertas/{id}/atender)
 async function attendAlert(alert, noteText = '') {
-  if (!alert) return
+  if (!alert || isAttending.value) return false
   isAttending.value = true
   try {
-    const payload = {
-      usuario_id: 1, // Enólogo operador
-      nota: noteText.trim() || 'Atención de incidencia iniciada por el enólogo en bodega.'
-    }
+    syncAlert(await alertService.atender(alert.id, { nota: noteText.trim() }))
+    showToast(`Atención de la alerta #${alert.id} registrada.`)
+    return true
+  } catch (err) { showToast(`Error al atender: ${err.message}`); return false }
+  finally { isAttending.value = false }
+}
 
-    let operadorNombre = 'Operador Enología'
-    if (alert.id < 1000) {
-      const updatedDto = await alertService.atender(alert.id, payload)
-      operadorNombre = updatedDto.operador_nombre || operadorNombre
-    }
+async function quickAttendAlert(alert) {
+  await attendAlert(alert, 'Atención iniciada desde la lista de alertas.')
+}
 
-    // Actualización inmediata en la tabla reactiva y en la lista global de KPIs
-    alert.status = 'in_progress'
-    alert.statusBackend = 'atendida'
-    alert.statusLabel = 'En Protocolo'
-    alert.assignedTo = operadorNombre
-
-    const noteObj = {
-      id: Date.now(),
-      author: operadorNombre,
-      time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
-      text: payload.nota
-    }
-    alert.notes.push(noteObj)
-
-    // Sincronizar en allAlerts para actualizar los KPIs
-    const inGlobal = allAlerts.value.find(a => a.id === alert.id)
-    if (inGlobal) {
-      inGlobal.status = 'in_progress'
-      inGlobal.statusBackend = 'atendida'
-      inGlobal.statusLabel = 'En Protocolo'
-      inGlobal.assignedTo = alert.assignedTo
-      inGlobal.notes.push(noteObj)
-    }
-
-    showToast(`Alerta #${alert.id} de ${alert.cubaCode} atendida e ingresada al protocolo enológico.`)
-  } catch (err) {
-    showToast(`Error al atender alerta: ${err.message}`)
-  } finally {
-    isAttending.value = false
+async function attendSelectedAlert() {
+  if (await attendAlert(selectedAlert.value, newNoteText.value)) {
+    newNoteText.value = ''
   }
 }
 
-// Acción de atención rápida desde el botón de la fila
-async function quickAttendAlert(alert) {
-  await attendAlert(alert, 'Atención rápida iniciada desde la lista de alertas.')
+async function persistNote(message) {
+  if (!selectedAlert.value || isAttending.value) return false
+  isAttending.value = true
+  try {
+    await binnacleService.registrarEntrada({ type: 'nota', message, alerta_id: selectedAlert.value.id })
+    evidenceRevision.value++
+    showToast('Registro guardado en la bitácora del episodio.')
+    return true
+  } catch (err) { showToast(`No se pudo guardar: ${err.message}`); return false }
+  finally { isAttending.value = false }
 }
 
-// Acción de atención desde el modal de protocolo
-async function attendSelectedAlert() {
-  if (!selectedAlert.value) return
-  await attendAlert(selectedAlert.value, newNoteText.value || 'Atención iniciada desde el protocolo de revisión.')
-  newNoteText.value = ''
-  closeProtocol()
-}
-
-// Acción: Guardar Nota de Terreno
 async function addNote() {
-  if (!newNoteText.value.trim() || !selectedAlert.value) return
+  if (newNoteText.value.trim() && await persistNote(newNoteText.value.trim())) newNoteText.value = ''
+}
 
-  const noteContent = newNoteText.value.trim()
+async function saveManualCheck() {
+  if (manualSampleInput.value.trim() && await persistNote(`Medición manual declarada por el operador: ${manualSampleInput.value.trim()}`)) {
+    manualSampleInput.value = ''
+  }
+}
 
-  // Si la alerta aún está activa/pendiente, la atendemos formalmente en el backend
-  if (selectedAlert.value.status === 'active' || selectedAlert.value.statusBackend === 'pendiente') {
-    await attendAlert(selectedAlert.value, noteContent)
-    newNoteText.value = ''
+async function resolveAlert() {
+  if (!selectedAlert.value || isAttending.value) return
+  const note = newNoteText.value.trim()
+  if (note.length < 10) {
+    showToast('Describe la revisión y las acciones realizadas en al menos 10 caracteres.')
     return
   }
-
-  // Si ya estaba en protocolo, agregamos la nota en la ficha
-  selectedAlert.value.notes.push({
-    id: Date.now(),
-    author: 'Enólogo en Turno',
-    time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
-    text: noteContent
-  })
-  newNoteText.value = ''
-  showToast('Nota técnica registrada en la incidencia.')
-}
-
-// Acción: Registrar Medición Manual de Contraste
-function saveManualCheck() {
-  if (!manualSampleInput.value.trim() || !selectedAlert.value) return
-
-  selectedAlert.value.manualCheck = manualSampleInput.value.trim()
-  selectedAlert.value.notes.push({
-    id: Date.now(),
-    author: 'Enólogo en Turno',
-    time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
-    text: `Medición manual de contraste confirmada: ${manualSampleInput.value.trim()}.`
-  })
-
-  showToast('Medición manual registrada correctamente.')
-}
-
-// Acción: Marcar como Resuelta (PATCH /api/alertas/{id}/resolver)
-async function resolveAlert() {
-  if (!selectedAlert.value) return
   isAttending.value = true
   try {
-    const payload = {
-      usuario_id: 1,
-      nota_resolucion: newNoteText.value.trim() || 'Incidencia cerrada y protocolo completado satisfactoriamente.'
-    }
-    if (selectedAlert.value.id < 1000) {
-      await alertService.resolver(selectedAlert.value.id, payload)
-    }
-
-    selectedAlert.value.status = 'resolved'
-    selectedAlert.value.statusBackend = 'resuelta'
-    selectedAlert.value.statusLabel = 'Resuelta'
-    const resolveNote = {
-      id: Date.now(),
-      author: 'Enólogo en Turno',
-      time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
-      text: payload.nota_resolucion
-    }
-    selectedAlert.value.notes.push(resolveNote)
-
-    // Sincronizar en allAlerts para descontar de las métricas activas
-    const inGlobal = allAlerts.value.find(a => a.id === selectedAlert.value.id)
-    if (inGlobal) {
-      inGlobal.status = 'resolved'
-      inGlobal.statusBackend = 'resuelta'
-      inGlobal.statusLabel = 'Resuelta'
-      inGlobal.notes.push(resolveNote)
-    }
-
-    showToast(`Incidencia en ${selectedAlert.value.cubaCode} marcada como RESUELTA en Supabase.`)
-    closeProtocol()
-  } catch (err) {
-    showToast(`Error al resolver: ${err.message}`)
-  } finally {
-    isAttending.value = false
-  }
-}
-
-// Simular alerta nueva de prueba
-function simulateNewAlert() {
-  const newId = ++nextAlertId
-  const simulated = {
-    id: newId,
-    cubaId: '2',
-    cubaCode: 'CB-02',
-    cubaName: 'Cuba 02 · Carménère Reserva',
-    variety: 'Carménère',
-    sensorType: 'DS18B20',
-    sensorName: 'Sonda Térmica Central',
-    sensorDisabled: false,
-    severity: 'danger',
-    severityBackend: 'critica',
-    severityLabel: 'Crítica',
-    title: 'Variación Térmica Repentina (+2.3°C en 30m)',
-    description: 'Alza brusca de temperatura detectada en Cuba 02. Revisar si la camisa de refrigeración sufrió corte de suministro.',
-    valueDetected: '26.8 °C',
-    thresholdRule: 'Tasa máx permitida: +1.5°C/h',
-    timestamp: 'Ahora mismo',
-    dateIso: new Date().toISOString(),
-    status: 'active',
-    statusBackend: 'pendiente',
-    statusLabel: 'Pendiente',
-    assignedTo: 'Sin asignar',
-    notes: [
-      { id: 1, author: 'Simulador IoT', time: 'Ahora', text: 'Disparo de prueba por evento térmico inesperado.' }
-    ],
-    manualCheck: null
-  }
-
-  alerts.value.unshift(simulated)
-  allAlerts.value.unshift(simulated)
-  showToast('¡Alerta simulada generada exitosamente! También puedes ejecutar "python backend/simulate_esp.py".')
+    syncAlert(await alertService.resolver(selectedAlert.value.id, { nota_resolucion: note }))
+    newNoteText.value = ''
+    showToast('Resolución registrada. La condición térmica se evalúa por separado.')
+  } catch (err) { showToast(`Error al resolver: ${err.message}`) }
+  finally { isAttending.value = false }
 }
 
 // ==========================================
@@ -595,13 +423,12 @@ onBeforeUnmount(() => {
           <RefreshCw :size="15" :class="{ 'animate-spin': isRefreshing || isLoading }" />
           <span>{{ isRefreshing || isLoading ? 'Sincronizando...' : 'Actualizar' }}</span>
         </button>
-        <button class="btn-simulate" @click="simulateNewAlert" title="Genera una alerta de prueba en vivo">
-          <PlusCircle :size="15" />
-          <span>Simular Alerta</span>
-        </button>
+
       </div>
     </header>
 
+    <p role="status">Resumen de las últimas 500 alertas como máximo. Los filtros afectan a la tabla; el historial completo y su MTTR están en Auditoría.</p>
+    <p v-if="fetchError && alerts.length" role="alert">No se pudo actualizar: se muestran los últimos datos recibidos.</p>
     <!-- Barra de Tarjetas KPIs -->
     <section class="kpi-grid">
       <!-- 1. Críticas -->
@@ -611,7 +438,7 @@ onBeforeUnmount(() => {
         @click="filterSeverity = filterSeverity === 'danger' ? 'all' : 'danger'"
       >
         <div class="kpi-top">
-          <span class="kpi-label">Alertas Críticas</span>
+          <span class="kpi-label">Críticas y Altas</span>
           <div class="kpi-icon-box kpi-icon--danger">
             <AlertOctagon :size="18" />
           </div>
@@ -654,21 +481,21 @@ onBeforeUnmount(() => {
         </div>
         <div class="kpi-number">{{ totalInProgress }}</div>
         <div class="kpi-sub">
-          <span>Enólogo atendiendo en terreno</span>
+          <span>Atención registrada por un operador</span>
         </div>
       </div>
 
       <!-- 4. Sensores Anulados -->
       <div class="kpi-card kpi-card--muted">
         <div class="kpi-top">
-          <span class="kpi-label">Sensores Aislados</span>
+          <span class="kpi-label">Sin recuperación confirmada</span>
           <div class="kpi-icon-box kpi-icon--muted">
             <Ban :size="18" />
           </div>
         </div>
-        <div class="kpi-number">{{ totalDisabledSensors }}</div>
+        <div class="kpi-number">{{ totalOpenConditions }}</div>
         <div class="kpi-sub">
-          <span>Telemetría anulada por protocolo</span>
+          <span>Condiciones v2 abiertas, incluso con gestión resuelta</span>
         </div>
       </div>
     </section>
@@ -702,7 +529,7 @@ onBeforeUnmount(() => {
         <!-- Selector Severidad -->
         <select v-model="filterSeverity" class="select-filter">
           <option value="all">Severidad: Todas</option>
-          <option value="danger">Solo Críticas</option>
+          <option value="danger">Críticas y Altas</option>
           <option value="warning">Solo Advertencias</option>
           <option value="info">Solo Informativas</option>
         </select>
@@ -748,7 +575,7 @@ onBeforeUnmount(() => {
       <div v-else-if="filteredAlerts.length === 0" class="empty-state">
         <CheckCircle2 :size="40" class="empty-icon" />
         <h3>No hay alertas que coincidan con los filtros</h3>
-        <p>Todas las cubas y sensores operan dentro de los umbrales esperados.</p>
+        <p>La ausencia de alertas no confirma normalidad: comprueba la cobertura y la calidad de las mediciones.</p>
       </div>
 
       <div v-else class="alerts-list">
@@ -888,6 +715,7 @@ onBeforeUnmount(() => {
 
         <!-- Cuerpo del Modal -->
         <div class="modal-body">
+          <EpisodeEvidence :alert="selectedAlert.raw" :revision="evidenceRevision" />
           <!-- Resumen de la Alerta -->
           <div class="incident-summary-box">
             <div class="summary-header">
@@ -938,38 +766,9 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <!-- Protocolo Paso 2: Acción Operativa sobre el Sensor -->
           <div class="protocol-step">
-            <div class="step-header">
-              <span class="step-num">2</span>
-              <div>
-                <h4 class="step-title">Acción Técnica: Aislamiento del Sensor IoT</h4>
-                <p class="step-desc">
-                  Si el sensor está descalibrado, averiado o durante maniobras de bodega, puedes anularlo temporalmente para que no emita falsas alarmas ni afecte los promedios.
-                </p>
-              </div>
-            </div>
-
-            <div class="sensor-toggle-box" :class="{ 'sensor-box--disabled': selectedAlert.sensorDisabled }">
-              <div class="sensor-info-text">
-                <strong>Sensor {{ selectedAlert.sensorType }} ({{ selectedAlert.sensorName }})</strong>
-                <p>
-                  Estado actual:
-                  <span v-if="selectedAlert.sensorDisabled" class="status-off">ANULADO (Telemetría pausada)</span>
-                  <span v-else class="status-on">OPERATIVO (Transmitiendo en vivo)</span>
-                </p>
-              </div>
-
-              <button
-                class="btn-toggle-sensor"
-                :class="selectedAlert.sensorDisabled ? 'btn-toggle--enable' : 'btn-toggle--disable'"
-                @click="toggleSensorDisabled"
-              >
-                <Ban v-if="!selectedAlert.sensorDisabled" :size="15" />
-                <Check v-else :size="15" />
-                <span>{{ selectedAlert.sensorDisabled ? 'Reactivar Sensor' : 'Anular Sensor Defectuoso' }}</span>
-              </button>
-            </div>
+            <h4 class="step-title">Verificación del dispositivo</h4>
+            <p class="step-desc">Comprueba la sonda y registra tus observaciones. El control remoto de sensores aún no está disponible.</p>
           </div>
 
           <!-- Protocolo Paso 3: Registro de Observaciones del Enólogo -->
@@ -985,7 +784,7 @@ onBeforeUnmount(() => {
             </div>
 
             <!-- Historial de notas acumuladas -->
-            <div class="notes-timeline">
+            <div v-if="!selectedAlert.raw.version_regla" class="notes-timeline">
               <div v-for="n in selectedAlert.notes" :key="n.id" class="note-item">
                 <div class="note-meta">
                   <span class="note-author">{{ n.author }}</span>
@@ -998,7 +797,7 @@ onBeforeUnmount(() => {
             <!-- Input nueva nota -->
             <div class="add-note-box">
               <textarea
-                v-model="newNoteText"
+                v-model="newNoteText" maxlength="4000"
                 rows="2"
                 placeholder="Escribe una observación técnica (ej: Se aumentó el caudal de glicol; se limpió sonda de impurezas)..."
                 class="textarea-note"

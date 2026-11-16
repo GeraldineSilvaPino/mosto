@@ -5,57 +5,29 @@ Gestiona la ficha de identidad, datos fiscales, opciones operativas y capacidade
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.services.access import business_db
 from app.models import EmpresaCliente, Bodega, Cuba, Usuario
 from app.schemas import EmpresaOut, EmpresaUpdateIn, AmpliacionCuotaIn, SaasQuotaDTO
 
 router = APIRouter(prefix="/api/empresa", tags=["Configuración de Empresa y Viña"])
 
 
-def _obtener_o_crear_empresa_y_bodega(db: Session) -> tuple[EmpresaCliente, Bodega]:
-    """Obtiene el registro principal de la empresa y bodega o inicializa los valores oficiales."""
+def _obtener_empresa_y_bodega(db: Session) -> tuple[EmpresaCliente, Bodega]:
+    """Obtiene el registro principal de la empresa y bodega sin crear datos durante la consulta."""
     empresa = db.query(EmpresaCliente).first()
     if not empresa:
-        empresa = EmpresaCliente(
-            nomb_emp="Viña Santa Emiliana",
-            email_emp="contacto@santaemiliana.cl",
-            direccion_emp="Ruta K-60, Km 14.5, San Javier",
-            rut="76.432.891-K",
-            razon_social="Agrícola y Vitivinícola Santa Emiliana S.A.",
-            giro="Elaboración y Envasado de Vinos y Mostos",
-            telefono="+56 73 245 8890",
-            max_cubas=24,
-            max_usuarios=15,
-            plan_nombre="Plan Bodega Industrial",
-            ciclo_facturacion="Anual (Renovación: Nov 2027)",
-            reporte_diario=True,
-            alertas_sms=True
-        )
-        db.add(empresa)
-        db.commit()
-        db.refresh(empresa)
-
+        raise HTTPException(404, "Empresa no configurada; requiere aprovisionamiento explícito")
     bodega = db.query(Bodega).filter(Bodega.empresa_id == empresa.id).first()
     if not bodega:
-        bodega = Bodega(
-            nombre="Planta Principal · Bodega Central",
-            direccion=empresa.direccion_emp or "Ruta K-60, Km 14.5, San Javier",
-            empresa_id=empresa.id,
-            valle_vitivinicola="Valle del Maule",
-            comuna="San Javier",
-            region="Región del Maule, Chile"
-        )
-        db.add(bodega)
-        db.commit()
-        db.refresh(bodega)
+        raise HTTPException(404, "Bodega no configurada")
 
     return empresa, bodega
 
 
 @router.get("", response_model=EmpresaOut)
-def obtener_configuracion_empresa(db: Session = Depends(get_db)):
+def obtener_configuracion_empresa(db: Session = Depends(business_db("admin"))):
     """Retorna la ficha de la empresa, bodega y las cuotas de consumo SaaS en tiempo real."""
-    empresa, bodega = _obtener_o_crear_empresa_y_bodega(db)
+    empresa, bodega = _obtener_empresa_y_bodega(db)
 
     # Calcular cuotas reales basadas en los registros actuales de la base de datos
     total_cubas = db.query(Cuba).count()
@@ -65,9 +37,9 @@ def obtener_configuracion_empresa(db: Session = Depends(get_db)):
         planName=empresa.plan_nombre or "Plan Bodega Industrial",
         billingCycle=empresa.ciclo_facturacion or "Anual (Renovación: Nov 2027)",
         status="Activo" if empresa.activo else "Suspendido",
-        usedCubas=max(total_cubas, 1),
+        usedCubas=total_cubas,
         maxCubas=empresa.max_cubas or 24,
-        usedUsers=max(total_usuarios_activos, 1),
+        usedUsers=total_usuarios_activos,
         maxUsers=empresa.max_usuarios or 15
     )
 
@@ -90,9 +62,9 @@ def obtener_configuracion_empresa(db: Session = Depends(get_db)):
 
 
 @router.put("", response_model=EmpresaOut)
-def actualizar_configuracion_empresa(payload: EmpresaUpdateIn, db: Session = Depends(get_db)):
+def actualizar_configuracion_empresa(payload: EmpresaUpdateIn, db: Session = Depends(business_db("admin"))):
     """Actualiza los datos de identidad, fiscales y operativos de la viña en Supabase."""
-    empresa, bodega = _obtener_o_crear_empresa_y_bodega(db)
+    empresa, bodega = _obtener_empresa_y_bodega(db)
 
     if payload.brandName is not None:
         empresa.nomb_emp = payload.brandName.strip()
@@ -131,9 +103,9 @@ def actualizar_configuracion_empresa(payload: EmpresaUpdateIn, db: Session = Dep
 
 
 @router.post("/ampliacion")
-def ampliar_capacidad_cubas(payload: AmpliacionCuotaIn, db: Session = Depends(get_db)):
+def ampliar_capacidad_cubas(payload: AmpliacionCuotaIn, db: Session = Depends(business_db("admin"))):
     """Amplía la cuota de cubas contratadas para el monitoreo IoT."""
-    empresa, _ = _obtener_o_crear_empresa_y_bodega(db)
+    empresa, _ = _obtener_empresa_y_bodega(db)
     empresa.max_cubas = (empresa.max_cubas or 24) + payload.extra_cubas
     db.commit()
     db.refresh(empresa)

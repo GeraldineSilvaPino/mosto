@@ -88,7 +88,7 @@ export default {
    * @param {number|string} id - Identificador de la alerta
    * @param {Object} payload - { usuario_id, nota }
    */
-  atender(id, payload = { usuario_id: 1, nota: '' }) {
+  atender(id, payload = { nota: '' }) {
     return apiClient.patch(`/api/alertas/${id}/atender`, payload).then((res) => res.data)
   },
 
@@ -97,7 +97,7 @@ export default {
    * @param {number|string} id - Identificador de la alerta
    * @param {Object} payload - { usuario_id, nota_resolucion }
    */
-  resolver(id, payload = { usuario_id: 1, nota_resolucion: '' }) {
+  resolver(id, payload = { nota_resolucion: '' }) {
     return apiClient.patch(`/api/alertas/${id}/resolver`, payload).then((res) => res.data)
   },
 

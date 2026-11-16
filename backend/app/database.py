@@ -1,17 +1,13 @@
-"""
-Configuración de la Base de Datos.
-Carga automáticamente la URL de Supabase (PostgreSQL) desde el archivo .env.
-Si no existe .env o falla, utiliza SQLite local como respaldo.
-"""
-import os
-from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+"""Database configuration with explicit URL; no remote failure fallback or startup DDL."""
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+from .db_base import Base
+from .config import load_settings
 
-load_dotenv()
+settings = load_settings()
 
-# Lee DATABASE_URL desde .env (Supabase) o usa SQLite por defecto
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./mosto.db")
+# La URL es explícita y se valida antes de construir el motor.
+SQLALCHEMY_DATABASE_URL = settings.database_url
 
 # Compatibilidad SQLAlchemy: asegurar driver psycopg2 para PostgreSQL
 if SQLALCHEMY_DATABASE_URL.startswith("postgresql://"):
@@ -30,10 +26,12 @@ engine = create_engine(
     pool_pre_ping=True
 )
 
+if engine.dialect.name == "sqlite":
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection, _):
+        connection.execute("PRAGMA foreign_keys=ON")
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
-
 
 def get_db():
     """Generador de dependencias para inyectar la sesión de base de datos en los endpoints."""

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.database import get_db
+from app.services.access import business_db, actor_id
 from app.models import Cuba, ProcesoFermentacion, PerfilFermentacion, Cepa, LecturaTelemetria
 from app.schemas import ProcesoIniciarIn, ProcesoFinalizarIn, ProcesoOut
 
@@ -60,7 +60,7 @@ def _mapear_proceso_out(p: ProcesoFermentacion) -> ProcesoOut:
 def listar_procesos(
     cuba_id: Optional[int] = Query(None, description="Filtrar por ID de cuba"),
     estado: Optional[str] = Query(None, description="Filtrar por estado: 'en_proceso', 'finalizada'"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(business_db("operations"))
 ):
     """Lista todos los procesos de fermentación registrados con filtros opcionales."""
     query = db.query(ProcesoFermentacion)
@@ -74,7 +74,7 @@ def listar_procesos(
 
 
 @router.get("/{proceso_id}", response_model=ProcesoOut, summary="Obtener detalle de un proceso")
-def obtener_proceso(proceso_id: int, db: Session = Depends(get_db)):
+def obtener_proceso(proceso_id: int, db: Session = Depends(business_db("operations"))):
     """Retorna el detalle completo de un proceso de fermentación por ID."""
     p = db.query(ProcesoFermentacion).filter(ProcesoFermentacion.id == proceso_id).first()
     if not p:
@@ -83,7 +83,7 @@ def obtener_proceso(proceso_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/iniciar", response_model=ProcesoOut, status_code=201, summary="Iniciar nuevo proceso de vendimia")
-def iniciar_proceso(payload: ProcesoIniciarIn, db: Session = Depends(get_db)):
+def iniciar_proceso(payload: ProcesoIniciarIn, db: Session = Depends(business_db("operations"))):
     """
     Inicia un nuevo proceso de fermentación:
     1. Valida que la cuba exista.
@@ -93,7 +93,7 @@ def iniciar_proceso(payload: ProcesoIniciarIn, db: Session = Depends(get_db)):
     5. Actualiza el estado operativo de la cuba a 'en_uso'.
     """
     # 1. Validar cuba
-    cuba = db.query(Cuba).filter(Cuba.id == payload.cuba_id).first()
+    cuba = db.query(Cuba).filter(Cuba.id == payload.cuba_id).with_for_update().first()
     if not cuba:
         raise HTTPException(status_code=404, detail=f"Cuba con ID {payload.cuba_id} no encontrada")
 
@@ -102,7 +102,7 @@ def iniciar_proceso(payload: ProcesoIniciarIn, db: Session = Depends(get_db)):
         db.query(ProcesoFermentacion)
         .filter(
             ProcesoFermentacion.cuba_id == cuba.id,
-            ProcesoFermentacion.estado == "en_proceso"
+            ProcesoFermentacion.estado.in_(["en_proceso", "detenida"])
         )
         .first()
     )
@@ -113,64 +113,31 @@ def iniciar_proceso(payload: ProcesoIniciarIn, db: Session = Depends(get_db)):
         )
 
     # 3. Validar capacidad de la cuba vs volumen de vendimia
-    cap_max = float(cuba.cap_litros) if cuba.cap_litros else 10000.0
+    if cuba.estado_operativo != "disponible":
+        raise HTTPException(409, "La cuba no está disponible para iniciar un proceso")
+    if cuba.cap_litros is None:
+        raise HTTPException(409, "La capacidad de la cuba debe estar configurada")
+    cap_max = float(cuba.cap_litros)
     if payload.volumen_litros > cap_max:
         raise HTTPException(
             status_code=400,
             detail=f"El volumen ingresado ({payload.volumen_litros} L) supera la capacidad máxima de la cuba ({cap_max} L)."
         )
 
-    # 4. Validar o resolver Perfil de Fermentación
-    perfil = None
+    # Los perfiles se configuran explícitamente por un enólogo o administrador.
+    query = db.query(PerfilFermentacion).filter(
+        PerfilFermentacion.bodega_id == cuba.bodega_id,
+        PerfilFermentacion.activo.is_(True))
     if payload.perfil_id:
-        perfil = db.query(PerfilFermentacion).filter(PerfilFermentacion.id == payload.perfil_id).first()
-        if not perfil:
-            raise HTTPException(status_code=404, detail=f"Perfil con ID {payload.perfil_id} no encontrado")
-        if perfil.bodega_id != cuba.bodega_id:
-            raise HTTPException(
-                status_code=400,
-                detail=f"El perfil pertenece a la bodega {perfil.bodega_id}, distinta a la bodega de la cuba ({cuba.bodega_id})."
-            )
+        query = query.filter(PerfilFermentacion.id == payload.perfil_id)
     elif payload.cepa_id:
-        perfil = (
-            db.query(PerfilFermentacion)
-            .filter(
-                PerfilFermentacion.bodega_id == cuba.bodega_id,
-                PerfilFermentacion.cepa_id == payload.cepa_id
-            )
-            .first()
-        )
-        if not perfil:
-            cepa = db.query(Cepa).filter(Cepa.id == payload.cepa_id).first()
-            nomb = f"Perfil {cepa.nombre_variedad}" if cepa else "Perfil Estándar"
-            perfil = PerfilFermentacion(
-                nomb_perfil=nomb,
-                bodega_id=cuba.bodega_id,
-                cepa_id=payload.cepa_id,
-                temp_min=16.0,
-                temp_max=26.0,
-                brix_caida_min_dia=1.5,
-                ph_min=3.2,
-                ph_max=3.8,
-                activo=True
-            )
-            db.add(perfil)
-            db.flush()
-    else:
-        perfil = db.query(PerfilFermentacion).filter(PerfilFermentacion.bodega_id == cuba.bodega_id).first()
-        if not perfil:
-            perfil = PerfilFermentacion(
-                nomb_perfil="Perfil Fermentación Estándar",
-                bodega_id=cuba.bodega_id,
-                temp_min=16.0,
-                temp_max=26.0,
-                brix_caida_min_dia=1.5,
-                ph_min=3.2,
-                ph_max=3.8,
-                activo=True
-            )
-            db.add(perfil)
-            db.flush()
+        query = query.filter(PerfilFermentacion.cepa_id == payload.cepa_id)
+    candidates = query.limit(2).all()
+    if not candidates:
+        raise HTTPException(404, "No hay un perfil activo autorizado para esta cuba")
+    if len(candidates) != 1:
+        raise HTTPException(422, "Debe seleccionar explícitamente el perfil de fermentación")
+    perfil = candidates[0]
 
     ahora = datetime.utcnow()
     dias_est = payload.dias_estimados or 14
@@ -202,7 +169,7 @@ def iniciar_proceso(payload: ProcesoIniciarIn, db: Session = Depends(get_db)):
 def finalizar_proceso(
     proceso_id: int,
     payload: Optional[ProcesoFinalizarIn] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(business_db("operations"))
 ):
     """
     Finaliza un proceso de fermentación:
@@ -214,7 +181,10 @@ def finalizar_proceso(
     if not proceso:
         raise HTTPException(status_code=404, detail=f"Proceso con ID {proceso_id} no encontrado")
 
-    if proceso.estado != "en_proceso":
+    # All process lifecycle writes lock tank first, then re-read the process.
+    cuba = db.query(Cuba).filter(Cuba.id == proceso.cuba_id).with_for_update().first()
+    db.refresh(proceso)
+    if proceso.estado not in ("en_proceso", "detenida"):
         raise HTTPException(
             status_code=400,
             detail=f"El proceso se encuentra en estado '{proceso.estado}', no puede ser finalizado nuevamente."
@@ -222,6 +192,8 @@ def finalizar_proceso(
 
     proceso.estado = "finalizada"
     proceso.fecha_real_fin = datetime.utcnow()
+    from app.services.episodes import close_process_conditions
+    close_process_conditions(db, proceso, actor_id(db))
 
     # Liberar la cuba
     cuba = db.query(Cuba).filter(Cuba.id == proceso.cuba_id).first()

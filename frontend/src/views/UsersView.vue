@@ -36,6 +36,7 @@ import userService from '../services/userService.js'
 const roles = {
   admin:    { label: 'Administrador', icon: Shield,       colorClass: 'role-admin' },
   enologo:  { label: 'Enólogo',      icon: FlaskConical,  colorClass: 'role-enologo' },
+  lector: { label: 'Solo lectura', icon: Shield, colorClass: 'role-operario' },
   operario: { label: 'Operario',     icon: Wrench,        colorClass: 'role-operario' }
 }
 
@@ -43,6 +44,12 @@ const roles = {
 // ESTADO REACTIVO
 // ==========================================
 const users = ref([])
+const warehouses = ref([])
+const selectedWarehouse = ref(null)
+const scopedUsers = computed(() => users.value.flatMap(user => {
+  const membership = user.memberships?.find(item => item.bodega_id === selectedWarehouse.value)
+  return membership ? [{ ...user, role: membership.role === 'operador' ? 'operario' : membership.role }] : []
+}))
 const isLoading = ref(false)
 const isSubmitting = ref(false)
 const errorMessage = ref(null)
@@ -52,7 +59,11 @@ async function loadUsers() {
   isLoading.value = true
   errorMessage.value = null
   try {
-    const data = await userService.listar()
+    const [data, bodegas] = await Promise.all([userService.listar(), userService.bodegas()])
+    warehouses.value = bodegas
+    if (!bodegas.some(bodega => bodega.id === selectedWarehouse.value)) {
+      selectedWarehouse.value = bodegas[0]?.id ?? null
+    }
     if (Array.isArray(data)) {
       users.value = data
     }
@@ -81,14 +92,14 @@ function showToast(msg) {
 const activeFilter = ref('todos')
 
 const filterCounts = computed(() => ({
-  all: users.value.length,
-  admin: users.value.filter(u => u.role === 'admin').length,
-  enologo: users.value.filter(u => u.role === 'enologo').length,
-  operario: users.value.filter(u => u.role === 'operario' || u.role === 'operador').length
+  all: scopedUsers.value.length,
+  admin: scopedUsers.value.filter(u => u.role === 'admin').length,
+  enologo: scopedUsers.value.filter(u => u.role === 'enologo').length,
+  operario: scopedUsers.value.filter(u => u.role === 'operario' || u.role === 'operador').length
 }))
 
 const filteredUsers = computed(() => {
-  return users.value
+  return scopedUsers.value
     .filter(u => {
       if (activeFilter.value === 'todos') return true
       if (activeFilter.value === 'operario') return u.role === 'operario' || u.role === 'operador'
@@ -120,11 +131,12 @@ const showInviteModal = ref(false)
 const inviteForm = ref({
   name: '',
   email: '',
-  role: 'operario'
+  role: 'operario',
+  password: ''
 })
 
 function openInviteModal() {
-  inviteForm.value = { name: '', email: '', role: 'operario' }
+  inviteForm.value = { name: '', email: '', role: 'operario', password: '' }
   showInviteModal.value = true
   nextTick(() => {
     const input = document.querySelector('.modal-name-input')
@@ -133,7 +145,7 @@ function openInviteModal() {
 }
 
 async function submitInvite() {
-  if (!inviteForm.value.name.trim() || !inviteForm.value.email.trim()) return
+  if (isSubmitting.value || !selectedWarehouse.value || inviteForm.value.password.length < 12 || !inviteForm.value.name.trim() || !inviteForm.value.email.trim()) return
 
   isSubmitting.value = true
   try {
@@ -141,11 +153,13 @@ async function submitInvite() {
       name: inviteForm.value.name.trim(),
       email: inviteForm.value.email.trim().toLowerCase(),
       role: inviteForm.value.role,
-      password: 'mosto' + Math.floor(1000 + Math.random() * 9000)
+      password: inviteForm.value.password,
+      bodega_id: selectedWarehouse.value
     })
     users.value.push(nuevo)
     showInviteModal.value = false
-    showToast(`Usuario ${nuevo.name} invitado y registrado en la base de datos.`)
+    inviteForm.value.password = ''
+    showToast(`Usuario ${nuevo.name} creado. No se ha enviado ningún correo.`)
   } catch (err) {
     alert(err.message || 'Error al invitar al usuario.')
   } finally {
@@ -168,7 +182,8 @@ async function setRole(user, newRole) {
   editingUserId.value = null
 
   try {
-    await userService.actualizarRol(user.id, newRole)
+    await userService.actualizarRol(user.id, newRole, selectedWarehouse.value)
+    await loadUsers()
     showToast(`Rol de ${user.name} actualizado a ${roles[newRole]?.label || newRole}.`)
   } catch (err) {
     user.role = anterior
@@ -185,6 +200,7 @@ async function toggleActive(user) {
 
   try {
     await userService.actualizarEstado(user.id, nuevoEstado)
+    await loadUsers()
     showToast(`Usuario ${user.name} ${nuevoEstado ? 'reactivado' : 'suspendido'} en Supabase.`)
   } catch (err) {
     user.active = !nuevoEstado
@@ -208,12 +224,20 @@ async function toggleActive(user) {
         </p>
       </div>
       <div class="header-actions">
-        <button type="button" class="btn-invite" @click="openInviteModal">
+        <label for="user-warehouse">Bodega</label>
+        <select id="user-warehouse" v-model="selectedWarehouse" class="form-input" @change="editingUserId = null">
+          <option v-for="warehouse in warehouses" :key="warehouse.id" :value="warehouse.id">{{ warehouse.nombre }}</option>
+        </select>
+        <button type="button" class="btn-invite" :disabled="!selectedWarehouse || isLoading" @click="openInviteModal">
           <UserPlus :size="16" />
-          <span>Invitar usuario</span>
+          <span>Crear usuario</span>
         </button>
       </div>
     </header>
+
+    <p v-if="isLoading" role="status" class="request-status">Cargando equipo…</p>
+    <p v-if="errorMessage" role="alert" class="request-status request-error">{{ errorMessage }}</p>
+    <p v-if="toastMessage" role="status" class="request-status">{{ toastMessage }}</p>
 
     <!-- Filtros por rol -->
     <section class="toolbar-section">
@@ -348,7 +372,7 @@ async function toggleActive(user) {
           <div class="modal-header">
             <h3>
               <UserPlus :size="18" />
-              Invitar usuario
+              Crear usuario
             </h3>
             <button type="button" class="modal-close" @click="showInviteModal = false">
               <X :size="16" />
@@ -381,6 +405,12 @@ async function toggleActive(user) {
               </div>
             </div>
 
+            <div class="form-field">
+              <label class="form-label" for="new-user-password">Contraseña inicial (mínimo 12 caracteres)</label>
+              <input id="new-user-password" v-model="inviteForm.password" type="password"
+                     autocomplete="new-password" minlength="12" maxlength="256" class="form-input" />
+              <p>Comparte las credenciales por un canal privado. Este formulario no envía correos.</p>
+            </div>
             <!-- Rol -->
             <div class="form-field">
               <label class="form-label">Rol asignado</label>
@@ -407,11 +437,11 @@ async function toggleActive(user) {
             <button
               type="button"
               class="btn-primary"
-              :disabled="!inviteForm.name.trim() || !inviteForm.email.trim()"
+              :disabled="isSubmitting || !inviteForm.name.trim() || !inviteForm.email.trim() || inviteForm.password.length < 12"
               @click="submitInvite"
             >
               <UserPlus :size="14" />
-              Enviar invitación
+              Crear cuenta
             </button>
           </div>
         </div>
@@ -421,6 +451,18 @@ async function toggleActive(user) {
 </template>
 
 <style scoped>
+.request-status {
+  padding: 12px 16px;
+  border: 1px solid #d3dfd7;
+  border-radius: 10px;
+  background: #f1f6f2;
+  color: #244b35;
+}
+.request-error {
+  border-color: #e8c8cf;
+  background: #fff1f3;
+  color: #8a2440;
+}
 /* =========================================
    USUARIOS - LAYOUT GENERAL
    ========================================= */

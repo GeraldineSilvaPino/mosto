@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.database import get_db
+from app.services.access import business_db
 from app.models import PerfilFermentacion, Cepa, Bodega, ProcesoFermentacion
 from app.schemas import PerfilCreateIn, PerfilUpdateIn, PerfilOut
 
@@ -42,7 +42,7 @@ def listar_perfiles(
     cepa_id: Optional[int] = Query(None, description="Filtrar por cepa vinífera"),
     bodega_id: Optional[int] = Query(None, description="Filtrar por ID de bodega"),
     activo: Optional[bool] = Query(None, description="Filtrar por estado activo/inactivo"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(business_db("profiles"))
 ):
     """
     Lista todos los perfiles de fermentación registrados, permitiendo filtrar por cepa o bodega.
@@ -64,7 +64,7 @@ def listar_perfiles(
 
 
 @router.get("/{perfil_id}", response_model=PerfilOut, summary="Obtener detalle de un perfil por ID")
-def obtener_perfil(perfil_id: int, db: Session = Depends(get_db)):
+def obtener_perfil(perfil_id: int, db: Session = Depends(business_db("profiles"))):
     """Retorna la configuración detallada de un perfil de fermentación."""
     p = db.query(PerfilFermentacion).filter(PerfilFermentacion.id == perfil_id).first()
     if not p:
@@ -76,7 +76,7 @@ def obtener_perfil(perfil_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=PerfilOut, status_code=status.HTTP_201_CREATED, summary="Crear nuevo perfil de fermentación")
-def crear_perfil(payload: PerfilCreateIn, db: Session = Depends(get_db)):
+def crear_perfil(payload: PerfilCreateIn, db: Session = Depends(business_db("profiles"))):
     """
     Crea un nuevo perfil enológico con sus bandas térmicas y de acidez:
     1. Valida que temp_min <= temp_max (restricción CHECK ck_perfil_temp).
@@ -134,7 +134,7 @@ def crear_perfil(payload: PerfilCreateIn, db: Session = Depends(get_db)):
 
 
 @router.put("/{perfil_id}", response_model=PerfilOut, summary="Actualizar umbrales y parámetros de un perfil")
-def actualizar_perfil(perfil_id: int, payload: PerfilUpdateIn, db: Session = Depends(get_db)):
+def actualizar_perfil(perfil_id: int, payload: PerfilUpdateIn, db: Session = Depends(business_db("profiles"))):
     """
     Modifica umbrales de temperatura y pH de un perfil existente:
     1. Verifica que el perfil exista.
@@ -211,7 +211,7 @@ def actualizar_perfil(perfil_id: int, payload: PerfilUpdateIn, db: Session = Dep
 
 
 @router.delete("/{perfil_id}", status_code=status.HTTP_200_OK, summary="Desactivar o archivar perfil de fermentación")
-def desactivar_perfil(perfil_id: int, db: Session = Depends(get_db)):
+def desactivar_perfil(perfil_id: int, db: Session = Depends(business_db("profiles"))):
     """
     Desactiva un perfil (soft-delete). Si el perfil está siendo utilizado
     por un proceso activo en curso, bloquea la eliminación para preservar la consistencia operativa.

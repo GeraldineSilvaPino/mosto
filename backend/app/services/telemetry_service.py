@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+from fastapi import HTTPException
+from app.services.demo_access import require_legacy_tank
 
 from app.models import (
     EmpresaCliente,
@@ -196,7 +198,9 @@ class TelemetryService:
         return perfil
 
     def _obtener_o_crear_dispositivo(self, db: Session, mac_address: str, tipo_sugerido: str) -> Dispositivo:
-        dispositivo = db.query(Dispositivo).filter(Dispositivo.mac_address == mac_address).first()
+        dispositivo = db.query(Dispositivo).filter(Dispositivo.mac_address == mac_address).with_for_update().first()
+        if dispositivo is not None and dispositivo.origen is not None:
+            raise HTTPException(409, "El dispositivo está aprovisionado para telemetría v2")
         if not dispositivo:
             empresa, _ = self._obtener_o_crear_empresa_y_bodega(db)
             modelo = self._obtener_o_crear_modelo_dispositivo(db, tipo_sugerido)
@@ -227,6 +231,7 @@ class TelemetryService:
             else:
                 cuba_id = 1
 
+        require_legacy_tank(db, cuba_id)
         _, bodega = self._obtener_o_crear_empresa_y_bodega(db)
         cuba = db.query(Cuba).filter(Cuba.id == cuba_id).first()
         if not cuba:
@@ -341,7 +346,7 @@ class TelemetryService:
             densidad_sg=densidad_final,
             brix=brix_final,
             ph=ph_final,
-            origen_dato="sensor_iot",
+            origen_dato="simulado_legacy",
             lectura_valida=True
         )
         db.add(lectura)
@@ -446,7 +451,7 @@ class TelemetryService:
             densidad_sg=densidad_final,
             brix=brix_final,
             ph=ph_final,
-            origen_dato="sensor_iot",
+            origen_dato="simulado_legacy",
             lectura_valida=True
         )
         db.add(lectura)

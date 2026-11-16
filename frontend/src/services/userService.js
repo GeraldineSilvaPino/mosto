@@ -5,6 +5,10 @@ export const userService = {
    * Lista todos los usuarios de la viña con sus roles y estados.
    * @param {Object} [params={}] - { rol, activo }
    */
+  bodegas() {
+    return apiClient.get('/api/bodegas').then((res) => res.data)
+  },
+
   listar(params = {}) {
     const cleanParams = {}
     Object.keys(params || {}).forEach((key) => {
@@ -27,8 +31,8 @@ export const userService = {
   /**
    * Actualiza el rol de un usuario (admin, enologo, operario).
    */
-  actualizarRol(id, role) {
-    return apiClient.patch(`/api/usuarios/${id}/rol`, { role }).then((res) => res.data)
+  actualizarRol(id, role, bodega_id) {
+    return apiClient.patch(`/api/usuarios/${id}/rol`, { role, bodega_id }).then((res) => res.data)
   },
 
   /**

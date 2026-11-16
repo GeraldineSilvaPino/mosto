@@ -64,8 +64,8 @@ def seed_test_data(db):
     db.add_all([proceso1, proceso2])
     
     # 5. Usuario
-    rol = Rol(id=1, nomb_rol="Enólogo")
-    usuario = Usuario(id=1, nombre="Carlos Cartes", email="ccartes@mosto.cl", password_hash="hash123", rol_id=1)
+    rol = Rol(id=1, codigo="enologo", descripcion="Enólogo")
+    usuario = Usuario(id=1, nomb_compl="Carlos Cartes", correo_elec="ccartes@mosto.cl", password_hash="hash123", rol="enologo")
     db.add_all([rol, usuario])
     
     # 6. Alertas de prueba con tiempos controlados para validar MTTR
@@ -122,6 +122,8 @@ def seed_test_data(db):
 def test_suite():
     db = TestingSessionLocal()
     seed_test_data(db)
+    from types import SimpleNamespace
+    db.info["access"] = SimpleNamespace(user_id=1)
 
     print("--- 1. Probando listar todas las alertas ---")
     alertas = listar_alertas(db=db)

@@ -1,0 +1,41 @@
+{
+  "result": "passed",
+  "checkedAt": "2026-11-15T19:05:20.172Z",
+  "transport": "Real HTTP worker + API + SQLite + Vue",
+  "scenarios": [
+    {
+      "scenario": "healthy",
+      "phase": "lag",
+      "observedAge": 8.083333333333334,
+      "coverage": "al_dia"
+    },
+    {
+      "scenario": "cold_shock",
+      "phase": "exponential",
+      "observedAge": 50.083333333333336,
+      "coverage": "al_dia"
+    },
+    {
+      "scenario": "heat_stress",
+      "phase": "stationary",
+      "observedAge": 85.08333333333333,
+      "coverage": "al_dia"
+    },
+    {
+      "scenario": "nutrient_depletion",
+      "phase": "stationary",
+      "observedAge": 120.08333333333333,
+      "coverage": "al_dia"
+    },
+    {
+      "scenario": "slow",
+      "phase": "decline",
+      "observedAge": 175.08333333333334,
+      "coverage": "al_dia"
+    }
+  ],
+  "physicalReadings": 0,
+  "restart": "no duplicate readings",
+  "errors": [],
+  "apiErrors": []
+}

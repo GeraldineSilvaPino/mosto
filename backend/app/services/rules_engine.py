@@ -23,6 +23,7 @@ from app.models import (
     EventoAlerta
 )
 from app.services.ml_service import evaluar_riesgo_parada_cuba
+from app.models import MensajeTelemetria
 
 logger = logging.getLogger(__name__)
 
@@ -292,6 +293,9 @@ class RulesEngine:
                 return None
             fermentacion_id = proceso.id
 
+        # The legacy classifier is not validated for canonical v2 cadence/calibration.
+        if db.query(MensajeTelemetria.id).filter_by(fermentacion_id=fermentacion_id).first():
+            return None
         # Consultar las últimas 12 lecturas con brix y temperatura
         lecturas = (
             db.query(LecturaTelemetria)

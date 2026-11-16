@@ -1,0 +1,28 @@
+{
+  "result": "passed",
+  "checkedAt": "2026-11-15T23:55:24.205Z",
+  "transport": "Real HTTP ingestion + API + SQLite + Vue",
+  "episodeId": 1001,
+  "actions": [
+    "creada",
+    "atendida",
+    "resuelta"
+  ],
+  "linkedNotes": 3,
+  "reload": "persisted",
+  "condition": "activa",
+  "workflow": "resuelta",
+  "metrics": {
+    "total_alertas": 2,
+    "alertas_activas": 0,
+    "alertas_criticas": 0,
+    "total_resueltas": 2,
+    "mttr_promedio_minutos": 0.09,
+    "muestras_mttr": 2,
+    "resueltas_sin_tiempos_validos": 0,
+    "condiciones_sin_recuperacion": 1,
+    "tasa_resolucion_pct": 100
+  },
+  "errors": [],
+  "apiErrors": []
+}

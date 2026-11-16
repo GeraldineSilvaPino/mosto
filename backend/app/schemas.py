@@ -89,7 +89,7 @@ class LecturaOut(BaseModel):
 
 class MLPredictionOut(BaseModel):
     """Predicción de Machine Learning para parada temprana de fermentación."""
-    riesgo_pct: float = Field(..., example=85.4, description="Porcentaje de riesgo de parada de fermentación (0 a 100)")
+    riesgo_pct: Optional[float] = Field(..., example=85.4, description="Riesgo estimado; null cuando no hay modelo aplicable")
     estado_ia: str = Field(..., example="CRITICO", description="Estado IA: NORMAL, ADVERTENCIA, CRITICO, RECOLECTANDO_DATOS, FINALIZADA")
     alerta_ia: bool = Field(..., example=True, description="Indica si el modelo disparó o debe disparar alerta")
     mensaje: str = Field(..., example="Predicción IA: Riesgo crítico de parada...", description="Diagnóstico textual explicativo")
@@ -141,6 +141,8 @@ class SimulacionAnomaliaOut(BaseModel):
 
 
 class HistoricoCubaOut(BaseModel):
+    truncated: bool = False
+    timezone: str = "UTC"
     cuba_id: int
     nombre_cuba: str
     proceso_id: Optional[int] = None
@@ -161,13 +163,13 @@ class HistoricoCubaOut(BaseModel):
 # ==========================================
 
 class AlertaAtenderIn(BaseModel):
-    usuario_id: Optional[int] = Field(default=1, description="ID del usuario/operador que atiende la alerta")
-    nota: Optional[str] = Field(None, description="Observaciones técnicas iniciales al atender la alerta")
+    usuario_id: Optional[int] = Field(default=None, description="Compatibilidad; el actor se obtiene del token autenticado")
+    nota: Optional[str] = Field(None, max_length=4000, description="Observaciones técnicas iniciales al atender la alerta")
 
 
 class AlertaResolverIn(BaseModel):
-    usuario_id: Optional[int] = Field(default=1, description="ID del operador o enólogo que resuelve la incidencia")
-    nota_resolucion: Optional[str] = Field(None, description="Nota técnica o acción correctiva aplicada en terreno")
+    usuario_id: Optional[int] = Field(default=None, description="Compatibilidad; el actor se obtiene del token autenticado")
+    nota_resolucion: Optional[str] = Field(None, max_length=4000, description="Nota técnica o acción correctiva aplicada en terreno")
 
 
 class AlertasMetricasOut(BaseModel):
@@ -175,11 +177,23 @@ class AlertasMetricasOut(BaseModel):
     alertas_activas: int = Field(..., description="Total de alertas actualmente en curso (pendientes + atendidas)")
     alertas_criticas: int = Field(..., description="Alertas críticas activas en curso")
     total_resueltas: int = Field(..., description="Total de alertas resueltas")
-    mttr_promedio_minutos: float = Field(..., description="Tiempo medio de resolución en minutos (MTTR)")
+    mttr_promedio_minutos: Optional[float] = Field(..., description="MTTR en minutos; null sin casos válidos")
+    muestras_mttr: int = 0
+    resueltas_sin_tiempos_validos: int = 0
+    condiciones_sin_recuperacion: int = 0
     tasa_resolucion_pct: float = Field(..., description="Porcentaje de incidencias resueltas sobre el total")
 
 
 class AlertaOut(BaseModel):
+    resuelta_por: Optional[int] = None
+    resolvedor_nombre: Optional[str] = None
+    version_regla: Optional[str] = None
+    origen: Optional[str] = None
+    inicio_condicion: Optional[datetime] = None
+    fin_condicion: Optional[datetime] = None
+    ultima_observacion: Optional[datetime] = None
+    estado_condicion: Optional[str] = None
+    evidencia: Optional[dict] = None
     id: int
     dispositivo_id: Optional[int] = None
     fermentacion_id: Optional[int] = None
@@ -216,8 +230,8 @@ class AlertaOut(BaseModel):
 # ==========================================
 
 class ProcesoIniciarIn(BaseModel):
-    cuba_id: int
-    volumen_litros: float
+    cuba_id: int = Field(..., gt=0)
+    volumen_litros: float = Field(..., gt=0, allow_inf_nan=False)
     perfil_id: Optional[int] = None
     cepa_id: Optional[int] = None
     brix_inicial: Optional[float] = 24.5
@@ -288,6 +302,8 @@ class DispositivoOut(BaseModel):
     firmware: Optional[str] = "v2.4.1"
     lastTelemetry: Optional[str] = None
     ultima_conexion: Optional[datetime] = None
+    source: Optional[str] = None
+    lastReadingValue: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -372,6 +388,12 @@ class LoginIn(BaseModel):
     rememberMe: Optional[bool] = False
 
 
+class MembershipOut(BaseModel):
+    bodega_id: int
+    bodega_nombre: str
+    role: str
+
+
 class UserAuthPayload(BaseModel):
     id: int
     name: str
@@ -379,6 +401,8 @@ class UserAuthPayload(BaseModel):
     role: str
     winery: str
     avatarInitial: str
+    memberships: List[MembershipOut] = Field(default_factory=list)
+    company_admin: bool = False
 
 
 class LoginOut(BaseModel):
@@ -403,6 +427,7 @@ class UsuarioOut(BaseModel):
     active: bool
     phone: Optional[str] = None
     created_at: Optional[datetime] = None
+    memberships: List[MembershipOut] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
@@ -412,13 +437,14 @@ class UsuarioCreateIn(BaseModel):
     name: str = Field(..., min_length=2, example="Andrea Muñoz")
     email: str = Field(..., example="andrea.munoz@vinamosto.cl")
     role: str = Field(..., example="operador") # admin | enologo | operador | operario
-    password: Optional[str] = Field("mosto2026", example="mosto2026")
-    phone: Optional[str] = Field("+56912345678", example="+56912345678")
+    password: str = Field(..., min_length=12, max_length=256)
+    phone: Optional[str] = None
     bodega_id: Optional[int] = Field(None, example=5)
 
 
 class UsuarioUpdateRolIn(BaseModel):
     role: str = Field(..., example="enologo")
+    bodega_id: Optional[int] = Field(None, gt=0)
 
 
 class UsuarioUpdateEstadoIn(BaseModel):
@@ -481,6 +507,8 @@ class AmpliacionCuotaIn(BaseModel):
 # ==========================================
 
 class BitacoraCreateIn(BaseModel):
+    alerta_id: Optional[int] = Field(default=None, gt=0)
+    fermentacion_id: Optional[int] = Field(default=None, gt=0)
     type: str = Field(..., example="nota") # nota | alerta | config | lectura
     cuba: Optional[str] = Field("general", example="cuba-01")
     message: str = Field(..., min_length=2, example="Remontaje realizado.")
@@ -489,6 +517,8 @@ class BitacoraCreateIn(BaseModel):
 
 
 class BitacoraOut(BaseModel):
+    alerta_id: Optional[int] = None
+    fermentacion_id: Optional[int] = None
     id: int
     type: str
     timestamp: datetime

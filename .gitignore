@@ -28,3 +28,8 @@ Thumbs.db
 *.db
 *.sqlite3
 *.db-journal
+
+# Local experiments and isolated demo configuration
+backend/artifacts/
+backend/.env.demo
+backend/.env.simulation

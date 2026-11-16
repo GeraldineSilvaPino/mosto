@@ -6,6 +6,7 @@ y PyJWT para firma y verificación de tokens de acceso.
 import os
 import hashlib
 import binascii
+import hmac
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import jwt
@@ -13,10 +14,10 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import get_db, settings
 from app.models import Usuario
 
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "mosto_enologia_secret_key_2026_super_secure_jwt")
+JWT_SECRET_KEY = settings.jwt_secret
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 REMEMBER_ME_EXPIRE_DAYS = 30
@@ -41,7 +42,7 @@ def verify_password(stored_password: str, provided_password: str) -> bool:
         stored_hash = stored_password[64:]
         pwdhash = hashlib.pbkdf2_hmac('sha512', provided_password.encode('utf-8'), salt.encode('ascii'), 100000)
         pwdhash = binascii.hexlify(pwdhash).decode('ascii')
-        return pwdhash == stored_hash
+        return hmac.compare_digest(pwdhash, stored_hash)
     except Exception:
         return False
 
