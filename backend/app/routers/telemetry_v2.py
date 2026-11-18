@@ -23,7 +23,8 @@ def emitter_configuration(device_id: int, calibration_id: int, response: Respons
         raise HTTPException(409, "Calibración no disponible")
     response.headers["Cache-Control"] = "no-store"
     return {"device_id": device.id, "source": device.origen, "calibration_id": calibration.id,
-            "simulation": calibration.parametros.get("simulation")}
+            "simulation": calibration.parametros.get("simulation"),
+            "emitter_faults": calibration.parametros.get("emitter_faults")}
 
 
 @ingest_router.post("", response_model=TelemetryAccepted, status_code=201)

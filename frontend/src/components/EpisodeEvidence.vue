@@ -1,17 +1,22 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import api from '../services/api'
 import binnacle from '../services/binnacleService'
+import InterventionsPanel from './InterventionsPanel.vue'
+import ManualMeasurementsPanel from './ManualMeasurementsPanel.vue'
 
 const props = defineProps({ alert: Object, revision: { type: Number, default: 0 } })
+const kinetic = computed(() => props.alert?.tipo_alerta === 'brix_ralentizacion')
+const number = value => Number.isFinite(value) ? Number(value.toFixed(4)).toFixed(4) : 'N/D'
 const events = ref([])
 const notes = ref([])
 const error = ref('')
 const loading = ref(false)
+const interventionsRevision = ref(0)
 let request = 0
 const date = value => value ? new Date(value).toLocaleString('es-CL') : 'Sin registro'
-const labels = { activa: 'Fuera de rango', recuperada: 'Recuperación observada', desconocida: 'Calidad insuficiente', cerrada_proceso: 'Proceso finalizado' }
-watch(() => [props.alert?.id, props.revision, props.alert?.estado], async () => {
+const labels = { activa: 'Desviación observada', recuperada: 'Recuperación observada', desconocida: 'Evidencia insuficiente', cerrada_proceso: 'Proceso finalizado' }
+watch(() => [props.alert?.id, props.revision, props.alert?.estado, interventionsRevision.value], async () => {
   const current = ++request
   events.value = []; notes.value = []; error.value = ''
   if (!props.alert?.id) return
@@ -39,15 +44,26 @@ watch(() => [props.alert?.id, props.revision, props.alert?.estado], async () => 
         <span>Condición: {{ labels[alert.estado_condicion] || alert.estado_condicion }}</span>
         <span>Gestión: {{ alert.estado }}</span>
       </div>
-      <p>La resolución del operador no acredita recuperación de la temperatura ni confirma una parada de fermentación.</p>
+      <p>La resolución del operador no acredita recuperación de la señal ni confirma una parada de fermentación.</p>
       <dl>
-        <div><dt>Temperatura al confirmar</dt><dd>{{ alert.evidencia?.temperature_c ?? 'N/D' }} °C</dd></div>
-        <div><dt>Perfil aplicado</dt><dd>{{ alert.evidencia?.configuration?.temp_min ?? 'N/D' }}–{{ alert.evidencia?.configuration?.temp_max ?? 'N/D' }} °C</dd></div>
+        <template v-if="kinetic">
+          <div><dt>Pendiente de Brix · 6 h</dt><dd>{{ number(alert.evidencia?.features?.brix_slope_6h) }} °Bx/h</dd></div>
+          <div><dt>Pendiente de Brix · 24 h</dt><dd>{{ number(alert.evidencia?.features?.brix_slope_24h) }} °Bx/h</dd></div>
+          <div><dt>Umbral de entrada</dt><dd>{{ number(alert.evidencia?.configuration?.recent_slope_threshold) }} °Bx/h</dd></div>
+          <div><dt>Persistencia requerida</dt><dd>{{ alert.evidencia?.configuration?.hold_minutes ?? 'N/D' }} min</dd></div>
+          <div><dt>Umbral de recuperación</dt><dd>{{ number(alert.evidencia?.configuration?.recovery_slope_threshold) }} °Bx/h</dd></div>
+          <div><dt>Configurada por</dt><dd>Usuario #{{ alert.evidencia?.configuration?.configured_by ?? 'N/D' }}</dd></div>
+        </template>
+        <template v-else>
+          <div><dt>Temperatura al confirmar</dt><dd>{{ alert.evidencia?.temperature_c ?? 'N/D' }} °C</dd></div>
+          <div><dt>Perfil aplicado</dt><dd>{{ alert.evidencia?.configuration?.temp_min ?? 'N/D' }}–{{ alert.evidencia?.configuration?.temp_max ?? 'N/D' }} °C</dd></div>
+        </template>
         <div><dt>Inicio observado</dt><dd>{{ date(alert.inicio_condicion) }}</dd></div>
         <div><dt>Disponible en plataforma</dt><dd>{{ date(alert.timestamp) }}</dd></div>
         <div><dt>Última observación evaluada</dt><dd>{{ date(alert.ultima_observacion) }}</dd></div>
         <div><dt>Regla</dt><dd>{{ alert.version_regla }}</dd></div>
       </dl>
+      <p v-if="kinetic">{{ alert.evidencia?.interpretation }}. Umbrales experimentales, sin validación enológica.</p>
       <p v-if="!alert.fin_condicion && Date.now() - new Date(alert.ultima_observacion).getTime() > 900000" role="status">
         Sin observación reciente: el estado registrado no acredita la condición actual.
       </p>
@@ -66,6 +82,8 @@ watch(() => [props.alert?.id, props.revision, props.alert?.estado], async () => 
       <strong>{{ note.author }}</strong> · {{ date(note.timestamp) }}
       <p>{{ note.message }}</p>
     </article>
+    <InterventionsPanel v-if="alert?.fermentacion_id" :process-id="alert.fermentacion_id" :alert-id="alert.id" @changed="interventionsRevision++" />
+    <ManualMeasurementsPanel v-if="alert?.fermentacion_id" :process-id="alert.fermentacion_id" :alert-id="alert.id" @changed="interventionsRevision++" />
   </section>
 </template>
 

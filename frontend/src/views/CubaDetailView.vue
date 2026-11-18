@@ -49,6 +49,11 @@ import cubaService from '../services/cubaService'
 import alertService from '../services/alertService'
 import processService from '../services/processService'
 import SimulationStatus from '../components/SimulationStatus.vue'
+import KineticsPanel from '../components/KineticsPanel.vue'
+import InterventionsPanel from '../components/InterventionsPanel.vue'
+import ManualMeasurementsPanel from '../components/ManualMeasurementsPanel.vue'
+import CurveComparisonPanel from '../components/CurveComparisonPanel.vue'
+import ProcessProfileOverrides from '../components/ProcessProfileOverrides.vue'
 
 ChartJS.register(...registerables)
 
@@ -1351,7 +1356,7 @@ onBeforeUnmount(() => {
               !tieneProcesoActivo
                 ? 'Cuba en reposo o higienización, lista para recibir una nueva vendimia.'
                 : sinModeloValidado
-                ? 'Telemetría v2 recibida. Las alertas térmicas usan el perfil del proceso y persistencia temporal; la evaluación cinética y la predicción de parada aún están pendientes.'
+                ? 'Telemetría v2 recibida. Consulta las tasas, la cobertura y los episodios en los paneles de seguimiento. La predicción de parada sigue pendiente de validación.'
                 : statusOperativo === 'optimal'
                 ? 'El consumo de azúcar es continuo y la temperatura se mantiene estable dentro de la banda enológica.'
                 : 'Se detectó variación térmica o estancamiento de azúcar fuera del perfil óptimo.'
@@ -1604,6 +1609,11 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <KineticsPanel v-if="cuba?.proceso_activo_id" :key="`kinetics-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" />
+    <ProcessProfileOverrides v-if="cuba?.proceso_activo_id" :key="`adjustments-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" @changed="cargarDatosCuba(cuba.id)" />
+    <InterventionsPanel v-if="cuba?.proceso_activo_id" :key="`interventions-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" />
+    <ManualMeasurementsPanel v-if="cuba?.proceso_activo_id" :key="`manual-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" />
+    <CurveComparisonPanel v-if="cuba?.proceso_activo_id" :key="`comparison-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" />
     <SimulationStatus v-if="cuba?.proceso_activo_id" :key="cuba.proceso_activo_id" :process-id="cuba.proceso_activo_id" />
 
     <!-- Gráficos de Telemetría Chart.js -->

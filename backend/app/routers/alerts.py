@@ -41,6 +41,8 @@ def _extra_filters(query, estado=None, severidad=None, tipo_alerta=None, origen=
 def _construir_titulo_descripcion(alerta: EventoAlerta) -> Tuple[str, str]:
     """Genera título y descripción descriptiva en base al tipo de alerta y severidad."""
     tipo = alerta.tipo_alerta or "desconocida"
+    if alerta.version_regla and tipo == "brix_ralentizacion":
+        return ("Ralentización de Brix aparente (simulación)", alerta.mensaje)
     if alerta.version_regla:
         return ("Temperatura sobre el perfil" if tipo == "temperatura_alta" else "Temperatura bajo el perfil",
                 alerta.mensaje or "Desviación térmica observada; revisar la evidencia del episodio.")

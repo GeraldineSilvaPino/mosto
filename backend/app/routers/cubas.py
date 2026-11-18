@@ -127,7 +127,8 @@ def _mapear_cuba_out(
     c: Cuba,
     proceso_activo: Optional[ProcesoFermentacion],
     ultima_lectura: Optional[LecturaTelemetria],
-    prediccion_ml: Optional[MLPredictionOut] = None
+    prediccion_ml: Optional[MLPredictionOut] = None,
+    db: Session = None
 ) -> CubaOut:
     """Helper para transformar la entidad Cuba y sus relaciones al DTO CubaOut."""
     variedad = None
@@ -137,8 +138,11 @@ def _mapear_cuba_out(
 
     if proceso_activo:
         if proceso_activo.perfil:
-            temp_min = float(proceso_activo.perfil.temp_min) if proceso_activo.perfil.temp_min is not None else 16.0
-            temp_max = float(proceso_activo.perfil.temp_max) if proceso_activo.perfil.temp_max is not None else 26.0
+            from app.services.profile_overrides import applied_profile
+            from app.services.telemetry_v2 import utc_now
+            applied = applied_profile(db, proceso_activo, proceso_activo.perfil, utc_now())
+            temp_min = applied.get("temp_min")
+            temp_max = applied.get("temp_max")
             if proceso_activo.perfil.cepa:
                 variedad = proceso_activo.perfil.cepa.nombre_variedad
         
@@ -211,7 +215,7 @@ def listar_cubas(response: Response, db: Session = Depends(business_db("demo")))
             )
             pred_ml = _calcular_prediccion_ml(db, proceso_activo.id)
 
-        resultado.append(_mapear_cuba_out(c, proceso_activo, ultima_lectura, pred_ml))
+        resultado.append(_mapear_cuba_out(c, proceso_activo, ultima_lectura, pred_ml, db))
         
     return resultado
 
@@ -245,7 +249,7 @@ def obtener_cuba(cuba_id: int, response: Response, db: Session = Depends(busines
         )
         pred_ml = _calcular_prediccion_ml(db, proceso_activo.id)
 
-    return _mapear_cuba_out(c, proceso_activo, ultima_lectura, pred_ml)
+    return _mapear_cuba_out(c, proceso_activo, ultima_lectura, pred_ml, db)
 
 
 @router.get("/{cuba_id}/historico", response_model=HistoricoCubaOut, summary="Curvas históricas de telemetría (para Chart.js)")

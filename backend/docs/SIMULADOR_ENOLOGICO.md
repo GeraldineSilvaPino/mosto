@@ -1,6 +1,6 @@
 # Simulador continuo de fermentación
 
-Entrega local, 15-11-2026. Sustituye las inyecciones puntuales por trayectorias persistentes que se transmiten por la API HTTP v2. No conecta ni modifica Supabase. La ingesta integra ahora [episodios térmicos v2](ALERTAS_V2_Y_EPISODIOS.md); el hardware físico y el nuevo entrenamiento ML siguen pendientes.
+Entrega local inicial del 15-11-2026, actualizada el 17-11 con fallas programables y recuperación de cola. Sustituye las inyecciones puntuales por trayectorias persistentes que se transmiten por la API HTTP v2. No conecta ni modifica Supabase. Integra [episodios térmicos v2](ALERTAS_V2_Y_EPISODIOS.md), cinética causal y evaluación ML offline; hardware físico y validación ML real siguen pendientes.
 
 ## Qué está implementado
 
@@ -10,6 +10,7 @@ Entrega local, 15-11-2026. Sustituye las inyecciones puntuales por trayectorias 
 - Configuración congelada por versión de calibración sintética; vínculo al dispositivo, proceso e instante de inicio.
 - Consulta autenticada de configuración por el emisor; consulta de procedencia por usuarios autorizados y visualización de fase programada en Vue.
 - Inicializador explícito de una bodega local con cinco cubas simuladas y una reserva física inactiva, sin lecturas ni calibración ficticia para el ESP32.
+- Fallas programables de canales y entrega, con generación independiente del ACK y recuperación tras cortes. Contrato y ejemplo en [Fallas del emisor HTTP](FALLAS_SIMULADOR_HTTP.md).
 
 No se ejecuta una tarea de simulación en cada worker de Uvicorn ni al consultar una pantalla. Cerrar el navegador no detiene el emisor; detener el emisor no detiene la API. La cadencia física no depende del polling de Vue.
 
@@ -74,11 +75,11 @@ El manifiesto `fleet.json` no contiene claves: referencia nombres de variables `
 
 El SQLite del emisor tiene:
 
-- `runs`: receta, siguiente secuencia, estado, fallos y siguiente reintento.
-- `outbox`: sobre exacto, estado interno sintético separado y comprobante de aceptación.
+- `runs`: receta, siguiente secuencia por generar y por entregar, estado, fallos, siguiente reintento y espera programada.
+- `outbox`: sobre exacto, estado interno sintético separado, disponibilidad, disposición pendiente/entregada/perdida y comprobante de aceptación.
 - `metadata`: origen de API asociado al archivo de estado.
 
-Antes de enviar se confirma la escritura en la cola. Solo después de una respuesta válida 200/201 se guarda el comprobante y avanza la secuencia. Si la API guarda pero la respuesta se pierde, el mismo mensaje se reenvía; la idempotencia del servidor devuelve el comprobante original. El UUID de emisión es estable por receta/dispositivo/calibración, por lo que recrear accidentalmente el estado con la misma configuración tampoco duplica las muestras del servidor.
+Antes de enviar se confirma la escritura en la cola. Solo después de una respuesta válida 200/201 se guarda el comprobante y avanza el cursor de entrega; una pérdida deliberada avanza ese cursor sin comprobante y deja evidencia local. La generación tiene un cursor independiente y continúa durante cortes programados o reintentos de POST, tras verificar la receta. Si la API guarda pero la respuesta se pierde, el mismo mensaje se reenvía; la idempotencia del servidor devuelve el comprobante original. El UUID de emisión es estable por receta/dispositivo/calibración/plan de fallas, por lo que recrear accidentalmente el estado con la misma configuración tampoco duplica las muestras del servidor. Las recetas antiguas sin plan conservan su UUID.
 
 Errores de red, 408, 425, 429 y 5xx usan espera creciente hasta 60 segundos. Credenciales ausentes/revocadas, receta incompatible y rechazos permanentes bloquean solo ese dispositivo. Los demás continúan. Después de corregir la causa se usa `--retry-blocked`; no se cambia automáticamente de cuba, identidad o calibración para esquivar un rechazo.
 
@@ -109,7 +110,7 @@ python -m scripts.simulate_v2 --manifest artifacts/simulation-fleet/fleet.json -
 
 5. Arrancar Vue desde `frontend` con `npm run dev`. Iniciar sesión como `demo@example.invalid`, usando la contraseña elegida. Device Hub muestra cinco simulados y una reserva física. El detalle presenta la curva y las pertenencias de fase.
 
-`--once` ejecuta un lote acotado por dispositivo y termina. `--drain` carga las muestras vencidas hasta ponerse al día o encontrar errores y termina; no acelera el reloj. Ctrl+C detiene limpiamente el worker. Repetir el mismo comando con el mismo archivo de estado reanuda; no volver a inicializar la bodega.
+`--once` ejecuta un lote acotado por dispositivo y termina. `--drain` genera las muestras vencidas y entrega lo disponible hasta no poder avanzar; no acelera el reloj ni espera a que termine un corte/retardo. Devuelven 1 ante error/bloqueo, 2 si quedan sobres generados pendientes y 0 en otro caso. Un cero de `--once` no certifica que se haya generado todo el historial. Ctrl+C detiene limpiamente el worker. Repetir el mismo comando con el mismo archivo de estado reanuda; no volver a inicializar la bodega. Para programar fallas al crear una demo nueva, añadir `--fault-plan examples/simulation-faults.json` al inicializador; ver [contrato y secuencias](FALLAS_SIMULADOR_HTTP.md).
 
 La reserva física se crea inactiva, sin clave ni calibración. Su futura puesta en servicio exige activar el dispositivo, emitir su credencial y registrar una calibración obtenida del prototipo, mediante el flujo de [telemetría v2](TELEMETRIA_V2.md). El worker nunca incluye ese dispositivo en su manifiesto.
 
@@ -129,8 +130,8 @@ Las pruebas cubren continuidad, pertenencias normalizadas, dinámica latente mon
 
 La prueba de navegador utiliza el CLI real de inicialización, el worker HTTP, FastAPI, SQLite y el build Vue, sin respuestas API inventadas. Carga las cinco trayectorias, comprueba las fases, reinicia el worker y verifica cero lecturas en la reserva física. PostgreSQL se verifica adicionalmente con la suite en un clúster temporal; el navegador no certifica un despliegue PostgreSQL remoto.
 
-Resultados finales: **125 pruebas aprobadas en PostgreSQL 18.4** (58,51 s; 1.579 avisos de deprecación) y **118 aprobadas, 7 omitidas en SQLite** (27,07 s; 1.496 avisos). Build Vite correcto. El navegador verificó el historial completo de 288 puntos por 24 horas, las fases programadas de las cinco cubas según sus edades, reanudación y cero lecturas físicas, sin errores JavaScript ni respuestas API de error. El estado final contiene 5.266 mensajes canónicos simulados. Capturas y resultado JSON: `mosto-audit/simulation-*-live.png` y `simulation-browser-results.json`, en el directorio externo de la auditoría.
+Resultados históricos del bloque inicial del 15-11: **125 pruebas aprobadas en PostgreSQL 18.4** (58,51 s; 1.579 avisos de deprecación) y **118 aprobadas, 7 omitidas en SQLite** (27,07 s; 1.496 avisos). Build Vite correcto. El navegador verificó el historial completo de 288 puntos por 24 horas, las fases programadas de las cinco cubas según sus edades, reanudación y cero lecturas físicas, sin errores JavaScript ni respuestas API de error. El estado final contiene 5.266 mensajes canónicos simulados. Capturas y resultado JSON: `mosto-audit/simulation-*-live.png` y `simulation-browser-results.json`, en el directorio externo de la auditoría. La evidencia vigente y sus límites están en [Estado del plan](ESTADO_PLAN_MAESTRO.md); no se revalidó PostgreSQL ni navegador para las nuevas fallas del emisor.
 
 Docker/Compose no se ejecutaron; se corrigió el Dockerfile para incluir Alembic y sus revisiones, necesarios para inicializar y comprobar el esquema. No se modificó Supabase ni se ejecutó commit, merge o push. CSV, pickle y cambio previo del README de ML se verificaron intactos por SHA-256.
 
-Pendiente: reglas cinéticas y seguimiento estructurado de intervenciones, dataset de trayectorias con partición por fermentación, validación de riesgo futuro y forecast, fallas de sensores y comunicaciones programables, calibración/hardware real, MQTT, reloj acelerado explícito y rediseño integral. Las cinco recetas de demostración no constituyen por sí solas un dataset de entrenamiento suficiente ni una validación externa.
+Ya implementados localmente: reglas cinéticas simuladas opt-in, seguimiento estructurado de intervenciones, dataset de trayectorias con partición por proceso, pipeline experimental de riesgo/forecast, ensayos offline de fallas/incertidumbre y fallas programables HTTP/outbox. Pendientes: validación real de riesgo/forecast, mediciones manuales y DSS, calibración/hardware real, MQTT, reloj acelerado explícito y rediseño integral. Las cinco recetas de demostración no constituyen por sí solas un dataset de entrenamiento suficiente ni una validación externa.

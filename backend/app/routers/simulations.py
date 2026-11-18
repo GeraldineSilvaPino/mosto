@@ -40,6 +40,7 @@ def process_simulation(process_id: int, db: Session = Depends(business_db("opera
             "registered": True, "source": "simulado", "model_version": spec.model_version,
             "scenario": spec.scenario, "seed": spec.seed, "process_id": process.id,
             "calibration_id": calibration.id, "device_id": calibration.dispositivo_id,
+            "emitter_faults": calibration.parametros.get("emitter_faults"),
             "cadence_seconds": spec.cadence_seconds, "process_start": spec.process_start,
             "duration_hours": spec.duration_hours, "clock": "wall_utc", "speed": 1,
             "observed_age_hours": age, "calendar_age_hours": calendar_age,

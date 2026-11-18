@@ -12,7 +12,7 @@ from .database import engine, settings
 from .services.auth_service import get_current_user
 from .services.demo_access import require_simulator_key
 from .routers import auth, users, company, binnacle, master, telemetry, cubas, processes, devices, thresholds, alerts
-from .routers import device_provisioning, telemetry_v2, simulations
+from .routers import device_provisioning, telemetry_v2, simulations, interventions, manual_measurements, curve_comparison, profile_overrides
 
 app = FastAPI(title="MOSTO API - Plataforma Vitivinícola IoT", version="1.1.0")
 app.add_middleware(
@@ -23,13 +23,15 @@ app.add_middleware(
 )
 app.include_router(auth.router)
 for router in (users.router, company.router, binnacle.router, master.router, cubas.router,
-               processes.router, devices.router, thresholds.router, alerts.router):
+               processes.router, devices.router, thresholds.router, alerts.router, interventions.router, manual_measurements.router):
     app.include_router(router, dependencies=[Depends(get_current_user)])
 # Individual device credentials are independent of browser JWT authentication.
 app.include_router(device_provisioning.router, dependencies=[Depends(get_current_user)])
 app.include_router(telemetry_v2.audit_router, dependencies=[Depends(get_current_user)])
 app.include_router(telemetry_v2.ingest_router)
 app.include_router(simulations.router, dependencies=[Depends(get_current_user)])
+app.include_router(curve_comparison.router, dependencies=[Depends(get_current_user)])
+app.include_router(profile_overrides.router, dependencies=[Depends(get_current_user)])
 # Legacy ingestion remains confined to demo/test.
 app.include_router(telemetry.router, dependencies=[Depends(require_simulator_key)])
 

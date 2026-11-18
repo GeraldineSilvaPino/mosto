@@ -17,9 +17,13 @@ def demo_process_starts(now):
     return {index: now - timedelta(hours=entry[1]) for index, entry in enumerate(DEMO_SCENARIOS, 1)}
 
 
-def provision_fleet(db, base_url="http://127.0.0.1:8000", now=None):
+def provision_fleet(db, base_url="http://127.0.0.1:8000", now=None, fault_plans=None):
     """Called immediately after seed_demo on a fresh database; caller commits."""
     now = (now or datetime.now(timezone.utc)).replace(microsecond=0)
+    from app.simulation.faults import FaultPlan
+    fault_plans = {int(key): FaultPlan.model_validate(value) for key, value in (fault_plans or {}).items()}
+    if not set(fault_plans) <= set(range(1, 6)):
+        raise ValueError("Only the five simulated devices can declare emitter faults")
     company = db.get(m.EmpresaCliente, 1)
     if company is None or company.nomb_emp != "MOSTO DEMO · Datos simulados" or db.query(m.LecturaTelemetria).first() or db.query(m.CredencialDispositivo).first():
         raise ValueError("Fleet provisioning requires fresh, unprovisioned demo fixtures")
@@ -28,6 +32,8 @@ def provision_fleet(db, base_url="http://127.0.0.1:8000", now=None):
     db.add(virtual_model); db.flush()
     scenarios = DEMO_SCENARIOS
     emitters, keys = [], {}
+    from app.services.profile_versions import record_version
+    frozen_profile = record_version(db, db.get(m.PerfilFermentacion, 1), origin="captura_demo_sintetica").configuracion
     for index in range(1, 7):
         physical = index == 6
         start = now if physical else now - timedelta(hours=scenarios[index - 1][1])
@@ -48,6 +54,7 @@ def provision_fleet(db, base_url="http://127.0.0.1:8000", now=None):
                         brix_inicial=24, brix_objetivo=2, estado="en_proceso", fecha_inicio=start)
             assignment = m.AsignacionDispositivo(dispositivo_id=device.id, cuba_id=tank.id, activo=True, asignado_en=start)
             db.add_all([process, assignment])
+        process.perfil_snapshot = dict(frozen_profile)
         device.modelo_id = physical_model.id if physical else virtual_model.id
         device.tipo_dispositivo = "DUAL"
         device.firmware_version = None if physical else MODEL_VERSION
@@ -61,7 +68,8 @@ def provision_fleet(db, base_url="http://127.0.0.1:8000", now=None):
         scenario, _, fault = scenarios[index - 1]
         spec = SimulationSpec(process_id=process.id, process_start=start, seed=202600 + index,
                               scenario=scenario, fault_at_hours=fault)
-        params = CalibrationCreate(version=MODEL_VERSION, method="synthetic_identity", valid_from=start, simulation=spec)
+        params = CalibrationCreate(version=MODEL_VERSION, method="synthetic_identity", valid_from=start, simulation=spec,
+                                   emitter_faults=fault_plans.get(device.id))
         calibration = m.CalibracionDispositivo(dispositivo_id=device.id, version=params.version,
                       metodo=params.method, parametros=params.model_dump(mode="json"), valida_desde=start,
                       creada_en=now, creada_por=1)
@@ -72,5 +80,6 @@ def provision_fleet(db, base_url="http://127.0.0.1:8000", now=None):
         db.add_all([calibration, credential]); db.flush()
         key_env = f"MOSTO_SIM_DEVICE_{device.id}"
         keys[key_env] = token
-        emitters.append(EmitterConfig(device_id=device.id, calibration_id=calibration.id, key_env=key_env, simulation=spec))
+        emitters.append(EmitterConfig(device_id=device.id, calibration_id=calibration.id, key_env=key_env, simulation=spec,
+                                     emitter_faults=params.emitter_faults))
     return FleetConfig(base_url=base_url, devices=emitters), keys

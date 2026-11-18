@@ -7,7 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.services.access import business_db
+from app.services.access import business_db, actor_id
+from app.services.profile_versions import snapshot, record_version
+from app.models import VersionPerfil
 from app.models import PerfilFermentacion, Cepa, Bodega, ProcesoFermentacion
 from app.schemas import PerfilCreateIn, PerfilUpdateIn, PerfilOut
 
@@ -16,11 +18,12 @@ router = APIRouter(prefix="/api/perfiles", tags=["Perfiles de Fermentación y Um
 
 def _mapear_perfil_out(p: PerfilFermentacion) -> PerfilOut:
     """Helper para transformar la entidad PerfilFermentacion al DTO PerfilOut."""
-    t_min = float(p.temp_min) if p.temp_min is not None else 18.0
-    t_max = float(p.temp_max) if p.temp_max is not None else 28.0
+    t_min = float(p.temp_min) if p.temp_min is not None else None
+    t_max = float(p.temp_max) if p.temp_max is not None else None
 
     return PerfilOut(
         id=p.id,
+        revision=p.revision,
         nomb_perfil=p.nomb_perfil,
         temp_min=t_min,
         temp_max=t_max,
@@ -32,8 +35,8 @@ def _mapear_perfil_out(p: PerfilFermentacion) -> PerfilOut:
         bodega_nombre=p.bodega.nombre if p.bodega else None,
         cepa_id=p.cepa_id,
         cepa_nombre=p.cepa.nombre_variedad if p.cepa else None,
-        crit_min=round(t_min - 4.0, 1),
-        crit_max=round(t_max + 3.0, 1)
+        crit_min=round(t_min - 4.0, 1) if t_min is not None else None,
+        crit_max=round(t_max + 3.0, 1) if t_max is not None else None
     )
 
 
@@ -127,6 +130,9 @@ def crear_perfil(payload: PerfilCreateIn, db: Session = Depends(business_db("pro
     )
 
     db.add(nuevo_perfil)
+    db.flush()
+    db.refresh(nuevo_perfil)
+    record_version(db, nuevo_perfil, actor_id(db), "creacion")
     db.commit()
     db.refresh(nuevo_perfil)
 
@@ -141,18 +147,22 @@ def actualizar_perfil(perfil_id: int, payload: PerfilUpdateIn, db: Session = Dep
     2. Valida que los nuevos valores cumplan temp_min <= temp_max y ph_min <= ph_max.
     3. Actualiza y persiste los cambios.
     """
-    perfil = db.query(PerfilFermentacion).filter(PerfilFermentacion.id == perfil_id).first()
+    perfil = db.query(PerfilFermentacion).filter(PerfilFermentacion.id == perfil_id).with_for_update().first()
     if not perfil:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Perfil de fermentación con ID {perfil_id} no encontrado"
         )
 
+    if payload.expected_revision is not None and payload.expected_revision != perfil.revision:
+        raise HTTPException(409, "El perfil tiene una versión más reciente; recargar antes de editar")
+    record_version(db, perfil)
+    before = snapshot(perfil)
     # Calcular valores finales proyectados para verificar consistencia
-    t_min_final = payload.temp_min if payload.temp_min is not None else (float(perfil.temp_min) if perfil.temp_min is not None else None)
-    t_max_final = payload.temp_max if payload.temp_max is not None else (float(perfil.temp_max) if perfil.temp_max is not None else None)
-    ph_min_final = payload.ph_min if payload.ph_min is not None else (float(perfil.ph_min) if perfil.ph_min is not None else None)
-    ph_max_final = payload.ph_max if payload.ph_max is not None else (float(perfil.ph_max) if perfil.ph_max is not None else None)
+    t_min_final = payload.temp_min if "temp_min" in payload.model_fields_set else perfil.temp_min
+    t_max_final = payload.temp_max if "temp_max" in payload.model_fields_set else perfil.temp_max
+    ph_min_final = payload.ph_min if "ph_min" in payload.model_fields_set else perfil.ph_min
+    ph_max_final = payload.ph_max if "ph_max" in payload.model_fields_set else perfil.ph_max
 
     # Validación de integridad de rangos térmicos
     if t_min_final is not None and t_max_final is not None and t_min_final > t_max_final:
@@ -203,7 +213,16 @@ def actualizar_perfil(perfil_id: int, payload: PerfilUpdateIn, db: Session = Dep
         perfil.brix_caida_min_dia = payload.brix_caida_min_dia
     if payload.activo is not None:
         perfil.activo = payload.activo
+    for name in ("temp_min", "temp_max", "ph_min", "ph_max", "brix_caida_min_dia"):
+        if name in payload.model_fields_set:
+            setattr(perfil, name, getattr(payload, name))
 
+    db.flush()
+    db.refresh(perfil)
+    if snapshot(perfil) != before:
+        perfil.revision += 1
+        db.flush()
+        record_version(db, perfil, actor_id(db), "edicion")
     db.commit()
     db.refresh(perfil)
 
@@ -216,7 +235,7 @@ def desactivar_perfil(perfil_id: int, db: Session = Depends(business_db("profile
     Desactiva un perfil (soft-delete). Si el perfil está siendo utilizado
     por un proceso activo en curso, bloquea la eliminación para preservar la consistencia operativa.
     """
-    perfil = db.query(PerfilFermentacion).filter(PerfilFermentacion.id == perfil_id).first()
+    perfil = db.query(PerfilFermentacion).filter(PerfilFermentacion.id == perfil_id).with_for_update().first()
     if not perfil:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -238,7 +257,21 @@ def desactivar_perfil(perfil_id: int, db: Session = Depends(business_db("profile
             detail=f"No se puede desactivar el perfil: está asignado al proceso de fermentación activo ID {proceso_activo.id}."
         )
 
-    perfil.activo = False
+    record_version(db, perfil)
+    if perfil.activo:
+        perfil.activo = False
+        perfil.revision += 1
+        db.flush()
+        record_version(db, perfil, actor_id(db), "archivo")
     db.commit()
 
     return {"status": "ok", "mensaje": f"Perfil '{perfil.nomb_perfil}' desactivado con éxito"}
+
+
+@router.get("/{perfil_id}/versiones", summary="Historial inmutable de versiones de perfil")
+def versiones_perfil(perfil_id: int, db: Session = Depends(business_db("profiles"))):
+    if not db.query(PerfilFermentacion).filter_by(id=perfil_id).first():
+        raise HTTPException(404, "Perfil no encontrado")
+    return [{"revision": v.revision, "configuration": v.configuracion,
+             "registered_at": v.registrado_en, "actor_id": v.usuario_id, "origin": v.origen}
+            for v in db.query(VersionPerfil).filter_by(perfil_id=perfil_id).order_by(VersionPerfil.revision)]

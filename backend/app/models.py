@@ -117,6 +117,7 @@ class PerfilFermentacion(Base):
 
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True)
     nomb_perfil = Column(String(100), nullable=False)
+    revision = Column(Integer, nullable=False, default=1, server_default="1")
     temp_min = Column(Numeric(5, 2), nullable=True)
     temp_max = Column(Numeric(5, 2), nullable=True)
     brix_caida_min_dia = Column(Numeric(5, 2), nullable=True)
@@ -128,6 +129,18 @@ class PerfilFermentacion(Base):
 
     cepa = relationship("Cepa")
     bodega = relationship("Bodega")
+
+
+class VersionPerfil(Base):
+    __tablename__ = "VERSION_PERFIL"
+    __table_args__ = (UniqueConstraint("perfil_id", "revision", name="uq_version_perfil"),)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    perfil_id = Column(BigInteger, ForeignKey("PERFIL_FERMENTACION.id"), nullable=False)
+    revision = Column(Integer, nullable=False)
+    configuracion = Column(JSON, nullable=False)
+    registrado_en = Column(DateTime(timezone=True), nullable=False)
+    usuario_id = Column(BigInteger, ForeignKey("USUARIO.id"), nullable=True)
+    origen = Column(String(40), nullable=False)
 
 
 class ProcesoFermentacion(Base):
@@ -143,6 +156,7 @@ class ProcesoFermentacion(Base):
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True)
     cuba_id = Column(BigInteger, ForeignKey("CUBA.id", ondelete="RESTRICT"), nullable=False, index=True)
     perfil_id = Column(BigInteger, ForeignKey("PERFIL_FERMENTACION.id"), nullable=True)
+    perfil_snapshot = Column(JSON, nullable=True)
     volumen_litros = Column(Numeric(10, 2), nullable=True)
     brix_inicial = Column(Numeric(5, 2), nullable=True)
     brix_objetivo = Column(Numeric(5, 2), nullable=True)
@@ -343,6 +357,96 @@ class BitacoraIntervencion(Base):
 # 7. USUARIOS Y ROLES (RBAC)
 # ==========================================
 
+class IntervencionOperativa(Base):
+    __tablename__ = "INTERVENCION_OPERATIVA"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    fermentacion_id = Column(BigInteger, ForeignKey("PROCESO_FERMENTACION.id"), nullable=False)
+    alerta_id = Column(BigInteger, ForeignKey("EVENTO_ALERTA.id"))
+    responsable_id = Column(BigInteger, ForeignKey("USUARIO.id"), nullable=False)
+    usuario_id = Column(BigInteger, ForeignKey("USUARIO.id"), nullable=False)
+    tipo = Column(String(40), nullable=False)
+    accion = Column(Text, nullable=False)
+    motivo = Column(Text, nullable=False)
+    estado = Column(String(30), nullable=False)
+    revision = Column(Integer, nullable=False, default=1)
+    registrado_en = Column(DateTime(timezone=True), nullable=False)
+    request_id = Column(String(36), nullable=False)
+    solicitud = Column(JSON, nullable=False)
+    __table_args__ = (UniqueConstraint("fermentacion_id", "request_id", name="uq_intervencion_solicitud"),)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class EventoIntervencion(Base):
+    __tablename__ = "EVENTO_INTERVENCION"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    intervencion_id = Column(BigInteger, ForeignKey("INTERVENCION_OPERATIVA.id"), nullable=False)
+    bitacora_id = Column(BigInteger, ForeignKey("BITACORA_INTERVENCION.id"), nullable=False, unique=True)
+    usuario_id = Column(BigInteger, ForeignKey("USUARIO.id"), nullable=False)
+    revision = Column(Integer, nullable=False)
+    estado = Column(String(30), nullable=False)
+    descripcion = Column(Text, nullable=False)
+    respuesta = Column(String(30))
+    registrado_en = Column(DateTime(timezone=True), nullable=False)
+    request_id = Column(String(36), nullable=False)
+    solicitud = Column(JSON, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("intervencion_id", "request_id", name="uq_evento_intervencion_solicitud"),
+        UniqueConstraint("intervencion_id", "revision", name="uq_evento_intervencion_revision"),
+    )
+
+
+class AjustePerfilProceso(Base):
+    __tablename__ = "AJUSTE_PERFIL_PROCESO"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    fermentacion_id = Column(BigInteger, ForeignKey("PROCESO_FERMENTACION.id"), nullable=False)
+    revision = Column(Integer, nullable=False)
+    usuario_id = Column(BigInteger, ForeignKey("USUARIO.id"), nullable=False)
+    bitacora_id = Column(BigInteger, ForeignKey("BITACORA_INTERVENCION.id"), nullable=False, unique=True)
+    vigente_desde = Column(DateTime(timezone=True), nullable=False)
+    accion = Column(String(20), nullable=False)
+    motivo = Column(Text, nullable=False)
+    configuracion = Column(JSON, nullable=False)
+    request_id = Column(String(36), nullable=False)
+    solicitud = Column(JSON, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("fermentacion_id", "revision", name="uq_ajuste_perfil_revision"),
+        UniqueConstraint("fermentacion_id", "request_id", name="uq_ajuste_perfil_solicitud"),
+    )
+
+
+class MedicionManual(Base):
+    __tablename__ = "MEDICION_MANUAL"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    fermentacion_id = Column(BigInteger, ForeignKey("PROCESO_FERMENTACION.id"), nullable=False)
+    alerta_id = Column(BigInteger, ForeignKey("EVENTO_ALERTA.id"))
+    intervencion_id = Column(BigInteger, ForeignKey("INTERVENCION_OPERATIVA.id"))
+    bitacora_id = Column(BigInteger, ForeignKey("BITACORA_INTERVENCION.id"), nullable=False, unique=True)
+    usuario_id = Column(BigInteger, ForeignKey("USUARIO.id"), nullable=False)
+    variable = Column(String(40), nullable=False)
+    valor = Column(Float, nullable=False)
+    unidad = Column(String(20), nullable=False)
+    metodo = Column(String(40), nullable=False)
+    instrumento = Column(String(200), nullable=False)
+    evidencia = Column(Text, nullable=False)
+    observado_en = Column(DateTime(timezone=True), nullable=False)
+    registrado_en = Column(DateTime(timezone=True), nullable=False)
+    request_id = Column(String(36), nullable=False)
+    solicitud = Column(JSON, nullable=False)
+    __table_args__ = (UniqueConstraint("fermentacion_id", "request_id", name="uq_medicion_manual_solicitud"),)
+
+
+class AnulacionMedicion(Base):
+    __tablename__ = "ANULACION_MEDICION"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    medicion_id = Column(BigInteger, ForeignKey("MEDICION_MANUAL.id"), nullable=False, unique=True)
+    bitacora_id = Column(BigInteger, ForeignKey("BITACORA_INTERVENCION.id"), nullable=False, unique=True)
+    usuario_id = Column(BigInteger, ForeignKey("USUARIO.id"), nullable=False)
+    motivo = Column(Text, nullable=False)
+    registrado_en = Column(DateTime(timezone=True), nullable=False)
+    request_id = Column(String(36), nullable=False)
+    solicitud = Column(JSON, nullable=False)
+
+
 class Rol(Base):
     __tablename__ = "ROL"
 
@@ -483,6 +587,7 @@ class EstadoRegla(Base):
     fermentacion_id = Column(BigInteger, ForeignKey("PROCESO_FERMENTACION.id"), nullable=False)
     codigo = Column(String(50), nullable=False)
     configuracion = Column(JSON, nullable=False)
+    perfil_ajuste_revision = Column(Integer, nullable=False, default=0, server_default='0')
     ultima_observacion = Column(DateTime(timezone=True), nullable=False)
     inicio_candidato = Column(DateTime(timezone=True), nullable=True)
     inicio_recuperacion = Column(DateTime(timezone=True), nullable=True)

@@ -34,6 +34,8 @@ WRITE_ROLES = {
     "operations": {"admin", "enologo", "operador"},
     "devices": {"admin", "operador"},
     "profiles": {"admin", "enologo"},
+    "profile_overrides": {"admin", "enologo"},
+    "kinetic_rules": {"admin", "enologo"},
     "admin": {"admin"},
     "demo": {"admin"},
     "catalogs": set(),
@@ -77,6 +79,8 @@ def scope_predicates(ctx):
                       m.Bodega.id.in_(ctx.warehouses)),
         m.Cuba: m.Cuba.bodega_id.in_(ctx.warehouses),
         m.PerfilFermentacion: m.PerfilFermentacion.bodega_id.in_(ctx.warehouses),
+        m.VersionPerfil: m.VersionPerfil.perfil_id.in_(select(m.PerfilFermentacion.__table__.c.id).where(
+            m.PerfilFermentacion.__table__.c.bodega_id.in_(ctx.warehouses))),
         m.ProcesoFermentacion: m.ProcesoFermentacion.cuba_id.in_(cube_ids),
         m.Dispositivo: m.Dispositivo.id.in_(device_ids),
         m.AsignacionDispositivo: and_(m.AsignacionDispositivo.cuba_id.in_(cube_ids),
@@ -87,6 +91,14 @@ def scope_predicates(ctx):
             m.EventoAlerta.fermentacion_id.is_(None),
             m.EventoAlerta.dispositivo_id.in_(device_ids))),
         m.BitacoraIntervencion: note_scope,
+        m.IntervencionOperativa: m.IntervencionOperativa.fermentacion_id.in_(process_ids),
+        m.MedicionManual: m.MedicionManual.fermentacion_id.in_(process_ids),
+        m.AjustePerfilProceso: m.AjustePerfilProceso.fermentacion_id.in_(process_ids),
+        m.AnulacionMedicion: m.AnulacionMedicion.medicion_id.in_(select(
+            m.MedicionManual.__table__.c.id).where(m.MedicionManual.__table__.c.fermentacion_id.in_(process_ids))),
+        m.EventoIntervencion: m.EventoIntervencion.intervencion_id.in_(select(
+            m.IntervencionOperativa.__table__.c.id).where(
+                m.IntervencionOperativa.__table__.c.fermentacion_id.in_(process_ids))),
         m.Usuario: m.Usuario.empresa_id == ctx.company_id,
         m.UsuarioBodega: and_(m.UsuarioBodega.bodega_id.in_(ctx.warehouses),
                               m.UsuarioBodega.usuario_id.in_(own_users)),
@@ -123,8 +135,10 @@ def install_scope(db, context):
         if changed and not context.writable:
             raise HTTPException(403, "Esta sesión es de solo lectura")
         allowed = {
-            "operations": {m.Cuba, m.ProcesoFermentacion, m.EventoAlerta, m.BitacoraIntervencion, m.EstadoRegla, m.AuditoriaAlerta},
-            "profiles": {m.PerfilFermentacion},
+            "operations": {m.Cuba, m.ProcesoFermentacion, m.EventoAlerta, m.BitacoraIntervencion, m.EstadoRegla, m.AuditoriaAlerta, m.VersionPerfil, m.IntervencionOperativa, m.EventoIntervencion, m.MedicionManual, m.AnulacionMedicion},
+            "profiles": {m.PerfilFermentacion, m.VersionPerfil},
+            "profile_overrides": {m.AjustePerfilProceso, m.BitacoraIntervencion},
+            "kinetic_rules": {m.EstadoRegla},
             "devices": {m.Dispositivo, m.AsignacionDispositivo},
             "admin": {m.Usuario, m.UsuarioBodega, m.EmpresaCliente, m.Bodega,
                       m.LecturaTelemetria, m.EventoAlerta},
@@ -136,6 +150,50 @@ def install_scope(db, context):
             if type(obj) not in allowed:
                 raise HTTPException(403, "La operación no permite modificar esta entidad")
             state = inspect(obj)
+            if isinstance(obj, m.AjustePerfilProceso):
+                if state.persistent or obj in db.deleted:
+                    raise HTTPException(409, "Los ajustes de perfil son inmutables")
+                if obj.usuario_id != context.user_id:
+                    raise HTTPException(403, "La aprobación debe corresponder al usuario autenticado")
+                visible(m.BitacoraIntervencion, obj.bitacora_id)
+            if isinstance(obj, (m.MedicionManual, m.AnulacionMedicion)):
+                if state.persistent or obj in db.deleted:
+                    raise HTTPException(409, "La evidencia manual es inmutable; registra una anulación")
+                if obj.usuario_id != context.user_id:
+                    raise HTTPException(403, "El autor debe ser el usuario autenticado")
+                visible(m.BitacoraIntervencion, obj.bitacora_id)
+                if isinstance(obj, m.AnulacionMedicion):
+                    visible(m.MedicionManual, obj.medicion_id)
+                else:
+                    if obj.alerta_id is not None:
+                        visible(m.EventoAlerta, obj.alerta_id)
+                    if obj.intervencion_id is not None:
+                        visible(m.IntervencionOperativa, obj.intervencion_id)
+            if isinstance(obj, m.EventoIntervencion):
+                if state.persistent or obj in db.deleted:
+                    raise HTTPException(409, "El historial de intervenciones es inmutable")
+                visible(m.IntervencionOperativa, obj.intervencion_id)
+                visible(m.BitacoraIntervencion, obj.bitacora_id)
+            if isinstance(obj, (m.IntervencionOperativa, m.EventoIntervencion)):
+                if not state.persistent and obj.usuario_id != context.user_id:
+                    raise HTTPException(403, "El autor debe ser el usuario autenticado")
+            if isinstance(obj, m.IntervencionOperativa):
+                if obj in db.deleted:
+                    raise HTTPException(409, "Las intervenciones se cancelan, no se eliminan")
+                visible(m.Usuario, obj.responsable_id)
+                if obj.alerta_id is not None:
+                    visible(m.EventoAlerta, obj.alerta_id)
+                if state.persistent and any(state.attrs[field].history.has_changes() for field in (
+                        "alerta_id", "responsable_id", "usuario_id", "tipo", "accion", "motivo",
+                        "registrado_en", "request_id", "solicitud")):
+                    raise HTTPException(409, "La propuesta original es inmutable")
+            if isinstance(obj, m.VersionPerfil) and (state.persistent or obj in db.deleted):
+                raise HTTPException(409, "Las versiones de perfil son inmutables")
+            if isinstance(obj, m.ProcesoFermentacion) and state.persistent:
+                if state.attrs.perfil_snapshot.history.has_changes() or state.attrs.perfil_id.history.has_changes():
+                    raise HTTPException(409, "El perfil aplicado al proceso es inmutable")
+            if context.policy == "kinetic_rules" and (state.persistent or obj in db.deleted):
+                raise HTTPException(409, "La configuración cinética del proceso es inmutable")
             if state.persistent:
                 visible(type(obj), obj.id)
                 # Moving historical entities invalidates their audit trail.

@@ -4,6 +4,7 @@ from typing import Literal
 from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 from app.simulation.model import SimulationSpec
+from app.simulation.faults import FaultPlan
 
 
 class ChannelReading(BaseModel):
@@ -60,10 +61,15 @@ class CalibrationCreate(BaseModel):
     reference_temperature: FiniteFloat = 20
     tolerance: FiniteFloat = Field(default=0.1, ge=0, le=1)
     simulation: SimulationSpec | None = None
+    emitter_faults: FaultPlan | None = None
 
     @model_validator(mode="after")
     def validate_calibration(self):
         self.valid_from = self.valid_from.astimezone(timezone.utc)
+        if self.emitter_faults is not None:
+            if self.method != "synthetic_identity" or self.simulation is None:
+                raise ValueError("Emitter faults require a registered synthetic trajectory")
+            self.emitter_faults.validate_horizon(self.simulation)
         if self.valid_until is not None:
             self.valid_until = self.valid_until.astimezone(timezone.utc)
             if self.valid_until <= self.valid_from:

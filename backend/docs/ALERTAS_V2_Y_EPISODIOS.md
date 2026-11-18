@@ -63,4 +63,9 @@ Las pruebas cubren persistencia, histéresis, huecos, calidad parcial, mensajes 
 
 ## Pendientes del bloque funcional más amplio
 
+Actualización del 16-11: ya existen episodios cinéticos experimentales opt-in para
+simulación y un [watchdog local de silencio](SEGUIMIENTO_Y_SILENCIO.md). El worker
+debe ejecutarse explícitamente; no se despliega ni se activa con FastAPI. Las
+reglas cinéticas físicas, perfiles completos e intervenciones siguen pendientes.
+
 Reglas causales de cinética de Brix y cobertura; watchdog de silencio; diagnóstico visible de reglas sin perfil; perfiles versionados completos; paginación y filtros globales de UI; intervenciones estructuradas con seguimiento; métricas de recuperación y respuesta; recomendaciones DSS revisables; ML con horizonte futuro validado. Esta entrega no cierra esos elementos ni habilita control de actuadores.

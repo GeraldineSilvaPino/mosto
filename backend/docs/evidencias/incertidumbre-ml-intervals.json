@@ -1,0 +1,127 @@
+{
+  "alpha": 0.1,
+  "nominal_coverage": 0.9,
+  "trajectories": 15,
+  "rank": 15,
+  "radius_brix": 3.8567636757784616,
+  "interval_status": "finite_experimental",
+  "score": "max_absolute_forecast_error_per_calibration_trajectory",
+  "calibration_inputs_sha256": "3acc972e5e1b65ad10398bb8e62b3d8ee4ebb137444812331db3a1304e7f8f31",
+  "calibration_processes": [
+    12,
+    13,
+    14,
+    32,
+    33,
+    34,
+    52,
+    53,
+    54,
+    72,
+    73,
+    74,
+    92,
+    93,
+    94
+  ],
+  "scores": [
+    {
+      "process_id": 12,
+      "windows": 65,
+      "score_brix": 0.9476184616842662
+    },
+    {
+      "process_id": 13,
+      "windows": 65,
+      "score_brix": 0.9565336493951082
+    },
+    {
+      "process_id": 14,
+      "windows": 65,
+      "score_brix": 1.0636921896074742
+    },
+    {
+      "process_id": 32,
+      "windows": 65,
+      "score_brix": 1.2558322378013642
+    },
+    {
+      "process_id": 33,
+      "windows": 65,
+      "score_brix": 1.0344010320876933
+    },
+    {
+      "process_id": 34,
+      "windows": 65,
+      "score_brix": 3.8567636757784616
+    },
+    {
+      "process_id": 52,
+      "windows": 65,
+      "score_brix": 3.481297317946402
+    },
+    {
+      "process_id": 53,
+      "windows": 65,
+      "score_brix": 1.523029070703518
+    },
+    {
+      "process_id": 54,
+      "windows": 65,
+      "score_brix": 1.1032334794351915
+    },
+    {
+      "process_id": 72,
+      "windows": 65,
+      "score_brix": 2.983230435987444
+    },
+    {
+      "process_id": 73,
+      "windows": 65,
+      "score_brix": 1.0924845717512746
+    },
+    {
+      "process_id": 74,
+      "windows": 65,
+      "score_brix": 1.577519597353258
+    },
+    {
+      "process_id": 92,
+      "windows": 65,
+      "score_brix": 0.5038246509351012
+    },
+    {
+      "process_id": 93,
+      "windows": 65,
+      "score_brix": 0.78399434186999
+    },
+    {
+      "process_id": 94,
+      "windows": 65,
+      "score_brix": 0.5762768882580769
+    }
+  ],
+  "forecast_hours": 24,
+  "coverage_unit": "all emitted eligible 24h forecasts within one complete trajectory",
+  "guarantee": "nominal only in this stratified synthetic experiment; exchangeability not established",
+  "contract": "trajectory-uncertainty-v1",
+  "status": "experimental_synthetic_only_not_validated_for_real_wine",
+  "feature_version": "kinetics-v1",
+  "target_version": "future-stall-v1",
+  "reference_dataset_sha256": "29a9747d4e39a995ff44fe49a53e244d029aa489d0e8c0cf6479e76ea1dc1039",
+  "artifact_sha256": "3d6a1ef55ab7134fa7d5c99bc345401e9b2af26787ffb40662246b3f7497f6c3",
+  "uncertainty_code_sha256": "8990b70a87d45e9237d8f52932c59d9871b28c8a4596a2f18cd134c05d9ffc64",
+  "python": "3.11.4",
+  "code_sha256": {
+    "ml/causal_dataset.py": "efabdd80745a3161a988bb146b69398e784baee3e516126a737e61825637da89",
+    "ml/causal_pipeline.py": "0cb1254f954064efe9ae0e5b3d74b407c92611acb812b6f0fd78a040dd9f6408",
+    "app/services/kinetics.py": "4bd86e9a30a851764348fa8ce7c445776574a833eab7f0e55cfadc442809d577",
+    "app/simulation/model.py": "44cecd93c79e802cbe8e17ac3b99f2465dc7137e8c86577629db1389d0107ba2"
+  },
+  "packages": {
+    "numpy": "2.4.6",
+    "scikit-learn": "1.9.1",
+    "pydantic": "2.14.2",
+    "joblib": "1.6.0"
+  }
+}

@@ -252,6 +252,7 @@ class ProcesoOut(BaseModel):
     codigo_cuba: Optional[str] = None
     perfil_id: Optional[int] = None
     perfil_nombre: Optional[str] = None
+    perfil_snapshot: Optional[Dict[str, Any]] = None
     cepa_nombre: Optional[str] = None
     volumen_litros: Optional[float] = None
     brix_inicial: Optional[float] = None
@@ -314,6 +315,7 @@ class DispositivoOut(BaseModel):
 # ==========================================
 
 class PerfilCreateIn(BaseModel):
+    model_config = {"allow_inf_nan": False}
     """Payload de entrada para creación de un perfil de fermentación."""
     nomb_perfil: str = Field(..., min_length=2, max_length=100, example="Tinto Robusto & Guarda", description="Nombre descriptivo del perfil")
     temp_min: float = Field(..., example=18.0, description="Temperatura mínima óptima en °C")
@@ -335,6 +337,8 @@ class PerfilCreateIn(BaseModel):
 
 
 class PerfilUpdateIn(BaseModel):
+    model_config = {"allow_inf_nan": False}
+    expected_revision: Optional[int] = Field(None, ge=1)
     """Payload de entrada para modificación parcial o total de un perfil de fermentación."""
     nomb_perfil: Optional[str] = Field(None, min_length=2, max_length=100, example="Tinto Robusto & Guarda Modificado")
     temp_min: Optional[float] = Field(None, example=19.0, description="Temperatura mínima óptima en °C")
@@ -359,8 +363,9 @@ class PerfilOut(BaseModel):
     """DTO de salida para perfiles de fermentación con bandas térmicas y de acidez."""
     id: int
     nomb_perfil: str
-    temp_min: float
-    temp_max: float
+    revision: int = 1
+    temp_min: Optional[float] = None
+    temp_max: Optional[float] = None
     ph_min: Optional[float] = None
     ph_max: Optional[float] = None
     brix_caida_min_dia: Optional[float] = None

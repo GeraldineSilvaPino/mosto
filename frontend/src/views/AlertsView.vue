@@ -63,7 +63,6 @@ const toastMessage = ref('')
 const isProtocolModalOpen = ref(false)
 const selectedAlert = ref(null)
 const newNoteText = ref('')
-const manualSampleInput = ref('')
 
 // ==========================================
 // MAPEO DE DATOS BACKEND DTO ➔ VIEW MODEL
@@ -150,7 +149,7 @@ function mapBackendAlert(dto) {
   // Identificar sensor y nombre legible
   let sensorType = 'DS18B20'
   let sensorName = 'Sonda Térmica Central'
-  const rawType = (dto.sensor_tipo || dto.tipo_alerta || '').toUpperCase()
+  const rawType = `${dto.tipo_alerta || ''} ${dto.sensor_tipo || ''}`.toUpperCase()
   if (rawType.includes('MPU') || rawType.includes('BRIX') || rawType.includes('TILT')) {
     sensorType = 'MPU-6050'
     sensorName = 'Inclinómetro Giroscopio'
@@ -159,8 +158,10 @@ function mapBackendAlert(dto) {
     sensorName = 'Sonda de pH Analógica'
   }
 
-  const valueDetected = dto.met_dispar ? `Disparo: ${dto.met_dispar}` : 'Desvío enológico registrado'
-  const thresholdRule = 'Límite de Perfil de Fermentación'
+  const kinetic = dto.tipo_alerta === 'brix_ralentizacion'
+  const slope = dto.evidencia?.features?.brix_slope_6h
+  const valueDetected = kinetic ? `${Number.isFinite(slope) ? Number(slope.toFixed(4)).toFixed(4) : 'N/D'} °Bx/h (6 h)` : dto.met_dispar ? `Disparo: ${dto.met_dispar}` : 'Desvío enológico registrado'
+  const thresholdRule = kinetic ? 'Configuración cinética experimental congelada' : 'Límite de Perfil de Fermentación'
 
   return {
     id: dto.id,
@@ -185,7 +186,6 @@ function mapBackendAlert(dto) {
     statusLabel,
     assignedTo: dto.operador_nombre || 'Sin asignar',
     notes,
-    manualCheck: null,
     raw: dto
   }
 }
@@ -281,7 +281,6 @@ function showToast(msg) {
 function openProtocol(alert) {
   selectedAlert.value = alert
   newNoteText.value = ''
-  manualSampleInput.value = alert.manualCheck || ''
   isProtocolModalOpen.value = true
 }
 
@@ -335,12 +334,6 @@ async function persistNote(message) {
 
 async function addNote() {
   if (newNoteText.value.trim() && await persistNote(newNoteText.value.trim())) newNoteText.value = ''
-}
-
-async function saveManualCheck() {
-  if (manualSampleInput.value.trim() && await persistNote(`Medición manual declarada por el operador: ${manualSampleInput.value.trim()}`)) {
-    manualSampleInput.value = ''
-  }
 }
 
 async function resolveAlert() {
@@ -655,10 +648,6 @@ onBeforeUnmount(() => {
                   <span class="val-label">Regla de Umbral:</span>
                   <span class="val-value">{{ alert.thresholdRule }}</span>
                 </div>
-                <div v-if="alert.manualCheck" class="val-item val-item--manual">
-                  <span class="val-label">Muestra Manual:</span>
-                  <span class="val-value manual-val">{{ alert.manualCheck }}</span>
-                </div>
               </div>
 
               <div class="actions-group">
@@ -737,34 +726,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <!-- Protocolo Paso 1: Ingreso de Muestra Manual de Terreno -->
-          <div class="protocol-step">
-            <div class="step-header">
-              <span class="step-num">1</span>
-              <div>
-                <h4 class="step-title">Verificación Manual de Terreno</h4>
-                <p class="step-desc">
-                  Compara la lectura del sensor con un instrumento manual físico (termómetro analógico o refractómetro).
-                </p>
-              </div>
-            </div>
-
-            <div class="manual-check-form">
-              <input
-                v-model="manualSampleInput"
-                type="text"
-                placeholder="Ej: 24.2 °C con termómetro manual / 13.0 °Bx"
-                class="input-manual"
-              />
-              <button class="btn-save-manual" @click="saveManualCheck">
-                Registrar Muestra
-              </button>
-            </div>
-            <div v-if="selectedAlert.manualCheck" class="current-manual-badge">
-              <CheckCircle2 :size="14" />
-              <span>Muestra registrada: <strong>{{ selectedAlert.manualCheck }}</strong></span>
-            </div>
-          </div>
+          <p v-if="!selectedAlert.raw.fermentacion_id" class="step-desc">Este incidente no tiene un proceso asociado. Puedes documentar la revisión en la bitácora; las mediciones estructuradas requieren un proceso identificado.</p>
 
           <div class="protocol-step">
             <h4 class="step-title">Verificación del dispositivo</h4>

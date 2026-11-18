@@ -32,8 +32,8 @@ def test_migration_head_matches_orm_and_is_idempotent():
     upgrade_local(settings.database_url, "test")
     with engine.connect() as connection:
         context = MigrationContext.configure(connection, opts={"compare_type": True})
-        assert context.get_current_revision() == "0004_alert_episodes"
-        assert len(inspect(connection).get_table_names()) == 24
+        assert context.get_current_revision() == "0008_process_profile_overrides"
+        assert len(inspect(connection).get_table_names()) == 30
         assert compare_metadata(context, Base.metadata) == []
 
 
@@ -61,6 +61,9 @@ def test_offline_sql_contains_postgres_guards_without_connection(monkeypatch):
     assert "CREATE FUNCTION public.mosto_validate_reading" in sql
     assert "idx_cuba_proceso_activo_unico" in sql
     assert "detenida" in sql
+    assert "CREATE FUNCTION public.mosto_intervention_event_immutable" in sql
+    assert "CREATE FUNCTION public.mosto_manual_measurement_immutable" in sql
+    assert "CREATE FUNCTION public.mosto_process_override_immutable" in sql
 
 
 def test_unversioned_existing_schema_is_not_stamped(tmp_path):

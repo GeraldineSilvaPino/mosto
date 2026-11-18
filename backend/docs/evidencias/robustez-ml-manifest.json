@@ -1,0 +1,486 @@
+{
+  "contract": "sensor-stress-v1",
+  "status": "experimental_synthetic_only_not_validated_for_real_wine",
+  "feature_version": "kinetics-v1",
+  "target_version": "future-stall-v1",
+  "feature_names": [
+    "age_hours",
+    "brix_mean_1h",
+    "brix_rate_smoothed",
+    "brix_slope_6h",
+    "brix_slope_24h",
+    "brix_residual_std",
+    "temperature_mean_1h",
+    "temperature_mean_24h",
+    "temperature_range_24h",
+    "temperature_slope_6h"
+  ],
+  "generation_seed": 20261117,
+  "policies": {
+    "clean": {
+      "duration_hours": 0
+    },
+    "brix_missing": {
+      "duration_hours": 12
+    },
+    "temperature_missing": {
+      "duration_hours": 12
+    },
+    "brix_frozen_unflagged": {
+      "duration_hours": 24
+    },
+    "brix_drift_unflagged": {
+      "duration_hours": 48,
+      "drift_brix_per_hour": 0.08
+    },
+    "communication_loss": {
+      "duration_hours": 12
+    },
+    "delivery_backlog": {
+      "duration_hours": 12,
+      "release_delay_minutes": 5
+    },
+    "latency_2h": {
+      "delay_hours": 2
+    }
+  },
+  "per_scenario": 4,
+  "duration_hours": 240,
+  "stride_hours": 3,
+  "reference_dataset_sha256": "29a9747d4e39a995ff44fe49a53e244d029aa489d0e8c0cf6479e76ea1dc1039",
+  "frozen_artifact_sha256": "3d6a1ef55ab7134fa7d5c99bc345401e9b2af26787ffb40662246b3f7497f6c3",
+  "frozen_threshold": 0.2188870880231169,
+  "dataset_sha256": "5ad5f5929cca9a8a6305d26c240a6ce9eb532e7d78eec53f9ede4dfcddcd545d",
+  "trajectories": [
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 101,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 1845063987,
+        "scenario": "healthy",
+        "initial_brix": 21.873878316181997,
+        "asymptote_brix": -1.0,
+        "ambient_c": 24.82953503285063,
+        "fault_at_hours": 52.13799814060515,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": null,
+      "sensor_fault_start_hour": 69
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 102,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 645830383,
+        "scenario": "healthy",
+        "initial_brix": 22.298991561444083,
+        "asymptote_brix": -1.0,
+        "ambient_c": 21.79021621022169,
+        "fault_at_hours": 40.64900065577198,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": null,
+      "sensor_fault_start_hour": 95
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 103,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 759366337,
+        "scenario": "healthy",
+        "initial_brix": 22.75982716461127,
+        "asymptote_brix": -1.0,
+        "ambient_c": 21.889578895573777,
+        "fault_at_hours": 47.10144650416542,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": null,
+      "sensor_fault_start_hour": 80
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 104,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 1576964104,
+        "scenario": "healthy",
+        "initial_brix": 23.394192850781735,
+        "asymptote_brix": -1.0,
+        "ambient_c": 20.034756457592152,
+        "fault_at_hours": 58.1044390753715,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": null,
+      "sensor_fault_start_hour": 90
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 105,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 1155589776,
+        "scenario": "cold_shock",
+        "initial_brix": 24.51526365693283,
+        "asymptote_brix": -1.0,
+        "ambient_c": 24.750527693642077,
+        "fault_at_hours": 72.51722629856019,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": {
+        "onset_hour": 159,
+        "confirmed_hour": 165
+      },
+      "sensor_fault_start_hour": 56
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 106,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 1309204242,
+        "scenario": "cold_shock",
+        "initial_brix": 22.411303412057396,
+        "asymptote_brix": -1.0,
+        "ambient_c": 24.003666038423503,
+        "fault_at_hours": 49.923719875281634,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": {
+        "onset_hour": 160,
+        "confirmed_hour": 166
+      },
+      "sensor_fault_start_hour": 87
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 107,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 1479535095,
+        "scenario": "cold_shock",
+        "initial_brix": 25.217868074389905,
+        "asymptote_brix": -1.0,
+        "ambient_c": 20.16398620014383,
+        "fault_at_hours": 45.816721674509786,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": {
+        "onset_hour": 66,
+        "confirmed_hour": 72
+      },
+      "sensor_fault_start_hour": 52
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 108,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 1321095350,
+        "scenario": "cold_shock",
+        "initial_brix": 21.463489968515454,
+        "asymptote_brix": -1.0,
+        "ambient_c": 19.710650345659403,
+        "fault_at_hours": 70.41757174241907,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": {
+        "onset_hour": 79,
+        "confirmed_hour": 85
+      },
+      "sensor_fault_start_hour": 55
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 109,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 2144910251,
+        "scenario": "heat_stress",
+        "initial_brix": 24.380180431708244,
+        "asymptote_brix": -1.0,
+        "ambient_c": 23.296048258005104,
+        "fault_at_hours": 73.1979712952796,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": {
+        "onset_hour": 81,
+        "confirmed_hour": 87
+      },
+      "sensor_fault_start_hour": 58
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 110,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 650000302,
+        "scenario": "heat_stress",
+        "initial_brix": 22.96944505312779,
+        "asymptote_brix": -1.0,
+        "ambient_c": 19.437094773409864,
+        "fault_at_hours": 89.14438837204088,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": {
+        "onset_hour": 102,
+        "confirmed_hour": 108
+      },
+      "sensor_fault_start_hour": 58
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 111,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 751699573,
+        "scenario": "heat_stress",
+        "initial_brix": 24.803269580580675,
+        "asymptote_brix": -1.0,
+        "ambient_c": 19.85038803156059,
+        "fault_at_hours": 69.20001881546504,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": {
+        "onset_hour": 81,
+        "confirmed_hour": 87
+      },
+      "sensor_fault_start_hour": 55
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 112,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 1564987369,
+        "scenario": "heat_stress",
+        "initial_brix": 22.000870200705606,
+        "asymptote_brix": -1.0,
+        "ambient_c": 24.725517597825334,
+        "fault_at_hours": 70.74160606675613,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": {
+        "onset_hour": 78,
+        "confirmed_hour": 84
+      },
+      "sensor_fault_start_hour": 67
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 113,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 1047946371,
+        "scenario": "nutrient_depletion",
+        "initial_brix": 22.22947286109424,
+        "asymptote_brix": -1.0,
+        "ambient_c": 24.432573298425705,
+        "fault_at_hours": 74.00267212087135,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": {
+        "onset_hour": 79,
+        "confirmed_hour": 85
+      },
+      "sensor_fault_start_hour": 48
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 114,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 1772628011,
+        "scenario": "nutrient_depletion",
+        "initial_brix": 23.30387455389219,
+        "asymptote_brix": -1.0,
+        "ambient_c": 20.128014166222226,
+        "fault_at_hours": 66.14443735256248,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": {
+        "onset_hour": 71,
+        "confirmed_hour": 77
+      },
+      "sensor_fault_start_hour": 90
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 115,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 1430682620,
+        "scenario": "nutrient_depletion",
+        "initial_brix": 23.54216701311779,
+        "asymptote_brix": -1.0,
+        "ambient_c": 23.446496233477667,
+        "fault_at_hours": 54.05259676112557,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": {
+        "onset_hour": 59,
+        "confirmed_hour": 65
+      },
+      "sensor_fault_start_hour": 66
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 116,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 555579693,
+        "scenario": "nutrient_depletion",
+        "initial_brix": 25.215343362482024,
+        "asymptote_brix": -1.0,
+        "ambient_c": 20.07406666410971,
+        "fault_at_hours": 91.45775698695256,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": {
+        "onset_hour": 96,
+        "confirmed_hour": 102
+      },
+      "sensor_fault_start_hour": 92
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 117,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 1090476158,
+        "scenario": "slow",
+        "initial_brix": 22.031285352285423,
+        "asymptote_brix": -1.0,
+        "ambient_c": 22.507887771184958,
+        "fault_at_hours": 70.47637608261807,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": null,
+      "sensor_fault_start_hour": 59
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 118,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 623070541,
+        "scenario": "slow",
+        "initial_brix": 21.55278411499941,
+        "asymptote_brix": -1.0,
+        "ambient_c": 23.660054553188473,
+        "fault_at_hours": 83.22064893793728,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": null,
+      "sensor_fault_start_hour": 60
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 119,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 680918473,
+        "scenario": "slow",
+        "initial_brix": 23.933587268971973,
+        "asymptote_brix": -1.0,
+        "ambient_c": 20.706627276890604,
+        "fault_at_hours": 70.81090824982272,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": null,
+      "sensor_fault_start_hour": 74
+    },
+    {
+      "spec": {
+        "model_version": "mosto-phases-1",
+        "process_id": 120,
+        "process_start": "2026-01-01T00:00:00Z",
+        "seed": 804377040,
+        "scenario": "slow",
+        "initial_brix": 26.365203030181043,
+        "asymptote_brix": -1.0,
+        "ambient_c": 24.480244384415357,
+        "fault_at_hours": 76.99342280160695,
+        "duration_hours": 240,
+        "cadence_seconds": 300,
+        "brix_noise_sd": 0.025,
+        "temperature_noise_sd": 0.06
+      },
+      "event": null,
+      "sensor_fault_start_hour": 61
+    }
+  ],
+  "robustness_code_sha256": "06b76fce9fdb55c3c9592418b22e896e40c1f998b21f623692533afa16d0ede9",
+  "python": "3.11.4",
+  "code_sha256": {
+    "ml/causal_dataset.py": "efabdd80745a3161a988bb146b69398e784baee3e516126a737e61825637da89",
+    "ml/causal_pipeline.py": "0cb1254f954064efe9ae0e5b3d74b407c92611acb812b6f0fd78a040dd9f6408",
+    "app/services/kinetics.py": "4bd86e9a30a851764348fa8ce7c445776574a833eab7f0e55cfadc442809d577",
+    "app/simulation/model.py": "44cecd93c79e802cbe8e17ac3b99f2465dc7137e8c86577629db1389d0107ba2"
+  },
+  "packages": {
+    "numpy": "2.4.6",
+    "scikit-learn": "1.9.1",
+    "pydantic": "2.14.2",
+    "joblib": "1.6.0"
+  }
+}

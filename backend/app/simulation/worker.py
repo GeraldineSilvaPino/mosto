@@ -13,6 +13,7 @@ from uuid import NAMESPACE_URL, uuid5
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.simulation.model import SimulationSpec, Trajectory
+from app.simulation.faults import FaultPlan, emission, outage_until
 
 
 class EmitterConfig(BaseModel):
@@ -21,6 +22,13 @@ class EmitterConfig(BaseModel):
     calibration_id: int = Field(gt=0)
     key_env: str = Field(pattern=r"^MOSTO_SIM_DEVICE_[A-Z0-9_]+$")
     simulation: SimulationSpec
+    emitter_faults: FaultPlan | None = None
+
+    @model_validator(mode="after")
+    def validate_faults(self):
+        if self.emitter_faults:
+            self.emitter_faults.validate_horizon(self.simulation)
+        return self
 
 
 class FleetConfig(BaseModel):
@@ -47,6 +55,8 @@ def canonical_json(value):
 def run_id(config):
     # Key rotation does not change identity; only calibration and frozen recipe do.
     value = config.model_dump(mode="json", exclude={"key_env"})
+    if value.get("emitter_faults") is None:
+        value.pop("emitter_faults", None)  # Preserve identity of pre-fault workers.
     return str(uuid5(NAMESPACE_URL, "mosto/simulation/" + canonical_json(value)))
 
 
@@ -125,6 +135,7 @@ class Worker:
         self.sender = sender or LocalHTTP(fleet.base_url)
         self.keys = keys if keys is not None else os.environ
         self.verified = set()
+        self.progressed = False
         self.trajectories = {d.device_id: Trajectory(d.simulation) for d in fleet.devices}
         # The CLI holds exclusive_state for the lifetime of this connection.
         self.db = sqlite3.connect(state_path)
@@ -148,6 +159,7 @@ class Worker:
             raise ValueError("State belongs to a different API origin")
         self.db.execute("INSERT OR IGNORE INTO metadata VALUES ('api_origin', ?)", (expected_origin,))
         try:
+            self._upgrade_state()
             for config in fleet.devices:
                 ident = run_id(config)
                 existing = self.db.execute("SELECT run_id FROM runs WHERE device_id=?", (config.device_id,)).fetchone()
@@ -169,7 +181,47 @@ class Worker:
 
     def statuses(self):
         return [dict(row) for row in self.db.execute(
-            "SELECT device_id,next_sequence,status,failures,last_error FROM runs ORDER BY device_id")]
+            """SELECT device_id,next_sequence,generated_sequence,status,failures,last_error,waiting_until,
+               (SELECT COUNT(*) FROM outbox o WHERE o.run_id=r.run_id AND disposition='pending') AS pending,
+               (SELECT COUNT(*) FROM outbox o WHERE o.run_id=r.run_id AND disposition='lost') AS lost
+               FROM runs r ORDER BY device_id""")]
+
+    def _upgrade_state(self):
+        # Only this emitter's SQLite, never application DB or remote migrations.
+        run_columns = {r[1] for r in self.db.execute("PRAGMA table_info(runs)")}
+        if "generated_sequence" not in run_columns:
+            self.db.execute("ALTER TABLE runs ADD COLUMN generated_sequence INTEGER NOT NULL DEFAULT 0")
+            self.db.execute("UPDATE runs SET generated_sequence=MAX(next_sequence, COALESCE((SELECT MAX(sequence)+1 FROM outbox WHERE outbox.run_id=runs.run_id),0))")
+        if "waiting_until" not in run_columns:
+            self.db.execute("ALTER TABLE runs ADD COLUMN waiting_until TEXT")
+        columns = {r[1] for r in self.db.execute("PRAGMA table_info(outbox)")}
+        if "disposition" not in columns:
+            self.db.execute("ALTER TABLE outbox ADD COLUMN disposition TEXT NOT NULL DEFAULT 'pending'")
+            self.db.execute("UPDATE outbox SET disposition='delivered' WHERE receipt_id IS NOT NULL")
+        if "available_at" not in columns:
+            self.db.execute("ALTER TABLE outbox ADD COLUMN available_at TEXT")
+            for row in self.db.execute("SELECT run_id,sequence,payload FROM outbox").fetchall():
+                self.db.execute("UPDATE outbox SET available_at=? WHERE run_id=? AND sequence=?",
+                                (json.loads(row[2])["observed_at"], row[0], row[1]))
+
+    def _generate(self, config, now, limit):
+        ident, spec = run_id(config), config.simulation
+        index = self.db.execute("SELECT generated_sequence FROM runs WHERE run_id=?", (ident,)).fetchone()[0]
+        for _ in range(limit):
+            observed = spec.process_start + timedelta(seconds=index * spec.cadence_seconds)
+            if index > spec.duration_hours * 12 or observed > now:
+                break
+            temperature, brix, available, lost, truth = emission(self.trajectories[config.device_id], index, config.emitter_faults)
+            body = dict(schema_version=2, device_id=config.device_id, boot_id=ident,
+                        sequence=index, observed_at=observed.isoformat(), calibration_id=config.calibration_id,
+                        temperature_c=temperature, brix_apparent=brix)
+            with self.db:
+                self.db.execute("""INSERT INTO outbox(run_id,sequence,payload,truth,available_at,disposition)
+                                   VALUES (?,?,?,?,?,?)""", (ident, index, canonical_json(body),
+                    canonical_json(truth), available.isoformat(), "lost" if lost else "pending"))
+                self.db.execute("UPDATE runs SET generated_sequence=? WHERE run_id=?", (index + 1, ident))
+            self.progressed = True
+            index += 1
 
     def tick(self, now=None, max_per_device=12):
         now = now or datetime.now(timezone.utc)
@@ -179,8 +231,38 @@ class Worker:
         if not 1 <= max_per_device <= 100:
             raise ValueError("Batch must contain 1 to 100 samples per device")
         delivered = 0
+        self.progressed = False
         for config in self.fleet.devices:
             ident, spec = run_id(config), config.simulation
+            state = self.db.execute("SELECT * FROM runs WHERE run_id=?", (ident,)).fetchone()
+            if state["status"] != "running":
+                continue
+            token = self.keys.get(config.key_env)
+            if not token:
+                self._fail(ident, now, state["failures"], "missing_key", permanent=True)
+                continue
+            if ident not in self.verified:
+                if state["retry_after"] and datetime.fromisoformat(state["retry_after"]) > now:
+                    continue
+                code, remote = self.sender.verify(config, token)
+                if code != 200:
+                    self._fail(ident, now, state["failures"], f"preflight_http_{code}",
+                               permanent=code not in (0, 408, 425, 429) and code < 500)
+                    continue
+                faults = config.emitter_faults.model_dump(mode="json") if config.emitter_faults else None
+                if (not isinstance(remote, dict) or remote.get("source") != "simulado"
+                        or remote.get("device_id") != config.device_id or remote.get("calibration_id") != config.calibration_id
+                        or remote.get("simulation") != spec.model_dump(mode="json") or remote.get("emitter_faults") != faults):
+                    self._fail(ident, now, state["failures"], "preflight_recipe_mismatch", permanent=True)
+                    continue
+                self.verified.add(ident)
+            # Sampling is independent from POST acknowledgement/backoff after preflight.
+            self._generate(config, now, max_per_device)
+            pause = outage_until(spec, config.emitter_faults, now)
+            self.db.execute("UPDATE runs SET waiting_until=? WHERE run_id=?", (pause.isoformat() if pause else None, ident))
+            self.db.commit()
+            if pause:
+                continue
             for _ in range(max_per_device):
                 state = self.db.execute("SELECT * FROM runs WHERE run_id=?", (ident,)).fetchone()
                 if state["status"] != "running" or (state["retry_after"] and datetime.fromisoformat(state["retry_after"]) > now):
@@ -189,55 +271,49 @@ class Worker:
                 if index > spec.duration_hours * 12:
                     self.db.execute("UPDATE runs SET status='completed' WHERE run_id=?", (ident,)); self.db.commit()
                     break
-                observed = spec.process_start + timedelta(seconds=index * spec.cadence_seconds)
-                if observed > now:
-                    break  # Wall time never becomes a fabricated future measurement.
-                token = self.keys.get(config.key_env)
-                if not token:
-                    self._fail(ident, now, state["failures"], "missing_key", permanent=True)
+                pending = self.db.execute("SELECT * FROM outbox WHERE run_id=? AND sequence=?", (ident, index)).fetchone()
+                if pending is None:
                     break
-                if ident not in self.verified:
-                    code, remote = self.sender.verify(config, token)
-                    if code != 200:
-                        self._fail(ident, now, state["failures"], f"preflight_http_{code}",
-                                   permanent=code not in (0, 408, 425, 429) and code < 500)
-                        break
-                    if (not isinstance(remote, dict) or remote.get("source") != "simulado" or remote.get("device_id") != config.device_id
-                            or remote.get("calibration_id") != config.calibration_id
-                            or remote.get("simulation") != spec.model_dump(mode="json")):
-                        self._fail(ident, now, state["failures"], "preflight_recipe_mismatch", permanent=True)
-                        break
-                    self.verified.add(ident)
-                pending = self.db.execute("SELECT payload FROM outbox WHERE run_id=? AND sequence=?", (ident, index)).fetchone()
-                if pending:
-                    body = json.loads(pending[0])
-                else:
-                    sample = self.trajectories[config.device_id].sample(index)
-                    body = dict(schema_version=2, device_id=config.device_id, boot_id=ident,
-                                sequence=index, observed_at=observed.isoformat(), calibration_id=config.calibration_id,
-                                temperature_c={"value": sample["temperature_c"], "quality": "good"},
-                                brix_apparent={"value": sample["brix_apparent"], "quality": "good"})
-                    self.db.execute("INSERT INTO outbox VALUES (?,?,?,?,NULL)",
-                                    (ident, index, canonical_json(body), canonical_json(sample)))
-                    self.db.commit()  # Durable BEFORE the network request.
+                if pending["disposition"] == "lost":
+                    self.db.execute("UPDATE runs SET next_sequence=? WHERE run_id=?", (index + 1, ident))
+                    self.db.commit()
+                    self.progressed = True
+                    continue  # Intentionally lost, with evidence; never fabricate an ACK.
+                if datetime.fromisoformat(pending["available_at"]) > now:
+                    self.db.execute("UPDATE runs SET waiting_until=? WHERE run_id=?", (pending["available_at"], ident))
+                    self.db.commit()
+                    break
+                body = json.loads(pending["payload"])
                 code, receipt = self.sender(body, token)
                 if code in (200, 201):
                     # Reject redirects/misrouted or malformed success responses.
-                    valid = (isinstance(receipt, dict) and isinstance(receipt.get("message_id"), int) and receipt.get("device_id") == config.device_id
-                             and receipt.get("process_id") == spec.process_id and receipt.get("source") == "simulado"
-                             and receipt.get("brix_apparent", {}).get("quality") == "good"
-                             and receipt.get("temperature_c", {}).get("quality") == "good")
+                    valid = self._valid_receipt(receipt, body, spec.process_id)
                     if not valid:
                         self._fail(ident, now, state["failures"], "invalid_receipt", permanent=True)
                         break
                     with self.db:
-                        self.db.execute("UPDATE outbox SET receipt_id=? WHERE run_id=? AND sequence=?", (receipt["message_id"], ident, index))
+                        self.db.execute("UPDATE outbox SET receipt_id=?,disposition='delivered' WHERE run_id=? AND sequence=?", (receipt["message_id"], ident, index))
                         self.db.execute("UPDATE runs SET next_sequence=?,failures=0,retry_after=NULL,last_error=NULL WHERE run_id=?", (index + 1, ident))
                     delivered += 1
+                    self.progressed = True
                 else:
                     self._fail(ident, now, state["failures"], f"http_{code}", permanent=code not in (0, 408, 425, 429) and code < 500)
                     break
         return delivered
+
+    @staticmethod
+    def _valid_receipt(receipt, body, process_id):
+        from app.telemetry_contract import TelemetryAccepted
+        try:
+            parsed = TelemetryAccepted.model_validate(receipt)
+            return (type(receipt["message_id"]) is int and parsed.message_id > 0
+                    and parsed.device_id == body["device_id"] and parsed.process_id == process_id
+                    and parsed.source == "simulado"
+                    and parsed.observed_at == datetime.fromisoformat(body["observed_at"])
+                    and parsed.temperature_c.model_dump() == body["temperature_c"]
+                    and parsed.brix_apparent.model_dump() == body["brix_apparent"])
+        except (ValueError, TypeError, KeyError):
+            return False
 
     def _fail(self, ident, now, failures, reason, permanent):
         retry = now + timedelta(seconds=min(60, 2 ** min(failures + 1, 6)))

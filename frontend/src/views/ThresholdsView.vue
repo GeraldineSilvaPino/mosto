@@ -33,6 +33,7 @@ import {
   FlaskConical
 } from 'lucide-vue-next'
 import profileService from '../services/profileService.js'
+import ProfileHistory from '../components/ProfileHistory.vue'
 import cubaService from '../services/cubaService.js'
 import masterService from '../services/masterService.js'
 
@@ -91,20 +92,21 @@ const cubasMapping = ref([
 // MAPEO DE DATOS BACKEND ⇄ VISTA
 // ==========================================
 function mapBackendProfile(p) {
-  const tempMin = p.temp_min !== null && p.temp_min !== undefined ? Number(p.temp_min) : 18.0
-  const tempMax = p.temp_max !== null && p.temp_max !== undefined ? Number(p.temp_max) : 28.0
-  const critMin = p.crit_min !== null && p.crit_min !== undefined ? Number(p.crit_min) : Math.round((tempMin - 4.0) * 10) / 10
-  const critMax = p.crit_max !== null && p.crit_max !== undefined ? Number(p.crit_max) : Math.round((tempMax + 3.0) * 10) / 10
+  const tempMin = p.temp_min ?? null
+  const tempMax = p.temp_max ?? null
+  const critMin = p.crit_min ?? null
+  const critMax = p.crit_max ?? null
 
-  const phMin = p.ph_min !== null && p.ph_min !== undefined ? Number(p.ph_min) : 3.20
-  const phMax = p.ph_max !== null && p.ph_max !== undefined ? Number(p.ph_max) : 3.80
-  const brixCaida = p.brix_caida_min_dia !== null && p.brix_caida_min_dia !== undefined ? Number(p.brix_caida_min_dia) : 1.50
+  const phMin = p.ph_min ?? null
+  const phMax = p.ph_max ?? null
+  const brixCaida = p.brix_caida_min_dia ?? null
 
   return {
     id: p.id,
+    revision: p.revision,
     name: p.nomb_perfil,
     varieties: p.cepa_nombre || 'Cepas Enológicas',
-    description: `Perfil calibrado para ${p.cepa_nombre || 'variedad enológica'}. Bandas térmicas en bodega ${p.bodega_nombre || 'Principal'}.`,
+    description: `Configuración para ${p.cepa_nombre || 'variedad no informada'}. Bodega ${p.bodega_nombre || 'no informada'}.`,
     optimalMin: tempMin,
     optimalMax: tempMax,
     critMin: critMin,
@@ -217,6 +219,10 @@ async function loadProfiles(isManual = false) {
 async function handleSaveSettings() {
   if (!currentProfile.value) return
   formError.value = null
+  if (!Number.isFinite(currentProfile.value.optimalMin) || !Number.isFinite(currentProfile.value.optimalMax)) {
+    formError.value = 'Completa los límites térmicos antes de guardar; los datos ausentes no se convierten en cero.'
+    return
+  }
 
   // 1. Validación estricta previa en frontend (ck_perfil_temp)
   if (Number(currentProfile.value.optimalMin) > Number(currentProfile.value.optimalMax)) {
@@ -238,12 +244,13 @@ async function handleSaveSettings() {
   try {
     if (typeof currentProfile.value.id === 'number') {
       const payload = {
+        expected_revision: currentProfile.value.revision,
         nomb_perfil: currentProfile.value.name,
         temp_min: Number(currentProfile.value.optimalMin),
         temp_max: Number(currentProfile.value.optimalMax),
-        ph_min: Number(currentProfile.value.phMin),
-        ph_max: Number(currentProfile.value.phMax),
-        brix_caida_min_dia: Number(currentProfile.value.brixCaidaMinDia)
+        ph_min: currentProfile.value.phMin === '' ? null : currentProfile.value.phMin,
+        ph_max: currentProfile.value.phMax === '' ? null : currentProfile.value.phMax,
+        brix_caida_min_dia: currentProfile.value.brixCaidaMinDia === '' ? null : currentProfile.value.brixCaidaMinDia
       }
 
       const updated = await profileService.actualizarPerfil(currentProfile.value.id, payload)
@@ -500,19 +507,21 @@ onMounted(() => {
 
           <div class="profile-pill-range">
             <Thermometer :size="14" />
-            <span>Banda óptima: <strong>{{ prof.optimalMin }}°C - {{ prof.optimalMax }}°C</strong></span>
+            <span>Banda configurada: <strong>{{ prof.optimalMin ?? 'N/D' }}°C - {{ prof.optimalMax ?? 'N/D' }}°C</strong></span>
           </div>
 
           <div class="profile-pill-ph">
             <FlaskConical :size="13" />
-            <span>pH: <strong>{{ prof.phMin }} - {{ prof.phMax }}</strong> · Azúcar: <strong>{{ prof.brixCaidaMinDia }} °Bx/d</strong></span>
+            <span>pH: <strong>{{ prof.phMin ?? 'N/D' }} - {{ prof.phMax ?? 'N/D' }}</strong> · Caída configurada: <strong>{{ prof.brixCaidaMinDia ?? 'N/D' }} °Bx/d</strong></span>
           </div>
         </div>
       </div>
     </section>
 
+    <ProfileHistory v-if="currentProfile" :profile-id="currentProfile.id" :revision="currentProfile.revision" />
+    <p v-if="currentProfile && (currentProfile.optimalMin == null || currentProfile.optimalMax == null)" role="status">Perfil sin límites térmicos completos. No hay banda aplicable.</p>
     <!-- Visualizador del Espectro Térmico (Termómetro Gráfico) -->
-    <section v-if="currentProfile" class="spectrum-section">
+    <section v-if="currentProfile && currentProfile.optimalMin != null && currentProfile.optimalMax != null" class="spectrum-section">
       <div class="spectrum-header">
         <div class="spectrum-title-area">
           <h3 class="spectrum-title">Espectro de Temperaturas: {{ currentProfile.name }}</h3>

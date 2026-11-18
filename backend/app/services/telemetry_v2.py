@@ -190,6 +190,8 @@ def ingest(db, payload, token):
         db.flush()
         from app.services.episodes import evaluate_thermal
         evaluate_thermal(db, process, message)
+        from app.services.kinetic_episodes import evaluate_kinetic
+        evaluate_kinetic(db, process, message)
         device.ultima_recepcion = received_at
         db.commit()
     except IntegrityError:

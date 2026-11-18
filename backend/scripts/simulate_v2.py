@@ -35,11 +35,13 @@ def main():
                 if status != previous:
                     print(json.dumps({"delivered": count, "devices": status}), flush=True)
                     previous = status
-                if args.once or args.drain and not count:
-                    return 1 if any(s["status"] == "blocked" or s["failures"] for s in status) else 0
+                if args.once or args.drain and not worker.progressed:
+                    if any(s["status"] == "blocked" or s["failures"] for s in status):
+                        return 1
+                    return 2 if any(s["pending"] for s in status) else 0
                 if all(s["status"] in {"completed", "blocked"} for s in status):
                     return 1 if any(s["status"] == "blocked" for s in status) else 0
-                stopped.wait(0.05 if count else 1)
+                stopped.wait(0.05 if worker.progressed else 1)
         finally:
             worker.close()
     return 0

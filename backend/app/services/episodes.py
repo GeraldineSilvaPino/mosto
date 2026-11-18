@@ -32,26 +32,39 @@ def evaluate_thermal(db, process, message):
         return
     observed = aware(message.observado_en)
     profile = db.get(m.PerfilFermentacion, process.perfil_id) if process.perfil_id else None
+    from app.services.profile_versions import effective_profile
+    applied = effective_profile(process, profile)
+    from app.services.profile_overrides import adjustment_at, thermal_configuration
+    adjustment = adjustment_at(db, process.id, observed)
     for code in ("temperatura_alta", "temperatura_baja"):
         state = db.query(m.EstadoRegla).filter_by(fermentacion_id=process.id, codigo=code).with_for_update().first()
         previous = aware(state.ultima_observacion) if state else None
         if previous is not None and observed <= previous:
             continue
         if state is None:
-            if profile is None or profile.temp_min is None or profile.temp_max is None:
+            if applied.get("temp_min") is None or applied.get("temp_max") is None:
                 continue  # No guessed fallback thresholds.
-            low, high = float(profile.temp_min), float(profile.temp_max)
+            low, high = float(applied["temp_min"]), float(applied["temp_max"])
             state = m.EstadoRegla(fermentacion_id=process.id, codigo=code, ultima_observacion=observed,
-                configuracion={"version": RULE_VERSION, "profile_id": profile.id, "temp_min": low,
+                configuracion={"version": RULE_VERSION, "profile_id": process.perfil_id,
+                               "profile_revision": applied.get("revision") if process.perfil_snapshot else None, "temp_min": low,
                                "temp_max": high, "hysteresis_c": min(.5, max(0, (high-low)/4)),
                                "hold_seconds": 600, "max_gap_seconds": 900})
             db.add(state)
-        config = state.configuracion
+        episode = db.query(m.EventoAlerta).filter_by(id=state.episodio_id).with_for_update().first() if state.episodio_id else None
+        revision = adjustment.revision if adjustment else 0
+        if episode:
+            # An override never relaxes the recovery threshold of an open episode.
+            config = (episode.evidencia or {}).get('configuration', state.configuracion)
+        else:
+            config = thermal_configuration(state.configuracion, adjustment)
+            if (state.perfil_ajuste_revision or 0) != revision:
+                state.inicio_candidato = state.inicio_recuperacion = None
+                state.perfil_ajuste_revision = revision
         gap = previous is not None and observed - previous > MAX_GAP
         if gap:
             state.inicio_candidato = state.inicio_recuperacion = None
         state.ultima_observacion = observed
-        episode = db.query(m.EventoAlerta).filter_by(id=state.episodio_id).with_for_update().first() if state.episodio_id else None
         usable = message.calidad_temperatura == "good" and message.temperatura is not None
         if not usable:
             state.inicio_candidato = state.inicio_recuperacion = None

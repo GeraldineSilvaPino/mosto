@@ -4,15 +4,79 @@ Permite iniciar nuevos procesos en cubas disponibles y finalizar procesos en cur
 """
 from typing import List, Optional
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import AwareDatetime
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.services.access import business_db, actor_id
 from app.models import Cuba, ProcesoFermentacion, PerfilFermentacion, Cepa, LecturaTelemetria
 from app.schemas import ProcesoIniciarIn, ProcesoFinalizarIn, ProcesoOut
+from app.services.kinetic_episodes import KineticRuleConfig, CODE, rule_status
 
 router = APIRouter(prefix="/api/procesos", tags=["Procesos de Fermentación"])
+
+
+@router.get("/{proceso_id}/cinetica", summary="Cinética causal de Brix aparente, sin riesgo validado")
+def obtener_cinetica(proceso_id: int, response: Response,
+                     as_of: Optional[AwareDatetime] = None,
+                     db: Session = Depends(business_db("operations"))):
+    from app.services.kinetics_query import process_kinetics
+    from app.services.telemetry_v2 import aware, utc_now
+
+    process = db.query(ProcesoFermentacion).filter_by(id=proceso_id).first()
+    if process is None:
+        raise HTTPException(404, "Proceso no encontrado")
+    now = utc_now()
+    cutoff = as_of or now
+    if cutoff > now or cutoff < aware(process.fecha_inicio):
+        raise HTTPException(422, "Instante fuera del historial disponible del proceso")
+    response.headers["Cache-Control"] = "no-store"
+    result = process_kinetics(db, process, cutoff)
+    # Configuration/lifecycle is current, explicitly separate from the historical snapshot.
+    result["current_kinetic_rule"] = rule_status(db, process.id)
+    from app.services.monitoring import monitoring_status
+    result["current_monitoring"] = monitoring_status(db, process, now)
+    return result
+
+
+@router.post("/{proceso_id}/regla-cinetica", summary="Activar regla cinética experimental para simulación")
+def configurar_regla_cinetica(proceso_id: int, payload: KineticRuleConfig, response: Response,
+                             db: Session = Depends(business_db("kinetic_rules"))):
+    from app import models as m
+    from app.services.access import actor_id
+    from app.services.demo_access import require_demo_mode
+    from app.services.telemetry_v2 import utc_now
+
+    require_demo_mode()
+    process = db.query(ProcesoFermentacion).filter_by(id=proceso_id).first()
+    if process is None:
+        raise HTTPException(404, "Proceso no encontrado")
+    # Same lock as ingestion and closure; configuration cannot race their writes.
+    db.query(Cuba).filter_by(id=process.cuba_id).with_for_update().one()
+    db.refresh(process)
+    if process.fecha_real_fin is not None:
+        raise HTTPException(409, "El proceso está cerrado")
+    sources = {r[0] for r in db.query(m.MensajeTelemetria.origen).filter_by(fermentacion_id=process.id).distinct()}
+    devices = db.query(m.Dispositivo).join(m.AsignacionDispositivo).filter(
+        m.AsignacionDispositivo.cuba_id == process.cuba_id, m.AsignacionDispositivo.activo.is_(True)).all()
+    if sources - {"simulado"} or not devices or any(d.origen != "simulado" for d in devices):
+        raise HTTPException(409, "La regla experimental requiere un proceso y dispositivos exclusivamente simulados")
+    config = payload.model_dump()
+    state = db.query(m.EstadoRegla).filter_by(fermentacion_id=process.id, codigo=CODE).first()
+    if state:
+        if any(state.configuracion.get(key) != value for key, value in config.items()):
+            raise HTTPException(409, "La configuración está congelada para este proceso; usar un nuevo proceso para otra configuración")
+    else:
+        now = utc_now()
+        state = m.EstadoRegla(fermentacion_id=process.id, codigo=CODE, ultima_observacion=now,
+            configuracion={**config, "configured_at": now.isoformat(), "configured_by": actor_id(db),
+                           "profile_id": process.perfil_id})
+        db.add(state)
+        db.commit()
+        response.status_code = 201
+    response.headers["Cache-Control"] = "no-store"
+    return rule_status(db, process.id)
 
 
 def _mapear_proceso_out(p: ProcesoFermentacion) -> ProcesoOut:
@@ -41,7 +105,8 @@ def _mapear_proceso_out(p: ProcesoFermentacion) -> ProcesoOut:
         cuba_id=p.cuba_id,
         codigo_cuba=p.cuba.codigo if p.cuba else None,
         perfil_id=p.perfil_id,
-        perfil_nombre=perfil_nombre,
+        perfil_nombre=p.perfil_snapshot.get("nomb_perfil") if p.perfil_snapshot else perfil_nombre,
+        perfil_snapshot=p.perfil_snapshot,
         cepa_nombre=cepa_nombre,
         volumen_litros=float(p.volumen_litros) if p.volumen_litros is not None else None,
         brix_inicial=float(p.brix_inicial) if p.brix_inicial is not None else None,
@@ -132,12 +197,14 @@ def iniciar_proceso(payload: ProcesoIniciarIn, db: Session = Depends(business_db
         query = query.filter(PerfilFermentacion.id == payload.perfil_id)
     elif payload.cepa_id:
         query = query.filter(PerfilFermentacion.cepa_id == payload.cepa_id)
-    candidates = query.limit(2).all()
+    candidates = query.with_for_update().limit(2).all()
     if not candidates:
         raise HTTPException(404, "No hay un perfil activo autorizado para esta cuba")
     if len(candidates) != 1:
         raise HTTPException(422, "Debe seleccionar explícitamente el perfil de fermentación")
     perfil = candidates[0]
+    from app.services.profile_versions import record_version
+    frozen_profile = record_version(db, perfil).configuracion
 
     ahora = datetime.utcnow()
     dias_est = payload.dias_estimados or 14
@@ -146,6 +213,7 @@ def iniciar_proceso(payload: ProcesoIniciarIn, db: Session = Depends(business_db
     nuevo_proceso = ProcesoFermentacion(
         cuba_id=cuba.id,
         perfil_id=perfil.id if perfil else None,
+        perfil_snapshot=dict(frozen_profile),
         volumen_litros=payload.volumen_litros,
         brix_inicial=payload.brix_inicial or 24.5,
         brix_objetivo=payload.brix_objetivo or 1.0,

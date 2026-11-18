@@ -80,6 +80,8 @@ def test_company_lists_details_metrics_export_and_cache_isolation(client, tenant
         assert client.get(f"/api/{resource}/{foreign[key]}").status_code == 404
     for suffix in ("historico", "ml-prediction"):
         assert client.get(f"/api/cubas/{foreign['cube']}/{suffix}").status_code == 404
+    assert client.get(f"/api/procesos/{foreign['process']}/cinetica").status_code == 404
+    assert client.post(f"/api/procesos/{foreign['process']}/regla-cinetica", json={}).status_code == 404
     notes = client.get("/api/bitacora").json()
     assert all(row["message"] != "foreign" for row in notes)
     assert client.get("/api/alertas/metricas").json()["total_alertas"] == 2
