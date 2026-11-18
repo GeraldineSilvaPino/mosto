@@ -1,5 +1,16 @@
 # Estado A
 
+## 18-11: A3, respaldo/restauración SQLite local
+
+Implementado scripts/sqlite_backup.py y guía RESPALDO_SQLITE.md. Snapshot por API
+SQLite, manifiesto/hash, comprobación de integridad/FKs/revisión y cantidades;
+rechazo de sobrescritura. Cuatro pruebas aprobadas (1,30 s), incluida restauración
+del esquema Mosto actual con datos. Corregido cierre explícito de conexiones para
+permitir limpieza del archivo fallido en Windows. No certifica PostgreSQL ni RPO/RTO.
+Siguiente trabajo A3: ensayo equivalente PostgreSQL aislado, carga e instalación
+limpia. A1 aún requiere migración temporal; no se habilitó ingesta acelerada.
+Revisión remota B al iniciar: sin solicitudes. Frontend y archivos B intactos.
+
 ## 18-11: A3, correlación HTTP
 
 Middleware registra request_id propio, método, plantilla de ruta, status y duración;
