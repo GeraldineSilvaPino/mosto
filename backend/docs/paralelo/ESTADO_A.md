@@ -1,5 +1,34 @@
 # Estado A
 
+## 18-11 — A3, instalación limpia y primera carga de lectura
+
+Restauración PostgreSQL publicada en `7ddf03c`. En Windows, venv nuevo con Python
+3.14.6, instalación desde requirements-tested-windows-py314.txt y pip check
+correctos. Suite SQLite completa en ese entorno: 329 aprobadas, 16 omitidas,
+3961 advertencias, 114,53 s. Docker CLI instalado, motor Linux inaccesible
+(falta el pipe dockerDesktopLinuxEngine); ensayo Compose pendiente.
+
+Carga objetivo local: lecturas autenticadas de /api/procesos/pagina?limit=1
+sobre la semilla demo, 12 peticiones consecutivas por cliente con 1, 4 y 8
+clientes, cero errores y p95 inferior a 2 s por escalón. Uvicorn por TCP local,
+PostgreSQL 18.4 desechable. Desde backend:
+
+```powershell
+python -m scripts.test_postgres --pg-bin "C:/Program Files/PostgreSQL/18/bin" -- backend/tests/bench_process_page.py -qs --disable-warnings
+```
+
+| Clientes | Peticiones | Errores | Peticiones/s | p95 ms | Pico de conexiones del pool en uso |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 12 | 0 | 44,6 | 32,1 | 2 |
+| 4 | 48 | 0 | 36,7 | 275,4 | 8 |
+| 8 | 96 | 0 | 39,1 | 363,9 | 15 |
+
+Una prueba aprobada y apagado confirmado. A ocho clientes el pool alcanzó su
+capacidad predeterminada (5 + 10). La medición cubre una página sobre pocos datos
+con un usuario; quedan por caracterizar escritura IoT, históricos grandes y
+carga sostenida. Siguiente A1: vincular el reloj a proceso incluso si cambia el
+dispositivo. Pendientes A3 externos: Docker operativo y evidencia de CI remota.
+
 ## 18-11 — A3, restauración PostgreSQL verificada
 
 Reanudación en `0e4cd61` con árbol limpio, sin pytest ni worker Python activo.
