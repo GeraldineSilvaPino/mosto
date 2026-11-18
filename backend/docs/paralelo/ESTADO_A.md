@@ -1,5 +1,20 @@
 # Estado A
 
+## 18-11 — A4, reproducción del pipeline y protocolo de lotes reales
+
+Finalizaron los siete comandos de referencia, robustez e intervalos en un venv
+limpio Python 3.14.6. Directorio local ignorado
+`backend/artifacts/replica-a-1a907655-b399-420e-8ab7-ef6270c610f8`. Métricas
+reproducidas dentro de 1e-8, con hashes distintos de los de Python 3.11.
+Quedan registrados comparación, particiones, límites y hashes en
+[FICHA_MODELO_EXPERIMENTAL](../FICHA_MODELO_EXPERIMENTAL.md). Protocolo de
+etiquetas y reserva real en [VALIDACION_ENOLOGICA](../VALIDACION_ENOLOGICA.md).
+Pendientes externos: lotes, revisión instrumental y adjudicación enológica.
+ML continúa NO_VALIDADO. A4 hardware/DSS sigue abierto.
+
+CI de A3 confirmada para `9d910d9`: ambos trabajos, Windows y PostgreSQL Linux,
+con resultado satisfactorio en [GitHub Actions](https://github.com/GeraldineSilvaPino/mosto/actions/runs/44391742537).
+
 ## 18-11 — A3, instalación limpia y primera carga de lectura
 
 Restauración PostgreSQL publicada en `7ddf03c`. En Windows, venv nuevo con Python
