@@ -37,11 +37,16 @@ def stop_temporary_cluster(run, data, timeout=180):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pg-bin", required=True, type=Path)
+    parser.add_argument("--restore-drill", action="store_true",
+                        help="Migrate, seed and restore into a second empty local database")
     parser.add_argument("pytest_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     binaries = args.pg_bin.resolve()
     suffix = ".exe" if os.name == "nt" else ""
-    for tool in ("initdb", "pg_ctl"):
+    if args.restore_drill and args.pytest_args:
+        parser.error("--restore-drill runs separately from pytest")
+    for tool in (("initdb", "pg_ctl", "pg_dump", "pg_restore") if args.restore_drill
+                 else ("initdb", "pg_ctl")):
         if not (binaries / (tool + suffix)).is_file():
             parser.error(f"Missing PostgreSQL executable: {tool}")
     backend = Path(__file__).resolve().parents[1]
@@ -86,6 +91,8 @@ def main():
             with admin.cursor() as cur:
                 cur.execute(sql.SQL("CREATE ROLE mosto_test LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS").format(sql.Literal(password)))
                 cur.execute("CREATE DATABASE mosto_test OWNER mosto_test")
+                if args.restore_drill:
+                    cur.execute("CREATE DATABASE mosto_test_restore OWNER mosto_test")
                 cur.execute("SELECT version()")
                 print(cur.fetchone()[0], flush=True)
         finally:
@@ -93,6 +100,12 @@ def main():
         url = URL.create("postgresql+psycopg2", username="mosto_test", password=password,
                          host="127.0.0.1", port=port, database="mosto_test")
         env = dict(os.environ, MOSTO_TEST_DATABASE_URL=url.render_as_string(hide_password=False))
+        if args.restore_drill:
+            os.environ.update(MOSTO_ENV="test", DATABASE_URL=env["MOSTO_TEST_DATABASE_URL"],
+                              JWT_SECRET_KEY=secrets.token_hex(32))
+            from scripts.postgres_restore_drill import run_restore_drill
+            run_restore_drill(binaries, cluster_root / "snapshot.dump")
+            return 0
         test_args = args.pytest_args
         if test_args[:1] == ["--"]:
             test_args = test_args[1:]

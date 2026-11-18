@@ -1,5 +1,28 @@
 # Estado A
 
+## 18-11 — A3, restauración PostgreSQL verificada
+
+Reanudación en `0e4cd61` con árbol limpio, sin pytest ni worker Python activo.
+Los registros de dos clústeres anteriores confirman apagado. Otro directorio
+histórico conserva un postmaster.pid cuyo PID ya no existe. Se conservaron
+esos artefactos. B seguía en la base común sin solicitudes tras fetch.
+
+Desde `backend`, ejecutar con el Python del entorno:
+
+```powershell
+python -m scripts.test_postgres --pg-bin "C:/Program Files/PostgreSQL/18/bin" --restore-drill
+```
+
+El lanzador crea un clúster local y dos bases vacías. Migra y siembra la primera,
+hace pg_dump con el propietario limitado, modifica un valor testigo y restaura en
+la segunda con pg_restore en una transacción. PostgreSQL 18.4 recuperó 30 tablas,
+26 filas totales, el valor previo y la revisión 0008_process_profile_overrides.
+Coincidieron cantidades por tabla e inventario de 306 restricciones (nombre, tipo,
+tabla y validación). La restauración rechazó estado inválido, cambio de propiedad
+histórica y referencia huérfana. Apagado del clúster confirmado.
+Alcance local con datos demo; RPO/RTO de operación real pendientes.
+Punto siguiente de A3: carga HTTP concurrente e instalación limpia.
+
 ## 18-11: A3, respaldo/restauración SQLite local
 
 Implementado scripts/sqlite_backup.py y guía RESPALDO_SQLITE.md. Snapshot por API
