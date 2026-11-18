@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.simulation.model import SimulationSpec, Trajectory
 from app.simulation.faults import FaultPlan, emission, outage_until
+from app.simulation.clock import SimulationClock
 
 
 class EmitterConfig(BaseModel):
@@ -23,9 +24,12 @@ class EmitterConfig(BaseModel):
     key_env: str = Field(pattern=r"^MOSTO_SIM_DEVICE_[A-Z0-9_]+$")
     simulation: SimulationSpec
     emitter_faults: FaultPlan | None = None
+    simulation_clock: SimulationClock | None = None
 
     @model_validator(mode="after")
     def validate_faults(self):
+        if self.simulation_clock and self.simulation_clock.simulated_anchor != self.simulation.process_start:
+            raise ValueError("Clock anchor must match simulation start")
         if self.emitter_faults:
             self.emitter_faults.validate_horizon(self.simulation)
         return self
@@ -55,6 +59,8 @@ def canonical_json(value):
 def run_id(config):
     # Key rotation does not change identity; only calibration and frozen recipe do.
     value = config.model_dump(mode="json", exclude={"key_env"})
+    if value.get("simulation_clock") is None:
+        value.pop("simulation_clock", None)  # Preserve existing outbox identities.
     if value.get("emitter_faults") is None:
         value.pop("emitter_faults", None)  # Preserve identity of pre-fault workers.
     return str(uuid5(NAMESPACE_URL, "mosto/simulation/" + canonical_json(value)))
@@ -206,12 +212,20 @@ class Worker:
 
     def _generate(self, config, now, limit):
         ident, spec = run_id(config), config.simulation
+        clock = config.simulation_clock
+        simulated_now = clock.simulated_at(now) if clock else now
         index = self.db.execute("SELECT generated_sequence FROM runs WHERE run_id=?", (ident,)).fetchone()[0]
         for _ in range(limit):
             observed = spec.process_start + timedelta(seconds=index * spec.cadence_seconds)
-            if index > spec.duration_hours * 12 or observed > now:
+            if index > spec.duration_hours * 12 or observed > simulated_now:
                 break
             temperature, brix, available, lost, truth = emission(self.trajectories[config.device_id], index, config.emitter_faults)
+            if clock:
+                # Sequence-based outage boundaries follow the simulation; a
+                # delivery_delay is explicitly measured in real seconds.
+                delay = sum(f.delay_seconds for f in config.emitter_faults.events
+                            if f.kind == "delivery_delay" and f.start_sequence <= index < f.end_sequence) if config.emitter_faults else 0
+                available = clock.delivery_at(observed, delay) if delay else clock.real_at(available)
             body = dict(schema_version=2, device_id=config.device_id, boot_id=ident,
                         sequence=index, observed_at=observed.isoformat(), calibration_id=config.calibration_id,
                         temperature_c=temperature, brix_apparent=brix)
@@ -250,7 +264,9 @@ class Worker:
                                permanent=code not in (0, 408, 425, 429) and code < 500)
                     continue
                 faults = config.emitter_faults.model_dump(mode="json") if config.emitter_faults else None
+                clock_data = config.simulation_clock.model_dump(mode="json") if config.simulation_clock else None
                 if (not isinstance(remote, dict) or remote.get("source") != "simulado"
+                        or remote.get("simulation_clock") != clock_data
                         or remote.get("device_id") != config.device_id or remote.get("calibration_id") != config.calibration_id
                         or remote.get("simulation") != spec.model_dump(mode="json") or remote.get("emitter_faults") != faults):
                     self._fail(ident, now, state["failures"], "preflight_recipe_mismatch", permanent=True)
@@ -258,7 +274,10 @@ class Worker:
                 self.verified.add(ident)
             # Sampling is independent from POST acknowledgement/backoff after preflight.
             self._generate(config, now, max_per_device)
-            pause = outage_until(spec, config.emitter_faults, now)
+            clock = config.simulation_clock
+            pause = outage_until(spec, config.emitter_faults, clock.simulated_at(now) if clock else now)
+            if pause and clock:
+                pause = clock.real_at(pause)
             self.db.execute("UPDATE runs SET waiting_until=? WHERE run_id=?", (pause.isoformat() if pause else None, ident))
             self.db.commit()
             if pause:

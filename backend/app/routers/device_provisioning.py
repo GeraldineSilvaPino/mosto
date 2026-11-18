@@ -78,6 +78,9 @@ def create_calibration(device_id: int, payload: CalibrationCreate,
                        db: Session = Depends(business_db("provision"))):
     device = _device(db, device_id)
     expected = {"fisico": "tilt_polynomial", "simulado": "synthetic_identity"}.get(device.origen)
+    if payload.simulation_clock is not None:
+        from app.services.demo_access import require_demo_mode
+        require_demo_mode()
     if expected is None or payload.method != expected:
         raise HTTPException(409, "Aprovisione el dispositivo y use el método correspondiente a su origen")
     if payload.simulation is not None:
@@ -93,6 +96,14 @@ def create_calibration(device_id: int, payload: CalibrationCreate,
             dispositivo_id=device.id, cuba_id=process.cuba_id, activo=True).first()
         if assignment is None or aware(assignment.asignado_en) > spec.process_start:
             raise HTTPException(409, "El dispositivo debe estar asignado desde el inicio de la simulación")
+        if payload.simulation is not None:
+            existing = db.query(m.CalibracionDispositivo).filter_by(dispositivo_id=device.id).all()
+            for row in existing:
+                prior = row.parametros.get("simulation")
+                if prior and prior.get("process_id") == spec.process_id:
+                    clock = payload.simulation_clock.model_dump(mode="json") if payload.simulation_clock else None
+                    if row.parametros.get("simulation_clock") != clock:
+                        raise HTTPException(409, "El reloj registrado para el proceso no puede cambiar")
     calibration = m.CalibracionDispositivo(dispositivo_id=device.id, version=payload.version,
         metodo=payload.method, parametros=payload.model_dump(mode="json"), valida_desde=payload.valid_from,
         valida_hasta=payload.valid_until, creada_en=utc_now(), creada_por=actor_id(db))

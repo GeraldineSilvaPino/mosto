@@ -69,14 +69,17 @@ def _slope(x, y):
     return float(coefficients[0]), float(np.std(residual))
 
 
-def extract(observations, *, process_id, process_start, as_of):
+def extract(observations, *, process_id, process_start, as_of, received_as_of=None):
     as_of, process_start = utc(as_of), utc(process_start)
+    # Observation age and real availability may use different clocks in an
+    # explicitly accelerated simulation. Legacy callers retain a single cutoff.
+    received_as_of = as_of if received_as_of is None else utc(received_as_of)
     if as_of < process_start:
         raise ValueError("Inference precedes process start")
     start = as_of - timedelta(hours=WINDOW_HOURS)
     rows = sorted((r for r in observations if r.process_id == process_id
                    and max(start, process_start) <= utc(r.observed_at) <= as_of
-                   and utc(r.received_at) <= as_of), key=lambda r: utc(r.observed_at))
+                   and utc(r.received_at) <= received_as_of), key=lambda r: utc(r.observed_at))
     grid = np.arange(289) * GRID_SECONDS + start.timestamp()
     x = (grid - grid[-1]) / 3600
     reasons = []
@@ -131,6 +134,7 @@ def extract(observations, *, process_id, process_start, as_of):
                 and features["brix_slope_6h"] > -.015 and features["brix_slope_24h"] < -.04):
             observation = "ralentizacion_observada"
     return {"version": VERSION, "process_id": process_id, "as_of": as_of.isoformat(),
+            "received_as_of": received_as_of.isoformat(),
             "window_start": start.isoformat(), "eligible": not reasons,
             "abstention_reasons": reasons, "channels": channels, "features": features,
             "observation": observation, "evidence": {

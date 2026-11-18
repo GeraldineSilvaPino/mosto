@@ -7,8 +7,14 @@ evaluación local, no umbrales enológicos validados. No habilita ML operacional
 
 Brix **aparente** no equivale a azúcar residual ni permite declarar el fin del
 proceso. «Causal» significa aquí disponibilidad temporal, no inferencia de causas.
-Cada extracción pertenece a un proceso y a un instante UTC: solo admite muestras
-con observación **y recepción** anteriores o iguales a ese instante. La calidad
+Cada extracción pertenece a un proceso y a un corte UTC de observación (`as_of`).
+Desde el 18-11-2026, el extractor y el adaptador interno admiten además
+`received_as_of`, corte UTC de disponibilidad real. Solo se admiten observaciones
+hasta `as_of` y recepciones hasta `received_as_of`, inclusive. Si se omite el
+segundo corte se usa `as_of`, preservando el contrato anterior. Ambos cortes se
+devuelven explícitamente; edad, rejilla y pendientes usan solo observación.
+La API pública sigue usando un corte común: todavía no habilita simulación
+acelerada ni permite elegir libremente una disponibilidad futura. La calidad
 y calibración son las congeladas al ingerir; una revocación posterior no reescribe
 lo que entonces se sabía. La hora de recepción no garantiza visibilidad de commit.
 

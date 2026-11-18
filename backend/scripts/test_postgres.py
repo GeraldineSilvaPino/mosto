@@ -13,10 +13,25 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 
 import psycopg2
 from psycopg2 import sql
 from sqlalchemy.engine import URL
+
+
+def stop_temporary_cluster(run, data, timeout=180):
+    """Request shutdown once, then observe it without killing a slow checkpoint."""
+    run("pg_ctl", "-D", data, "-m", "fast", "-W", "stop")
+    deadline = time.monotonic() + timeout
+    while True:
+        status = run("pg_ctl", "-D", data, "status").returncode
+        if status == 3:  # pg_ctl: server is not running
+            return True
+        if status != 0 or time.monotonic() >= deadline:
+            return False
+        print("Waiting for temporary PostgreSQL shutdown...", flush=True)
+        time.sleep(5)
 
 
 def main():
@@ -87,10 +102,15 @@ def main():
     finally:
         safe_to_remove = not started
         if started:
-            result = run("pg_ctl", "-D", data, "-m", "fast", "-w", "stop")
-            safe_to_remove = result.returncode == 0
+            try:
+                safe_to_remove = stop_temporary_cluster(run, data)
+            except (subprocess.TimeoutExpired, OSError) as error:
+                safe_to_remove = False
+                print(f"Shutdown check failed: {type(error).__name__}", flush=True)
             print("Temporary PostgreSQL stopped." if safe_to_remove else
                   f"Stop failed; cluster retained at {cluster_root}", flush=True)
+            if not safe_to_remove:
+                raise RuntimeError(f"Temporary cluster shutdown unconfirmed: {cluster_root}")
         # Resolve and verify the absolute path before recursive cleanup on Windows.
         if safe_to_remove and cluster_root.parent == artifacts and cluster_root.name.startswith("mosto-pg-"):
             shutil.rmtree(cluster_root)

@@ -152,6 +152,8 @@ def ingest(db, payload, token):
             id=payload.calibration_id, dispositivo_id=device.id).first()
         if calibration is None:
             raise HTTPException(409, "Referencia de calibración no disponible para este dispositivo")
+        if calibration.parametros.get("simulation_clock") is not None:
+            raise HTTPException(409, "Reloj registrado; ingesta acelerada todavía no habilitada")
         spec = calibration.parametros.get("simulation")
         if spec is not None:
             from app.simulation.model import SimulationSpec

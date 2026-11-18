@@ -17,7 +17,7 @@ Estos son límites amplios de entrada, no perfiles enológicos ni certificación
 
 `observado_en` exige zona horaria y se normaliza a UTC. Debe estar dentro del intervalo del proceso y no ser futuro respecto del servidor. Se admite una entrada tardía de un proceso cerrado si su observación pertenece al intervalo histórico. Un cierre histórico sin fecha verificable impide nuevas entradas. La UI muestra las horas locales y conserva ambas fechas: registro tardío no implica observación reciente.
 
-Las referencias a alerta e intervención deben pertenecer al mismo proceso y estar autorizadas. Si ambas se proporcionan y la intervención tiene alerta, deben coincidir. La API permite vincular una intervención; el formulario actual vincula proceso y, cuando se abre desde un incidente, su alerta. El selector de intervención queda pendiente.
+Las referencias a alerta e intervención deben pertenecer al mismo proceso y estar autorizadas. Si ambas se proporcionan y la intervención tiene alerta, deben coincidir. La API y el formulario permiten vincular una intervención opcional. El selector pagina opciones del mismo proceso; desde un incidente incluye intervenciones sin alerta o de ese incidente. Muestra ID, acción y estado, con actualización y reintento. La vinculación no declara ejecución ni recuperación. Endpoint de opciones: GET /api/mediciones-manuales/intervenciones/{process_id}, con alerta_id, limit y offset. Cierre y pruebas: [evidencia del 18-11](evidencias/selector-intervencion-2026-11-18.md).
 
 ## API y permisos
 

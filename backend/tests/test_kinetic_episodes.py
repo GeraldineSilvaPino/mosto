@@ -17,10 +17,11 @@ from test_access import tenants, as_user
 @pytest.fixture
 def kinetic_stream(client, monkeypatch):
     credential, calibration = provision(client, source="simulado")
-    base = datetime.now(timezone.utc) - timedelta(hours=30)
+    # Advance a controlled clock from the existing assignment instead of
+    # rewriting immutable historical ownership (enforced by PostgreSQL).
+    base = datetime.now(timezone.utc)
     with SessionLocal() as db:
         db.get(m.ProcesoFermentacion, 1).fecha_inicio = base - timedelta(days=1)
-        db.query(m.AsignacionDispositivo).filter_by(dispositivo_id=1, activo=True).one().asignado_en = base - timedelta(days=1)
         db.commit()
     clock = {"now": base}
     monkeypatch.setattr(telemetry_v2, "utc_now", lambda: clock["now"])

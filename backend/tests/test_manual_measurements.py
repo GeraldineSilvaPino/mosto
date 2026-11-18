@@ -25,6 +25,35 @@ def create(client, **changes):
     return response.json()
 
 
+def test_intervention_selector_scope_pagination_and_persisted_link(client, tenants):
+    aid = tenants['own_alert']
+    with SessionLocal() as db:
+        other = m.EventoAlerta(fermentacion_id=1, dispositivo_id=1, tipo_alerta='temp_alta')
+        db.add(other); db.commit(); other_id = other.id
+    def proposal(alert=None, process=1):
+        response = client.post('/api/intervenciones', json=dict(request_id=str(uuid4()),
+            fermentacion_id=process, alerta_id=alert, tipo='contraste_manual',
+            accion='Contrastar muestra manual', motivo='Verificar señal de Brix'))
+        assert response.status_code == 201, response.text
+        return response.json()['id']
+    general, matching, incompatible = proposal(), proposal(aid), proposal(other_id)
+    proposal(process=tenants['second']['process'])
+    url = '/api/mediciones-manuales/intervenciones/1'
+    page = client.get(url, params=dict(alerta_id=aid, limit=1)).json()
+    assert page['total'] == 2 and page['items'][0]['id'] == matching
+    assert client.get(url, params=dict(alerta_id=aid, limit=1, offset=1)).json()['items'][0]['id'] == general
+    assert client.get(url).json()['total'] == 3
+    assert client.get(url, params=dict(alerta_id=tenants['second']['alert'])).status_code == 409
+    assert client.get(url, params=dict(limit=101)).status_code == 422
+    row = create(client, alerta_id=aid, intervencion_id=matching)
+    assert client.get('/api/mediciones-manuales', params=dict(fermentacion_id=1)).json()['items'][0]['intervencion_id'] == matching
+    assert client.post('/api/mediciones-manuales', json=payload(alerta_id=aid, intervencion_id=incompatible)).status_code == 409
+    as_user(client, tenants['stranger'])
+    assert client.get(url).status_code == 404
+    as_user(client, tenants['member'])
+    assert client.get(url).json()['total'] == 3
+
+
 def test_measurement_links_author_dates_and_no_automatic_effect(client, tenants):
     aid = tenants['own_alert']
     alert = client.get(f'/api/alertas/{aid}').json()

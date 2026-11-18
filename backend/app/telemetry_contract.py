@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 from app.simulation.model import SimulationSpec
 from app.simulation.faults import FaultPlan
+from app.simulation.clock import SimulationClock
 
 
 class ChannelReading(BaseModel):
@@ -62,10 +63,16 @@ class CalibrationCreate(BaseModel):
     tolerance: FiniteFloat = Field(default=0.1, ge=0, le=1)
     simulation: SimulationSpec | None = None
     emitter_faults: FaultPlan | None = None
+    simulation_clock: SimulationClock | None = None
 
     @model_validator(mode="after")
     def validate_calibration(self):
         self.valid_from = self.valid_from.astimezone(timezone.utc)
+        if self.simulation_clock is not None:
+            if self.method != "synthetic_identity" or self.simulation is None:
+                raise ValueError("A simulation clock requires a synthetic trajectory")
+            if self.simulation_clock.simulated_anchor != self.simulation.process_start:
+                raise ValueError("The simulated anchor must match the process start")
         if self.emitter_faults is not None:
             if self.method != "synthetic_identity" or self.simulation is None:
                 raise ValueError("Emitter faults require a registered synthetic trajectory")

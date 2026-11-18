@@ -35,7 +35,12 @@ def evaluate_thermal(db, process, message):
     from app.services.profile_versions import effective_profile
     applied = effective_profile(process, profile)
     from app.services.profile_overrides import adjustment_at, thermal_configuration
-    adjustment = adjustment_at(db, process.id, observed)
+    from app.services.simulation_time import message_clock
+    clock = message_clock(db, message)
+    # Overrides become effective in server time. A delayed sample keeps the
+    # configuration applicable when it was due, not when its backlog arrived.
+    effective_at = clock.real_at(observed) if clock else observed
+    adjustment = adjustment_at(db, process.id, effective_at)
     for code in ("temperatura_alta", "temperatura_baja"):
         state = db.query(m.EstadoRegla).filter_by(fermentacion_id=process.id, codigo=code).with_for_update().first()
         previous = aware(state.ultima_observacion) if state else None
@@ -132,9 +137,19 @@ def close_process_conditions(db, process, actor):
     for state in db.query(m.EstadoRegla).filter_by(fermentacion_id=process.id).with_for_update():
         if state.episodio_id:
             episode = db.query(m.EventoAlerta).filter_by(id=state.episodio_id).with_for_update().one()
+            from app.services.simulation_time import message_clock
+            trigger_id = (episode.evidencia or {}).get('trigger_message_id')
+            trigger = db.get(m.MensajeTelemetria, trigger_id) if trigger_id else None
+            clock = message_clock(db, trigger) if trigger else None
+            closed_real = aware(process.fecha_real_fin)
+            closed_observed = clock.simulated_at(closed_real) if clock else closed_real
             episode.estado_condicion = "cerrada_proceso"
-            episode.fin_condicion = process.fecha_real_fin
-            record_action(db, episode, "cerrada_proceso", actor=actor, observed=process.fecha_real_fin,
-                          detail={"reason": "Proceso finalizado; no acredita recuperación de la señal"})
+            episode.fin_condicion = closed_observed
+            record_action(db, episode, "cerrada_proceso", actor=actor, observed=closed_observed,
+                          registered=closed_real,
+                          detail={"reason": "Proceso finalizado; no acredita recuperación de la señal",
+                                  "closed_at_real": closed_real.isoformat(),
+                                  "observation_clock": "simulated" if clock else "real",
+                                  "simulation_clock": clock.model_dump(mode='json') if clock else None})
         state.episodio_id = None
         state.inicio_candidato = state.inicio_recuperacion = None

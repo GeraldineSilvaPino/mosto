@@ -89,6 +89,32 @@ def test_timezone_required():
         evaluate(series(), END.replace(tzinfo=None))
 
 
+@pytest.mark.parametrize("real_start", [START - timedelta(days=10), START + timedelta(days=10)])
+def test_independent_receipt_cutoff_preserves_simulated_rates_and_causality(real_start):
+    rows = [replace(r, received_at=real_start + (r.observed_at - START) / 60) for r in series()]
+    cutoff = real_start + timedelta(minutes=24)
+    def run(values):
+        return extract(values, process_id=1, process_start=START, as_of=END,
+                       received_as_of=cutoff)
+    result = run(rows)
+    assert result["eligible"]
+    assert result["features"]["brix_slope_24h"] == pytest.approx(-.1)
+    assert result["received_as_of"] == cutoff.isoformat()
+    poison = [replace(rows[50], received_at=cutoff + timedelta(microseconds=1), brix=999),
+              replace(rows[-1], observed_at=END + timedelta(microseconds=1), brix=999)]
+    assert run(rows + poison) == result
+    assert extract(rows, process_id=1, process_start=START, as_of=END,
+                   received_as_of=cutoff - timedelta(microseconds=1))["channels"]["brix"]["usable_samples"] == 288
+
+
+def test_default_receipt_cutoff_matches_explicit_and_rejects_naive_time():
+    assert evaluate(series()) == extract(series(), process_id=1, process_start=START,
+                                         as_of=END, received_as_of=END)
+    with pytest.raises(ValueError, match="Timezone"):
+        extract(series(), process_id=1, process_start=START, as_of=END,
+                received_as_of=END.replace(tzinfo=None))
+
+
 def test_api_is_scoped_and_keeps_unknown_risk(client):
     response = client.get("/api/procesos/1/cinetica")
     assert response.status_code == 200, response.text
@@ -113,3 +139,13 @@ def test_api_historical_cutoff_excludes_delayed_receipt(client, packet):
     assert before["channels"]["brix"]["usable_samples"] == 0
     assert after["channels"]["brix"]["usable_samples"] == 1
     assert after["riesgo_pct"] is None and not after["eligible"]
+    from app.database import SessionLocal
+    from app.models import ProcesoFermentacion
+    from app.services.kinetics_query import process_kinetics
+    with SessionLocal() as db:
+        process = db.get(ProcesoFermentacion, 1)
+        excluded = process_kinetics(db, process, receipt,
+                                   received_as_of=receipt - timedelta(microseconds=1))
+        included = process_kinetics(db, process, receipt, received_as_of=receipt)
+        assert excluded["channels"]["brix"]["usable_samples"] == 0
+        assert included["channels"]["brix"]["usable_samples"] == 1

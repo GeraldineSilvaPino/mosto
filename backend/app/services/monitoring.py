@@ -15,20 +15,26 @@ def monitoring_status(db, process, now):
         m.MensajeTelemetria.fermentacion_id == process.id,
         m.MensajeTelemetria.recibido_en <= now,
     ).order_by(m.MensajeTelemetria.recibido_en.desc(), m.MensajeTelemetria.id.desc()).first()
+    from app.services.simulation_time import message_clock
+    clock = message_clock(db, received) if received else None
+    observation_cutoff = clock.simulated_at(now) if clock else now
     observed = db.query(m.MensajeTelemetria).filter(
         m.MensajeTelemetria.fermentacion_id == process.id,
         m.MensajeTelemetria.recibido_en <= now,
-        m.MensajeTelemetria.observado_en <= now,
+        m.MensajeTelemetria.observado_en <= observation_cutoff,
     ).order_by(m.MensajeTelemetria.observado_en.desc()).first()
     receipt_age = (now - aware(received.recibido_en)).total_seconds() if received else None
-    observation_age = (now - aware(observed.observado_en)).total_seconds() if observed else None
+    observation_age = ((observation_cutoff - aware(observed.observado_en)).total_seconds()
+                       if observed else None)
+    delivery_age = ((now - (clock.real_at(aware(observed.observado_en)) if clock else aware(observed.observado_en))).total_seconds()
+                    if observed else None)
     if process.fecha_real_fin is not None:
         status = "proceso_cerrado"
     elif received is None:
         status = "sin_telemetria_v2"
     elif receipt_age > SILENCE_SECONDS:
         status = "sin_recepcion_reciente"
-    elif observation_age is None or observation_age > SILENCE_SECONDS:
+    elif delivery_age is None or delivery_age > SILENCE_SECONDS:
         status = "mediciones_atrasadas"
     else:
         status = "datos_recientes"
@@ -49,6 +55,9 @@ def monitoring_status(db, process, now):
             "last_received_at": aware(received.recibido_en).isoformat() if received else None,
             "last_observed_at": aware(observed.observado_en).isoformat() if observed else None,
             "receipt_age_seconds": receipt_age, "observation_age_seconds": observation_age,
+            "observation_clock": "simulated" if clock else "real",
+            "expected_delivery_age_seconds": delivery_age,
+            "simulation_clock": clock.model_dump(mode="json") if clock else None,
             "thermal_rules": thermal,
             "current_profile_override_revision": applied.get('override_revision', 0),
             "thermal_episode_policy": "Los episodios abiertos conservan sus umbrales de confirmación y recuperación",
@@ -75,7 +84,11 @@ def sweep_silence(db, now):
         if status["status"] not in {"sin_recepcion_reciente", "mediciones_atrasadas"}:
             continue
         for state in db.query(m.EstadoRegla).filter_by(fermentacion_id=process_id).with_for_update():
-            if aware(state.ultima_observacion) >= now - timedelta(seconds=SILENCE_SECONDS):
+            clock_data = status.get("simulation_clock")
+            from app.simulation.clock import SimulationClock
+            expected_real = (SimulationClock.model_validate(clock_data).real_at(aware(state.ultima_observacion))
+                             if clock_data else aware(state.ultima_observacion))
+            if expected_real >= now - timedelta(seconds=SILENCE_SECONDS):
                 continue
             state.inicio_candidato = state.inicio_recuperacion = None
             if not state.episodio_id:

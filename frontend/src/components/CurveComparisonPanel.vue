@@ -6,6 +6,32 @@ Chart.register(...registerables)
 const props = defineProps({ processId: { type: Number, required: true } })
 const data = ref(null), candidates = ref([]), reference = ref(''), variable = ref('brix_aparente'), hours = ref(24), cutoff = ref('')
 const busy = ref(false), error = ref(''), canvas = ref(null)
+const exportMessage = ref('')
+function exportEvidence() {
+  if (!data.value || busy.value) return
+  const snapshot = data.value
+  const envelope = {
+    export_version: 'mosto-curve-evidence-v1',
+    exported_at: new Date().toISOString(),
+    scope: 'consulted_comparison_snapshot',
+    notice: 'Exporta solo el resultado consultado. Conserva límites, exclusiones y anulaciones; no equivale al historial completo.',
+    comparison: snapshot
+  }
+  let url
+  try {
+    url = URL.createObjectURL(new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `mosto-comparacion-${snapshot.processes[0].process_id}-${snapshot.variable}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+    document.body.appendChild(link)
+    link.click(); link.remove()
+    exportMessage.value = 'Descarga solicitada: evidencia de la comparación consultada en JSON.'
+  } catch {
+    exportMessage.value = 'No se pudo preparar la descarga. Reintenta la exportación.'
+  } finally {
+    if (url) setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+}
 const variables = { brix_aparente: 'Brix aparente', temperatura: 'Temperatura', densidad: 'Densidad', ph: 'pH' }
 const reasons = {
   sin_canal_automatico: 'Esta variable no tiene canal automático v2; se muestran solo mediciones manuales.',
@@ -54,6 +80,7 @@ async function draw() {
   } })
 }
 async function load() {
+  exportMessage.value = ''
   const token = ++generation
   controller?.abort(); controller = new AbortController()
   busy.value = true; error.value = ''; data.value = null; destroy()
@@ -94,6 +121,9 @@ onBeforeUnmount(() => { generation++; controller?.abort(); destroy() })
     <p v-if="busy" role="status">Consultando evidencia…</p>
     <p v-if="error" role="alert">{{ error }}</p>
     <template v-if="data">
+      <button type="button" :disabled="busy" @click="exportEvidence">Exportar evidencia consultada (JSON)</button>
+      <p>La exportación conserva el corte, los límites y las advertencias de esta consulta. No incluye muestras excluidas del gráfico ni registros fuera del límite consultado.</p>
+      <p v-if="exportMessage" role="status">{{ exportMessage }}</p>
       <p>Corte: {{ date(data.as_of) }} · intervalo de edad: {{ data.age_start.toFixed(2) }}–{{ data.age_end.toFixed(2) }} h. Los datos registrados o recibidos después del corte no se incluyen.</p>
       <p>Telemetría: líneas y puntos; manuales: triángulos sin unir. Los huecos mayores de 15 minutos y los cambios de equipo/calibración interrumpen las líneas. El estado del proceso mostrado es el actual.</p>
       <div class="plot"><canvas ref="canvas" role="img" :aria-label="`Comparación de ${variables[data.variable]} por horas de proceso. Revisa procedencia, cobertura y tabla de evidencia debajo.`" /></div>

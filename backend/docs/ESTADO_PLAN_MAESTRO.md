@@ -1,16 +1,37 @@
 # Estado de ejecución del plan maestro
 
+## Ejecución vigente en paralelo (18-11-2026)
+
+Leer [reparto completo](paralelo/PLAN_PARALELO.md) y planes A/B antes de editar.
+**Estimación vigente: aproximadamente 68 %**; porcentajes inferiores históricos
+no se deben sumar. A es dueña del backend/validación y B del frontend/manual/UI.
+Los estados operativos durante el paralelo son [A](paralelo/ESTADO_A.md) y
+[B](paralelo/ESTADO_B.md); A consolidará aquí después del merge final.
+
+Navegación histórica cerrada en frontend: ruta protegida `/procesos/:id?`, entrada
+de menú, selección de activos/cerrados, comparación y exportación con proceso
+principal elegido, mediciones e intervenciones por ID. Errores/IDs inválidos
+retiran evidencia anterior; selección cambia todos los paneles. Build aprobado;
+Edge con API simulada verificó proceso cerrado, cambio al activo, 404 e ID inválido.
+No es E2E contra API real ni lista paginada servidor. Esos límites pertenecen a B.
+
+Sección a medias: reloj acelerado. Ingesta aún rechaza recetas con reloj; triggers
+temporales requieren migración, consultas y pruebas integrales pendientes. A lo
+retoma; B puede avanzar independientemente. No bloquear reparto por este bloque.
+Plan original, inventario de faltantes, dependencias externas, criterios de cierre,
+propiedad de archivos y protocolo de merge se encuentran en el reparto completo.
+
 Actualizado el 18-11-2026, con ajustes térmicos auditados por proceso cerrados en API y Vue y entrega consolidada para continuar desde otro PC en `codex/mosto-safe-foundation`. No se ha integrado develop ni migrado Supabase. Leer [CONTINUAR_MOSTO](../../CONTINUAR_MOSTO.md) para clonar/actualizar, instalar y regenerar artefactos locales. El hash y la disponibilidad remota se comprueban con Git; las menciones históricas de «sin commit/push» corresponden al momento de cada cierre.
 
-**Avance global estimado: aproximadamente 66 %.** Estimación de alcance revisada tras cerrar los ajustes térmicos auditados, su aplicación temporal y el flujo Vue de aprobación/restauración. No existe una ponderación formal que permita calcular un porcentaje exacto; no mide horas ni precisión del modelo. El ML validado, recomendaciones DSS, UI integral, hardware real y validación operativa concentran todavía una parte importante del trabajo. Este cierre no certifica un sprint completo ni producción.
+**Avance global estimado: aproximadamente 68 %.** Estimación de alcance revisada tras cerrar los ajustes térmicos auditados, su aplicación temporal y el flujo Vue de aprobación/restauración. No existe una ponderación formal que permita calcular un porcentaje exacto; no mide horas ni precisión del modelo. El ML validado, recomendaciones DSS, UI integral, hardware real y validación operativa concentran todavía una parte importante del trabajo. Este cierre no certifica un sprint completo ni producción.
 
 | Sprint del informe | Estado comprobable | Pendiente principal |
 | --- | --- | --- |
 | 0. Contención y reproducción | Configuración aislada, autenticación obligatoria, baseline offline, PostgreSQL temporal y CI preparada | Ejecución CI remota y cierre de reproducibilidad/despliegue entre entornos |
 | 1. Identidad y esquema | Autorización por empresa/bodega, actores reales, migraciones locales y pruebas concurrentes | Adopción del esquema con datos existentes y rol de producción con privilegios mínimos |
 | 2. Dispositivos e ingesta | Credenciales, calibración, timestamps, calidad, idempotencia, atribución histórica; outbox del simulador | Firmware/outbox del ESP32, MQTT y formularios completos de aprovisionamiento |
-| 3. Procesos, incidentes y bitácora | Episodios térmicos y cinéticos simulados opt-in, perfiles versionados/snapshots, ajustes térmicos auditados por proceso, resolución idempotente, bitácora, intervenciones y mediciones manuales con anulación trazable | Validación PostgreSQL de bloques nuevos y criterios enológicos revisados |
-| 4. Simulación científica | Núcleo continuo por fases, cinco escenarios, tiempo físico 1×, historial/panel, fallas programables de sensores/comunicaciones y recuperación persistente HTTP/outbox | Reloj acelerado explícito y validación científica externa |
+| 3. Procesos, incidentes y bitácora | Episodios térmicos y cinéticos simulados opt-in, perfiles versionados/snapshots, ajustes térmicos auditados por proceso, resolución idempotente, bitácora, intervenciones y mediciones manuales con anulación trazable | Criterios enológicos revisados y validación operativa |
+| 4. Simulación científica | Núcleo continuo por fases, cinco escenarios, tiempo físico 1×, historial/panel, fallas programables de sensores/comunicaciones y recuperación persistente HTTP/outbox | Integrar reloj acelerado (núcleo y cortes causales probados); validación científica externa |
 | 5. ML y forecast | Extractor causal/API, splits independientes, baselines, calibración, forecast, fallas pareadas, bootstrap por trayectoria e intervalos experimentales con modelo congelado; abstención operacional v2 | Mitigar límites de sensores con evidencia independiente, validar utilidad/cobertura de bandas, cambios de dominio y validación real antes de habilitar |
 | 6. UI operacional | Estados desconocidos, procedencia, fases simuladas y acciones de incidentes persistentes verificadas | Sistema visual completo, overview, paginación global, controles restantes, accesibilidad y móvil |
 | 7. DSS e integración física | Canal físico reservado, contrato común, intervenciones/respuesta humana, mediciones manuales y comparación descriptiva de dos procesos al corte temporal | Hardware calibrado, recomendaciones trazables y validación de mediciones/seguimiento reales |
@@ -19,6 +40,119 @@ Actualizado el 18-11-2026, con ajustes térmicos auditados por proceso cerrados 
 La implementación adelantó el núcleo del sprint 4 para disponer de telemetría continua con la que verificar el sprint 3. Esto no cierra todas las puertas del sprint 4 ni convierte un escenario sintético en evidencia de exactitud enológica.
 
 ## Registro de secciones cerradas
+
+### Exportación de evidencia consultada y dependencia del reloj (18-11-2026)
+
+- Cerrada exportación JSON en comparación de curvas (sprints 6–7): resultado
+  consultado con corte, procedencia, unidades, métodos, anulaciones, límites y
+  advertencias. No exporta historial completo ni muestras excluidas del gráfico.
+  Se exporta la respuesta cargada, no filtros editados aún sin consultar.
+- Build Vite aprobado (4,04 s). Edge headless con API simulada descargó y comparó
+  exactamente el JSON, incluidos truncamiento, anulaciones y texto multilínea;
+  sin errores JavaScript. Script exploratorio ignorado: artifacts/browser-check/export.cjs.
+- Dependencia concreta del sprint 4: triggers de 0002_relational_guards y
+  0003_telemetry_v2 comparan timestamp/observado_en con asignado_en, desasignado_en
+  y fecha_real_fin. Habilitar solo API produciría semántica distinta en PostgreSQL.
+  Requiere una nueva migración local y pruebas de intervalos/concurrencia/replay;
+  conservar guarda de ingesta. No es un bloqueo de permisos ni exige acción del usuario.
+- Siguiente sección independiente: navegación de procesos históricos como principal.
+  Retomar reloj con migración temporal explícita, consultas, UI y ensayo completo.
+  Avance global conservador: 67 %; exportación CSV e historial completo no implementados.
+
+### Reloj: vigencia térmica y cierre administrativo (18-11-2026)
+
+- Regla térmica selecciona ajustes por hora real esperada de la observación,
+  conservando sus intervalos de persistencia en tiempo simulado. Una muestra
+  atrasada no toma ajustes aprobados después de su instante esperado.
+- Cierre administrativo mantiene fecha_real_fin real; fin_condicion y hora de
+  observación auditada usan el reloj del mensaje que originó el episodio. Auditoría
+  conserva hora real, reloj y motivo; cierre no declara recuperación ni resolución.
+- SQLite: 29 aprobadas/3 omitidas (7,94 s); PostgreSQL 18.4: 20 aprobadas
+  (11,38 s), incluyendo ajustes auditados y los dos casos nuevos. Casos acelerados
+  con reloj inyectado; todavía no certifican el flujo acelerado HTTP real.
+- Sigue abierto sprint 4, 67 % global estimado. Próximo: coherencia de selección
+  de procesos/asignaciones y cierre en ingesta, consultas históricas/comparación,
+  luego API/Vue y ensayo completo. La guarda de ingesta permanece activa.
+
+### Reloj: adaptación de reglas y monitoreo, integración abierta (18-11-2026)
+
+- Resolvedor de reloj histórico desde calibración, con control de dispositivo y
+  proceso. Revocar una calibración no reinterpreta el tiempo de mensajes antiguos.
+- Regla cinética usa corte simulado y disponibilidad real separados; frescura por
+  hora real esperada de entrega, persistencia por hora observada.
+- Monitoreo publica reloj, edad de observación y edad real esperada de entrega.
+  El watchdog transforma su marca temporal antes de comprobar silencio real.
+- Verificación: 40 pruebas de monitoreo/cinética/episodios aprobadas en 12,55 s;
+  después, tres pruebas específicas aprobadas en 1,20 s, incluida transmisión
+  de ambos cortes a la regla. Casos acelerados usan reloj inyectado: no acreditan
+  todavía ingesta acelerada real ni PostgreSQL de este bloque.
+- Sigue abierto sprint 4. Próximo: resolver vigencia de ajustes térmicos y cierre
+  de procesos respecto del reloj; validar ingesta y consultas, luego UI y HTTP
+  real. La guarda de ingesta sigue activa. Estimación conservada: 67 %.
+
+### Retoma: emisor acelerado y balance desde 267bd29 (18-11-2026)
+
+- Sección activa: sprint 4, reloj acelerado. Emisor/outbox genera por tiempo
+  simulado y entrega/reintenta por tiempo real; conserva identidad 1x y sobres
+  al reiniciar, comprueba reloj remoto y rechaza cambios de receta en el estado.
+  Corregida fixture que reconstruía formato antiguo incluyendo un campo nuevo.
+  Suite específica: 53 aprobadas en 10,04 s. Integración de ingesta aún bloqueada.
+- Desde Geraldine: reproducción de la entrega; corrección de fixture cinética;
+  validación completa PostgreSQL (305 aprobadas en aquel cierre) y apagado robusto;
+  selector manual de intervención terminado; núcleo, registro, cortes causales
+  y emisor del reloj implementados. No hay commits posteriores a 267bd29: son
+  modificaciones locales, incluidos archivos nuevos todavía sin seguimiento.
+- Estimación revisada: aproximadamente 67 %, por cierres verificados y avance
+  parcial; no existe ponderación matemática. Las cifras 66 % previas son históricas.
+- Siguiente: integrar ingesta + episodios cinéticos + monitoreo de ambos relojes;
+  revisar ajustes temporales y cierres; después API/Vue y ensayo HTTP real completo.
+  No retirar el rechazo de ingesta antes de estas garantías. Detalle en
+  [Reloj acelerado](RELOJ_ACELERADO.md).
+- Después del reloj: navegación histórica/exportación (sprints 6–7), UI integral
+  y accesibilidad/móvil (6), observabilidad/carga/respaldo-restauración (8).
+  Revisión enológica, validación ML real y hardware/MQTT siguen pendientes externos
+  y de integración (4–5–7–2). Despliegue no autorizado por este trabajo.
+
+### Reloj acelerado: avance de integración, bloque todavía abierto (18-11-2026)
+
+- Registro de calibración sintética acepta `simulation_clock` con ancla simulada
+  igual al inicio de proceso. Solo demo/test; exige trayectoria y conserva
+  autorización de aprovisionamiento. Una nueva calibración del mismo dispositivo
+  y proceso no puede cambiar ni retirar el reloj de la receta registrada.
+- Preflight devuelve el reloj. El worker 1x se bloquea explícitamente ante esa
+  configuración; la ingesta también la rechaza hasta completar la integración.
+  Las recetas existentes sin reloj mantienen su comportamiento.
+- Pruebas de registro, simulación, fallas y telemetría: **78 aprobadas, 2 omitidas**
+  en SQLite, 14,28 s. PostgreSQL de estos cambios aún pendiente. Sin cambios Vue.
+- Próximo trabajo concreto: conversión de generación/entrega y fallas del outbox;
+  después validación temporal en ingesta, reglas/monitoreo y presentación. Esta
+  entrada documenta trabajo parcial, no un cierre funcional ni incremento del
+  porcentaje global. El selector manual completado permanece cerrado.
+
+### Selector de intervención en mediciones manuales (18-11-2026)
+
+- Cerrado el pendiente funcional de sprints 6–7: selector opcional en el panel
+  compartido, opciones compatibles por proceso/incidente, paginación, errores y
+  reintento. Guardado y consulta conservan el vínculo sin cambiar la intervención
+  ni el estado de la alerta. Nuevo endpoint de opciones con autorización vigente.
+- Verificación: 19 aprobadas/3 omitidas SQLite; 22 aprobadas PostgreSQL; build
+  correcto; navegador con API interceptada verifica selección, envío, recarga y
+  reintento. [Evidencia y límites](evidencias/selector-intervencion-2026-11-18.md).
+- Orden de continuación: (1) reloj acelerado completo, (2) navegación principal
+  de procesos históricos y exportación, (3) UI integral/accesibilidad/móvil,
+  (4) observabilidad, carga y respaldo/restauración. En paralelo al desarrollo,
+  permanecen pendientes revisión enológica, datos reales y hardware; no se
+  sustituyen con resultados sintéticos. Despliegue fuera del alcance autorizado.
+- El reloj constituye un único bloque abierto: núcleo y cortes implementados no
+  equivalen a modo operativo. Avance global conservador: aproximadamente 66 %;
+  los cierres concretos anteriores son la medida verificable del progreso.
+
+### Disponibilidad real separada de observación simulada (18-11-2026)
+
+- Extractor y adaptador SQL incorporan `received_as_of` opcional; la salida conserva ambos cortes. La omisión mantiene el corte común anterior. Edad, cobertura y pendientes siguen expresadas en tiempo de observación; mensajes recibidos después del corte real quedan excluidos.
+- SQLite: 41 pruebas aprobadas en 18,01 s (cinética, episodios y pipeline). PostgreSQL 18.4: 18 pruebas cinéticas aprobadas en 7,77 s. Casos adversariales con reloj real anterior y posterior al simulado, fronteras de microsegundos, mensajes futuros y retrasados, conversión de zona y compatibilidad del modo anterior.
+- Esta sección es infraestructura interna del reloj acelerado. No habilita ingesta futura, no cambia los parámetros públicos de consulta ni activa ML. Pendientes: registro inmutable del reloj, preflight, worker/outbox, reglas, monitoreo y presentación Vue. No se cierra el sprint 4; se conserva 66 % global estimado.
+- La validación PostgreSQL de la entrega previa ya se cerró con 305 pruebas aprobadas y se corrigió la espera de apagado del ejecutor. Las referencias a ese pendiente en registros anteriores son históricas.
 
 ### Ajustes térmicos auditados y traspaso de equipo (18-11-2026)
 
@@ -180,3 +314,28 @@ Detalles: [Episodios y alertas v2](ALERTAS_V2_Y_EPISODIOS.md), [Telemetría v2](
 ## Traspaso a otro equipo
 
 Informe original, adenda del notebook y cobertura preservados en `auditoria_inicial/`; resultados finales de pruebas y navegador en `evidencias/`. Estos documentos históricos no sustituyen este estado actualizado. Secretos, bases locales y artefactos de ejecución se regeneran siguiendo CONTINUAR_MOSTO.md.
+
+## Verificación del traspaso en equipo original (18-11-2026)
+
+- Historial comprobado: 8bda568 (carcartes) declaraba 45 %; 267bd29 (Geraldine Silva) declara aproximadamente 66 %. Git no identifica cuentas de Codex. HEAD y rama remota consultada con ls-remote coinciden en 267bd297de611e49237e4a040a521a2811d3131a; árbol inicialmente limpio.
+- Reproducción local con entorno existente Python 3.14: SQLite 289 aprobadas, 16 omitidas, 3497 warnings, 114,50 s. Build Vite aprobado en 4,36 s. No se acredita instalación limpia.
+- PostgreSQL 18.4 temporal: 295 aprobadas y 10 errores, 3666 warnings, 200,13 s. Los diez errores ocurren en la fixture kinetic_stream (backend/tests/test_kinetic_episodes.py:23): intenta actualizar asignado_en de una asignación histórica y el trigger mosto_immutable_scope lo rechaza. Validación PostgreSQL ABIERTA; corregir preparación temporal de la fixture sin debilitar la inmutabilidad y repetir pruebas antes del reloj acelerado.
+- El apagado temporal excedió 60 s por checkpoint; comprobación posterior pg_ctl status: no server running, y log confirma database system is shut down. Directorio diagnóstico conservado en backend/artifacts/mosto-pg-b5l2ni10 (ignorado por Git).
+- Se cierra la comprobación documental/Git y reproducción SQLite/build; no se cierra PostgreSQL. Se mantiene la estimación 66 %. Reloj acelerado todavía no implementado en esta revisión. Sin despliegue ni cambios en Supabase.
+
+## Cierre de validación PostgreSQL (18-11-2026)
+
+Se corrigió la fixture kinetic_stream para avanzar desde la fecha actual con reloj controlado, sin actualizar asignado_en de una asignación histórica. Los triggers de inmutabilidad permanecen intactos. Resultado: PostgreSQL 18.4, suite completa, 305 aprobadas, 3668 warnings, 193,54 s; SQLite, 12 pruebas cinéticas aprobadas, 232 warnings, 10,06 s. Entorno Python 3.14.6 existente. La suite SQLite completa y build anteriores siguen vigentes; no hubo cambios de producto/frontend.
+
+Queda cerrado el defecto de preparación de pruebas y validación funcional PostgreSQL local de la entrega. Esto no valida CI remota, instalación limpia, producción ni datos reales. Avance estimado conservado en 66 %. Próximo bloque: implementar el contrato propuesto en backend/docs/RELOJ_ACELERADO.md; documento de diseño, todavía sin aceleración habilitada.
+Nota del ejecutor: pytest pasó, pero el comando global salió con código 1 por timeout de apagado a 60 s. El checkpoint tardó 91,964 s; pg_ctl status posterior confirmó no server running y el log confirmó apagado completo. Clúster diagnóstico conservado en backend/artifacts/mosto-pg-ggkv8x3o. Pendiente robustecer la espera de apagado del script antes de considerar cerrado el ejecutor completo.
+
+## Cierre del ejecutor PostgreSQL y núcleo temporal (18-11-2026)
+
+- Corregido scripts/test_postgres.py: solicitud única de apagado sin espera bloqueante de pg_ctl, comprobaciones de estado cada cinco segundos y plazo total de 180 s. Solo el estado explícito de servidor detenido autoriza eliminar el clúster temporal; errores o plazo vencido conservan el directorio y hacen fallar el comando.
+- Validación: dos pruebas del ejecutor aprobadas (checkpoint lento, estado desconocido y plazo agotado); ejecución real PostgreSQL 18.4 con las 12 pruebas cinéticas aprobadas en 12,72 s, apagado confirmado y comando final con código 0. Esto cierra el defecto del ejecutor registrado anteriormente. La suite completa previa mantiene 305 aprobadas; no se afirma haber repetido toda la suite en este cierre.
+- Implementado app/simulation/clock.py: anclas UTC y factor inmutables, conversiones real/simulada e inversa, retraso de transporte en segundos reales y validación estricta de rango/fechas. Quince pruebas aprobadas en 1,99 s. Contrato y límites: backend/docs/RELOJ_ACELERADO.md.
+- Cierre parcial del sprint 4: núcleo temporal probado; pendiente integración con receta/preflight, worker/outbox, ingesta, reglas, cortes causales y API/Vue. El modo acelerado no está habilitado. Próxima sección: registrar el reloj de forma inmutable y separar disponibilidad real de observación simulada sin alterar el modo 1x.
+- Avance global conservado en aproximadamente 66 % hasta cerrar la integración. Sin cambios remotos, despliegue ni habilitación ML. Los registros anteriores quedan como evidencia histórica.
+
+Validación consolidada tras la retoma (18-11): SQLite, 315 aprobadas y 16 omitidas por PostgreSQL, 3782 warnings, 101,97 s. Las pruebas específicas del emisor suman 53 aprobadas. No se reejecutó toda la suite PostgreSQL para los cambios nuevos del reloj; la evidencia de 305 aprobadas corresponde al cierre anterior.

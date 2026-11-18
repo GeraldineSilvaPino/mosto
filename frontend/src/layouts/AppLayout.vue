@@ -143,7 +143,8 @@ const navSections = [
     items: [
       { id: '01', name: 'Dashboard General', path: '/', icon: LayoutDashboard },
       { id: '02', name: 'Detalle de Cuba', path: '/cuba-detalle', icon: Cylinder },
-      { id: '03', name: 'Historial / Auditoría', path: '/historial-alertas', icon: ShieldCheck }
+      { id: '03', name: 'Historial / Auditoría', path: '/historial-alertas', icon: ShieldCheck },
+      { id: 'procesos', name: 'Historial de procesos', path: '/procesos', icon: ClipboardList }
     ]
   },
   {

@@ -26,6 +26,12 @@ const routes = [
     path: '/',
     component: AppLayout,
     children: [
+      {
+        path: 'procesos/:id?',
+        name: 'ProcessHistory',
+        component: () => import('../views/ProcessHistoryView.vue'),
+        meta: { title: 'Historial de procesos', module: 'Módulo 2: Monitoreo' }
+      },
       // Módulo 2: Monitoreo en Vivo (Core)
       {
         path: '',

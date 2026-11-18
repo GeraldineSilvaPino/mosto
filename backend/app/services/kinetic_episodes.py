@@ -65,13 +65,17 @@ def evaluate_kinetic(db, process, message):
     gap = observed - previous > timedelta(minutes=config["max_gap_minutes"])
     state.ultima_observacion = observed
     episode = db.query(m.EventoAlerta).filter_by(id=state.episodio_id).with_for_update().first() if state.episodio_id else None
-    snapshot = process_kinetics(db, process, received)
+    from app.services.simulation_time import message_clock
+    clock = message_clock(db, message)
+    expected_real = clock.real_at(observed) if clock else observed
+    snapshot = (process_kinetics(db, process, clock.simulated_at(received), received_as_of=received)
+                if clock else process_kinetics(db, process, received))
     features = snapshot["features"]
     # Brix quality is independent: a missing thermal channel is not a veto.
     usable = (features["brix_slope_6h"] is not None
               and message.calidad_brix == "good" and message.brix is not None
-              and observed <= received
-              and received - observed <= timedelta(minutes=15)
+              and expected_real <= received
+              and received - expected_real <= timedelta(minutes=15)
               and features["age_hours"] >= config["minimum_age_hours"]
               and features["brix_mean_1h"] > config["minimum_brix"])
     if gap or not usable:

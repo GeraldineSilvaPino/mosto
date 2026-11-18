@@ -5,18 +5,21 @@ import api from '../services/api'
 const props = defineProps({ processId: { type: Number, required: true }, alertId: Number })
 const emit = defineEmits(['changed'])
 const rows = ref([]), total = ref(0), offset = ref(0), context = ref(null)
+const interventions = ref([]), interventionTotal = ref(0), linkingBusy = ref(false), linkingError = ref('')
+const interventionStates = { propuesta: 'Propuesta', ejecutada: 'Ejecutada', en_seguimiento: 'En seguimiento', cerrada: 'Cerrada', cancelada: 'Cancelada' }
 const busy = ref(false), error = ref(''), message = ref(''), annulling = ref(null), reason = ref('')
 const localDate = value => {
   const date = new Date(value)
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 }
-const blank = () => ({ variable: 'brix_aparente', valor: '', metodo: 'refractometro', instrumento: '', evidencia: '', observado_en: localDate(Date.now()) })
+const blank = () => ({ variable: 'brix_aparente', valor: '', metodo: 'refractometro', instrumento: '', evidencia: '', observado_en: localDate(Date.now()), intervencion_id: null })
 const form = ref(blank()), size = 10
 const definition = computed(() => context.value?.catalogo[form.value.variable])
 const date = value => new Date(value).toLocaleString('es-CL')
 const methods = { termometro: 'Termómetro', refractometro: 'Refractómetro', densimetro_brix: 'Densímetro con escala Brix', densimetro: 'Densímetro', phmetro: 'Medidor de pH' }
 const pending = new Map()
 let generation = 0
+let linkGeneration = 0
 const detail = err => typeof err.response?.data?.detail === 'string' ? err.response.data.detail : (err.message || 'No se pudo guardar o consultar. Revisa los campos y reintenta.')
 
 async function load() {
@@ -34,7 +37,23 @@ async function load() {
 }
 watch(() => [props.processId, props.alertId], () => {
   offset.value = 0; annulling.value = null; reason.value = ''; message.value = ''; form.value = blank(); pending.clear(); load()
+  loadInterventions(true)
 }, { immediate: true })
+
+async function loadInterventions(reset = false) {
+  const token = ++linkGeneration
+  if (reset) { interventions.value = []; interventionTotal.value = 0; form.value.intervencion_id = null }
+  linkingBusy.value = true; linkingError.value = ''
+  try {
+    const result = await api.get(`/api/mediciones-manuales/intervenciones/${props.processId}`, {
+      params: { alerta_id: props.alertId, limit: 50, offset: interventions.value.length }
+    })
+    if (token !== linkGeneration) return
+    interventions.value = [...new Map([...interventions.value, ...result.data.items].map(row => [row.id, row])).values()]
+    interventionTotal.value = result.data.total
+  } catch (err) { if (token === linkGeneration) linkingError.value = detail(err) }
+  finally { if (token === linkGeneration) linkingBusy.value = false }
+}
 
 async function save(path, payload, reset) {
   const token = generation, signature = JSON.stringify([path, payload])
@@ -82,6 +101,21 @@ function page(delta) { offset.value += delta; annulling.value = null; load() }
         <p v-if="form.variable === 'brix_aparente'">Brix aparente no equivale a azúcar residual. Conserva el método: no se aplica corrección por alcohol ni conversión automática.</p>
         <label>Instrumento o referencia de equipo<input v-model.trim="form.instrumento" required minlength="3" maxlength="200" placeholder="Ej.: refractómetro REF-01" /></label>
         <label>Fecha y hora de la observación (hora local)<input v-model="form.observado_en" type="datetime-local" required :min="localDate(context.inicio)" :max="localDate(context.fin || Date.now())" /></label>
+        <label>Intervención vinculada (opcional)
+          <select v-model="form.intervencion_id" :disabled="busy || linkingBusy">
+            <option :value="null">Sin intervención vinculada</option>
+            <option v-for="item in interventions" :key="item.id" :value="item.id">#{{ item.id }} · {{ interventionStates[item.estado] || item.estado }} · {{ item.accion }}</option>
+          </select>
+        </label>
+        <p>El vínculo documenta la evidencia; no declara ejecución, mejoría ni cierre de la intervención.</p>
+        <p v-if="linkingBusy" role="status">Consultando intervenciones…</p>
+        <p v-if="linkingError" role="alert">{{ linkingError }} Puedes reintentar o registrar sin vínculo.</p>
+        <p v-if="!linkingBusy && !linkingError && !interventionTotal">No hay intervenciones compatibles con este proceso{{ alertId ? ' e incidente' : '' }}.</p>
+        <div>
+          <button type="button" :disabled="busy || linkingBusy" @click="loadInterventions(true)">Actualizar intervenciones</button>
+          <button v-if="interventions.length < interventionTotal" type="button" :disabled="busy || linkingBusy" @click="loadInterventions()">Cargar más ({{ interventions.length }} de {{ interventionTotal }})</button>
+          <button v-else-if="linkingError" type="button" :disabled="busy || linkingBusy" @click="loadInterventions()">Reintentar consulta</button>
+        </div>
         <label>Evidencia y condiciones de la muestra<textarea v-model.trim="form.evidencia" required minlength="5" maxlength="2000" placeholder="Identificación de muestra, condiciones, comprobaciones o referencia al registro de laboratorio" /></label>
         <button :disabled="busy">Guardar medición</button>
       </form>

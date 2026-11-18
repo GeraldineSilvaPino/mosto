@@ -255,7 +255,8 @@ def test_legacy_emitter_state_upgrade_retains_identity_pending_payload(client, t
         original = provision_fleet(db, now=now); db.commit()
     config, keys = one_device(original)
     emitter = config.devices[0]
-    legacy = emitter.model_dump(mode='json', exclude={'key_env', 'emitter_faults'})
+    # Neither optional field existed in the original persisted recipe.
+    legacy = emitter.model_dump(mode='json', exclude={'key_env', 'emitter_faults', 'simulation_clock'})
     ident = str(uuid5(NAMESPACE_URL, 'mosto/simulation/' + canonical_json(legacy)))
     assert ident == run_id(emitter)
     sender, path = APISender(client), tmp_path / 'old.db'

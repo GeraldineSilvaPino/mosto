@@ -50,3 +50,15 @@ La lista de referencias usa el endpoint existente de procesos visibles, todavía
 Build Vue y navegador con API/SQLite nuevos: dos trayectorias sintéticas, 97 muestras visibles por proceso y una medición manual por proceso a las siete horas, con métodos distintos y fechas de calendario distintas. Al consultar antes de la recepción/registro, ambos historiales quedan vacíos; al restaurar el corte actual vuelven a mostrarse. Evidencia y suite consolidada en [Estado del plan](ESTADO_PLAN_MAESTRO.md).
 
 Pendiente: overrides explícitos de perfil, validación PostgreSQL, recomendaciones DSS trazables con criterios revisados por enología y evaluación real de utilidad. La coincidencia de edad no controla cepa, perfil, temperatura, método ni intervención; no debe interpretarse como un ensayo causal pareado.
+# Exportación de la consulta (18-11-2026)
+
+El botón «Exportar evidencia consultada (JSON)» descarga la respuesta actualmente
+mostrada dentro de un sobre `mosto-curve-evidence-v1`, con fecha de exportación y
+alcance explícito. Preserva telemetría graficable, manuales incluidas las anuladas,
+corte, unidades, métodos, procedencia y advertencias/límites. No realiza una nueva
+consulta ni incluye puntos excluidos o fuera del límite. Los filtros editados sin
+consultar no alteran el archivo. No constituye exportación CSV ni historial completo.
+
+Validación: build Vite y descarga Edge con API simulada, comparación exacta del
+contenido, incluida evidencia multilínea y resultados truncados. Sin cambios en
+API, autorización o base de datos para esta función.

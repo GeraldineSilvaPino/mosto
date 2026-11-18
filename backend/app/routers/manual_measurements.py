@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app import models as m
 from app.services.access import actor_id, business_db, normalize_role, WRITE_ROLES
@@ -79,6 +80,24 @@ def context(process_id: int, db: Session = Depends(db_scope)):
         m.UsuarioBodega.usuario_id == actor_id(db), m.UsuarioBodega.bodega_id == cube.bodega_id).scalar()
     return dict(catalogo=CATALOG, puede_operar=normalize_role(role) in WRITE_ROLES['operations'],
                 inicio=aware(process.fecha_inicio), fin=aware(process.fecha_real_fin) if process.fecha_real_fin else None)
+
+
+@router.get("/intervenciones/{process_id}")
+def intervention_options(process_id: int, alerta_id: int | None = Query(None, gt=0),
+                         limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+                         db: Session = Depends(db_scope)):
+    require(db, m.ProcesoFermentacion, process_id)
+    if alerta_id is not None:
+        alert = require(db, m.EventoAlerta, alerta_id)
+        if alert.fermentacion_id != process_id:
+            raise HTTPException(409, "La alerta debe pertenecer al mismo proceso")
+    query = db.query(m.IntervencionOperativa).filter_by(fermentacion_id=process_id)
+    if alerta_id is not None:
+        query = query.filter(or_(m.IntervencionOperativa.alerta_id.is_(None),
+                                 m.IntervencionOperativa.alerta_id == alerta_id))
+    return dict(total=query.count(), items=[dict(id=row.id, accion=row.accion,
+                estado=row.estado, alerta_id=row.alerta_id) for row in
+                query.order_by(m.IntervencionOperativa.id.desc()).offset(offset).limit(limit)])
 
 
 @router.get("")
