@@ -2,7 +2,7 @@
 Router de Ciclo de Vida de Procesos de Fermentación (Vendimia).
 Permite iniciar nuevos procesos en cubas disponibles y finalizar procesos en curso.
 """
-from typing import List, Optional
+from typing import List, Optional, Literal
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import AwareDatetime
@@ -136,6 +136,28 @@ def listar_procesos(
 
     procesos = query.order_by(desc(ProcesoFermentacion.id)).all()
     return [_mapear_proceso_out(p) for p in procesos]
+
+
+@router.get("/pagina", summary="Procesos autorizados, paginados sin alterar el listado legacy")
+def pagina_procesos(response: Response, cuba_id: int | None = Query(None, gt=0),
+                    grupo: Literal['todos', 'activos', 'cerrados'] = 'todos',
+                    limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0),
+                    db: Session = Depends(business_db('operations'))):
+    query = db.query(ProcesoFermentacion)
+    if cuba_id is not None:
+        if db.query(Cuba.id).filter_by(id=cuba_id).first() is None:
+            raise HTTPException(404, 'Cuba inexistente o fuera del ámbito autorizado')
+        query = query.filter(ProcesoFermentacion.cuba_id == cuba_id)
+    active = ProcesoFermentacion.estado.in_(['en_proceso', 'detenida'])
+    if grupo == 'activos':
+        query = query.filter(active)
+    elif grupo == 'cerrados':
+        query = query.filter(~active)
+    total = query.count()
+    items = [_mapear_proceso_out(row) for row in query.order_by(desc(ProcesoFermentacion.id)).offset(offset).limit(limit)]
+    response.headers['Cache-Control'] = 'no-store'
+    return dict(items=items, total=total, limit=limit, offset=offset,
+                has_more=offset + len(items) < total)
 
 
 @router.get("/{proceso_id}", response_model=ProcesoOut, summary="Obtener detalle de un proceso")
