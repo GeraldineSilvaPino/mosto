@@ -32,8 +32,8 @@ def test_migration_head_matches_orm_and_is_idempotent():
     upgrade_local(settings.database_url, "test")
     with engine.connect() as connection:
         context = MigrationContext.configure(connection, opts={"compare_type": True})
-        assert context.get_current_revision() == "0008_process_profile_overrides"
-        assert len(inspect(connection).get_table_names()) == 30
+        assert context.get_current_revision() == "0009_process_clock_registry"
+        assert len(inspect(connection).get_table_names()) == 31
         assert compare_metadata(context, Base.metadata) == []
 
 

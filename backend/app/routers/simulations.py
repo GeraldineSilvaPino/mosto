@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app import models as m
 from app.services.access import business_db
 from app.services.telemetry_v2 import aware, utc_now
+from app.simulation.clock import SimulationClock
 from app.simulation.model import SimulationSpec, phase_at, phase_weights
 
 router = APIRouter(prefix="/api/simulaciones", tags=["Simulación enológica"])
@@ -34,15 +35,21 @@ def process_simulation(process_id: int, db: Session = Depends(business_db("opera
         observed = aware(latest.observado_en) if latest else None
         age = (observed - spec.process_start).total_seconds() / 3600 if observed else None
         stop = min(now, aware(process.fecha_real_fin)) if process.fecha_real_fin else now
-        calendar_age = max(0, (stop - spec.process_start).total_seconds() / 3600)
-        lag = max(0, (stop - observed).total_seconds()) if observed else None
+        clock_data = calibration.parametros.get("simulation_clock")
+        clock = SimulationClock.model_validate(clock_data) if clock_data is not None else None
+        real_start = clock.real_anchor if clock else spec.process_start
+        speed = clock.factor if clock else 1
+        calendar_age = max(0, (stop - real_start).total_seconds() * speed / 3600)
+        expected_delivery = clock.real_at(observed) if clock and observed else observed
+        lag = max(0, (stop - expected_delivery).total_seconds()) if expected_delivery else None
         return {
             "registered": True, "source": "simulado", "model_version": spec.model_version,
             "scenario": spec.scenario, "seed": spec.seed, "process_id": process.id,
             "calibration_id": calibration.id, "device_id": calibration.dispositivo_id,
             "emitter_faults": calibration.parametros.get("emitter_faults"),
             "cadence_seconds": spec.cadence_seconds, "process_start": spec.process_start,
-            "duration_hours": spec.duration_hours, "clock": "wall_utc", "speed": 1,
+            "duration_hours": spec.duration_hours, "clock": "simulated_utc" if clock else "wall_utc",
+            "speed": speed, "simulation_clock": clock_data, "expected_delivery_at": expected_delivery,
             "observed_age_hours": age, "calendar_age_hours": calendar_age,
             "phase": phase_at(age) if age is not None else None,
             "phase_weights": phase_weights(age) if age is not None else None,

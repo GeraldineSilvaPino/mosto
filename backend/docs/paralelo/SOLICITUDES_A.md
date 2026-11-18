@@ -1,5 +1,20 @@
 # Solicitudes / contratos publicados por A
 
+## A-API-004 — reloj de una receta registrada
+
+GET `/api/simulaciones/procesos/{process_id}`, JWT y permisos de lectura del
+proceso. Sin receta se conserva `{"registered":false,"process_id":1}`.
+Con receta 1× legacy devuelve `clock="wall_utc"`, `speed=1` y
+`simulation_clock=null`. Con reloj explícito devuelve `clock="simulated_utc"`,
+el factor en `speed` y, por ejemplo,
+`"simulation_clock":{"real_anchor":"2026-11-18T12:00:00Z","simulated_anchor":"2026-11-17T12:00:00Z","factor":60}`.
+`calendar_age_hours` expresa horas de trayectoria hasta la consulta o cierre.
+`expected_delivery_at` es la hora real programada de la última observación;
+`lag_seconds` usa segundos reales. Ambos son null sin muestra. B puede mostrar
+el reloj como configuración y `coverage="sin_muestras"` cuando corresponda.
+La ingesta de estas recetas sigue cerrada. 404 para proceso ajeno/inexistente,
+401 sin identidad. Prueba HTTP en test_simulation_provenance_clock.
+
 ## A-API-003 — abstención en la predicción de cuba
 
 GET `/api/cubas/{id}/ml-prediction`, mismo JWT y ámbito de bodega. Para una

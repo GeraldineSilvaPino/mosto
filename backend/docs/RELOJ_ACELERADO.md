@@ -86,3 +86,24 @@ Los retrasos de transporte, reintentos, caducidad de credenciales y silencio se 
 - Ingesta y reglas: recepción auténtica, aislamiento físico/simulado, asignación/calibración temporal coherente, cortes causales explícitos y ausencia de recuperación ficticia.
 - API/Vue: factor, fechas y procedencia visibles; silencio real separado del progreso biológico. ML v2 permanece NO_VALIDADO.
 - Verificación: pruebas unitarias de conversión y fronteras, integración HTTP con reinicio/fallas, SQLite/PostgreSQL y navegador. Hasta completar estas verificaciones el bloque permanece abierto.
+## Registro único por proceso, migración 0009 del 18-11
+
+La primera receta vincula el proceso a un reloj explícito o a UTC ordinario.
+La primera lectura legacy o v2 ordinaria también vincula el proceso a UTC.
+Los triggers comparan anclas y factor para todos los dispositivos. Revocar una
+receta conserva el vínculo. En una actualización desde 0008 se reconstruye con
+las recetas históricas y las lecturas existentes. Si discrepan, la migración
+revierte y requiere revisar las evidencias de ese proceso.
+
+En una receta con reloj explícito, el inicio simulado identifica el inicio
+registrado del proceso. El inicio real debe caer después de la apertura o
+coincidir con ella, y dentro de la asignación y de la vigencia de calibración
+(inicio inclusivo, fin exclusivo). Un proceso cerrado rechaza el alta. La API
+de procedencia calcula progreso en horas simuladas y retraso en segundos reales.
+
+Siguiente puerta: introducir una proyección v2 con calibración y tiempo real
+de adquisición verificables en la misma transacción que la observación. Hoy
+todas las proyecciones se registran como UTC ordinario. Esta guarda impide
+escribir en un proceso acelerado omitiendo la calibración. Permanecen pendientes
+la comprobación de asignación histórica y cierre al instante real de adquisición,
+la disponibilidad real en las consultas públicas y el ensayo de reinicio con backlog.

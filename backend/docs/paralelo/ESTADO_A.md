@@ -1,5 +1,28 @@
 # Estado A
 
+## 18-11 — A1, identidad del reloj y procedencia pública
+
+Revisión 0009 posterior a 0008. SQLite y PostgreSQL reconstruyen el reloj
+por proceso desde recetas (incluidas revocadas) y lecturas. Una mezcla histórica
+aborta la migración conservando 0008 y sus filas. La primera escritura fija
+el dominio; otra receta puede compartirlo desde otro dispositivo. El alta usa
+vigencia/asignación reales y rechaza un proceso cerrado. La proyección ordinaria
+rechaza lecturas sin receta en un proceso con reloj. Publicado A-API-004 para B.
+
+Verificaciones del registro, migraciones y resumen: SQLite 7 aprobadas y 1
+omitida en registro/procedencia; PostgreSQL 23 aprobadas en registro, procedencia
+y migraciones, incluida concurrencia, up/down/up e historial previo incompatible;
+apagado confirmado. Suite SQLite completa previa al último ajuste del alta:
+334 aprobadas y 17 omitidas. Se corrigió un ensayo que inicialmente recibió 422
+por Brix bueno sin calibración; con Brix ausente llega a la guarda y responde 409.
+La réplica A4 está en c61cb81 y la abstención A2 en 97be7a8.
+
+Reanudar A1 en la **proyección temporal de la lectura v2**. Añadir prueba para
+asignación histórica y cierre en el instante real programado, y retener la
+recepción real del servidor. Mantener independientes la ventana biológica,
+disponibilidad y mediciones manuales en cinética, curvas e histórico de cuba.
+La ingesta acelerada sigue cerrada. A5 espera entrega de B.
+
 ## 18-11 — A2, riesgo ausente en los datos de cuba
 
 El endpoint de predicción y el cálculo reutilizado por listado/detalle devuelven

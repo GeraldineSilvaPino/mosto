@@ -534,6 +534,13 @@ class CredencialDispositivo(Base):
     creada_por = Column(BigInteger, ForeignKey("USUARIO.id", ondelete="RESTRICT"), nullable=False)
 
 
+class RelojProceso(Base):
+    __tablename__ = "RELOJ_PROCESO"
+    fermentacion_id = Column(BigInteger, ForeignKey("PROCESO_FERMENTACION.id"),
+                             primary_key=True, autoincrement=False)
+    clave = Column(Text, nullable=False)
+
+
 class CalibracionDispositivo(Base):
     __tablename__ = "CALIBRACION_DISPOSITIVO"
     __table_args__ = (UniqueConstraint("dispositivo_id", "version", name="uq_calibracion_dispositivo_version"),)

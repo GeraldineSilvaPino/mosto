@@ -85,25 +85,24 @@ def create_calibration(device_id: int, payload: CalibrationCreate,
         raise HTTPException(409, "Aprovisione el dispositivo y use el método correspondiente a su origen")
     if payload.simulation is not None:
         spec = payload.simulation
-        process = db.query(m.ProcesoFermentacion).filter_by(id=spec.process_id).first()
+        process = db.query(m.ProcesoFermentacion).filter_by(id=spec.process_id).with_for_update().first()
         if process is None:
             raise HTTPException(404, "Proceso de simulación no encontrado")
         if process.fecha_inicio is None or aware(process.fecha_inicio) != spec.process_start:
             raise HTTPException(409, "El reloj del simulador debe coincidir con el inicio del proceso")
-        if payload.valid_from > spec.process_start:
+        effective_start = payload.simulation_clock.real_anchor if payload.simulation_clock else spec.process_start
+        if payload.simulation_clock and (
+            effective_start < aware(process.fecha_inicio) or process.fecha_real_fin is not None
+        ):
+            raise HTTPException(409, "El inicio real del reloj requiere un proceso abierto y ya iniciado")
+        if payload.valid_from > effective_start or (
+            payload.simulation_clock and payload.valid_until is not None and payload.valid_until <= effective_start
+        ):
             raise HTTPException(422, "La calibración debe cubrir el comienzo de la trayectoria")
         assignment = db.query(m.AsignacionDispositivo).filter_by(
             dispositivo_id=device.id, cuba_id=process.cuba_id, activo=True).first()
-        if assignment is None or aware(assignment.asignado_en) > spec.process_start:
+        if assignment is None or aware(assignment.asignado_en) > effective_start:
             raise HTTPException(409, "El dispositivo debe estar asignado desde el inicio de la simulación")
-        if payload.simulation is not None:
-            existing = db.query(m.CalibracionDispositivo).filter_by(dispositivo_id=device.id).all()
-            for row in existing:
-                prior = row.parametros.get("simulation")
-                if prior and prior.get("process_id") == spec.process_id:
-                    clock = payload.simulation_clock.model_dump(mode="json") if payload.simulation_clock else None
-                    if row.parametros.get("simulation_clock") != clock:
-                        raise HTTPException(409, "El reloj registrado para el proceso no puede cambiar")
     calibration = m.CalibracionDispositivo(dispositivo_id=device.id, version=payload.version,
         metodo=payload.method, parametros=payload.model_dump(mode="json"), valida_desde=payload.valid_from,
         valida_hasta=payload.valid_until, creada_en=utc_now(), creada_por=actor_id(db))
