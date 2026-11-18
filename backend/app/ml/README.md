@@ -34,7 +34,7 @@ El servicio de inferencia (`backend/app/services/ml_service.py`) aplica los sigu
 
 1. **Ventana Mínima de Calibración:**
    - Si la cuba tiene menos de 4 lecturas históricas:
-     - `riesgo_pct`: `0.0%`
+     - `riesgo_pct`: `null`
      - `estado_ia`: `"RECOLECTANDO_DATOS"`
      - `alerta_ia`: `False`
      - `mensaje`: *"Calibrando ventana temporal (mínimo 4 lecturas)..."*

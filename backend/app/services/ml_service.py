@@ -52,7 +52,7 @@ def evaluar_riesgo_parada_cuba(
     de grados Brix y temperatura (orden cronológico ascendente: de más antigua a más reciente).
 
     Retorna un diccionario con:
-    - riesgo_pct: float (0.0 a 100.0)
+    - riesgo_pct: float (0.0 a 100.0) o None cuando falta la estimación
     - estado_ia: "RECOLECTANDO_DATOS" | "FINALIZADA" | "NORMAL" | "ADVERTENCIA" | "CRITICO"
     - alerta_ia: bool (True si riesgo_pct >= 70.0)
     - mensaje: str
@@ -72,7 +72,7 @@ def evaluar_riesgo_parada_cuba(
     # Regla 1: Mínimo 4 lecturas históricas para calcular pendientes y suavizado
     if len(pares_validos) < 4:
         return {
-            "riesgo_pct": 0.0,
+            "riesgo_pct": None,
             "estado_ia": "RECOLECTANDO_DATOS",
             "alerta_ia": False,
             "mensaje": "Calibrando ventana temporal (mínimo 4 lecturas)...",
@@ -145,13 +145,13 @@ def evaluar_riesgo_parada_cuba(
         # predict_proba retorna probabilidades [prob_normal, prob_parada]
         prob_parada = float(model.predict_proba(df_features)[0][1])
         riesgo_pct = round(prob_parada * 100.0, 1)
-    except Exception as e:
-        logger.error(f"[MLService] Error ejecutando inferencia del modelo: {e}")
+    except Exception as error:
+        logger.error("Error de inferencia del baseline: %s", type(error).__name__)
         return {
-            "riesgo_pct": 0.0,
+            "riesgo_pct": None,
             "estado_ia": "ERROR",
             "alerta_ia": False,
-            "mensaje": f"Error en inferencia de IA: {str(e)}",
+            "mensaje": "No se pudo calcular la estimación de riesgo.",
             **metricas
         }
 

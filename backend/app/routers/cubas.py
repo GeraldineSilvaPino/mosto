@@ -94,7 +94,7 @@ def _calcular_prediccion_ml(db: Session, proceso_id: Optional[int]) -> Optional[
 
     if not lecturas:
         return MLPredictionOut(
-            riesgo_pct=0.0,
+            riesgo_pct=None,
             estado_ia="RECOLECTANDO_DATOS",
             alerta_ia=False,
             mensaje="Sin lecturas históricas para calcular predicción",
@@ -359,7 +359,7 @@ def obtener_prediccion_ml(cuba_id: int, response: Response, db: Session = Depend
     )
     if not proceso_activo:
         return MLPredictionOut(
-            riesgo_pct=0.0,
+            riesgo_pct=None,
             estado_ia="RECOLECTANDO_DATOS",
             alerta_ia=False,
             mensaje="Cuba sin proceso de fermentación activo"
@@ -367,7 +367,7 @@ def obtener_prediccion_ml(cuba_id: int, response: Response, db: Session = Depend
 
     pred = _calcular_prediccion_ml(db, proceso_activo.id)
     return pred or MLPredictionOut(
-        riesgo_pct=0.0,
+        riesgo_pct=None,
         estado_ia="RECOLECTANDO_DATOS",
         alerta_ia=False,
         mensaje="Datos insuficientes para predicción"

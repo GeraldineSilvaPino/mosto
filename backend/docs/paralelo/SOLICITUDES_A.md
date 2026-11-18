@@ -1,5 +1,16 @@
 # Solicitudes / contratos publicados por A
 
+## A-API-003 — abstención en la predicción de cuba
+
+GET `/api/cubas/{id}/ml-prediction`, mismo JWT y ámbito de bodega. Para una
+cuba sin proceso activo o un proceso sin suficientes pares Brix/temperatura,
+HTTP 200 con `{"riesgo_pct":null,"estado_ia":"RECOLECTANDO_DATOS","alerta_ia":false,...}`.
+Si falla la inferencia legacy, el estado es `ERROR` y el riesgo también es null.
+El valor opcional ya formaba parte del DTO. El detalle y listado que incluyen
+predicción consumen el mismo cálculo. B debe mostrar ausencia de estimación
+cuando llegue null. Cuba ajena/inexistente conserva 404 y falta de JWT, 401.
+Cobertura en test_ml_prediction y test_access.
+
 ## A-API-002 — disponible: correlación HTTP
 
 Respuestas manejadas incluyen X-Request-ID (UUID del servidor), expuesto por CORS.

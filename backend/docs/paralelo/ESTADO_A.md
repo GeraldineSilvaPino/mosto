@@ -1,5 +1,14 @@
 # Estado A
 
+## 18-11 — A2, riesgo ausente en los datos de cuba
+
+El endpoint de predicción y el cálculo reutilizado por listado/detalle devuelven
+riesgo null cuando faltan observaciones o falla el baseline. Se documentó el
+contrato A-API-003. Comprobados proceso sin lecturas, sin proceso activo, serie
+corta, fallo de modelo, baseline demo y permisos. 18 pruebas SQLite aprobadas
+en 4,66 s. A4 reproducibilidad publicada en `c61cb81`. A1 registro de relojes
+en verificación independiente. B sigue sin solicitudes tras fetch.
+
 ## 18-11 — A4, reproducción del pipeline y protocolo de lotes reales
 
 Finalizaron los siete comandos de referencia, robustez e intervalos en un venv

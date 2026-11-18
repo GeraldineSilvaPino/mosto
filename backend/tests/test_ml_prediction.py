@@ -16,7 +16,7 @@ def test_ml_service_insuficientes_lecturas(client):
     """Valida que con menos de 4 lecturas históricas retorne estado RECOLECTANDO_DATOS."""
     res = evaluar_riesgo_parada_cuba([20.0, 19.5, 19.0], [22.0, 22.1, 22.0])
     assert res["estado_ia"] == "RECOLECTANDO_DATOS"
-    assert res["riesgo_pct"] == 0.0
+    assert res["riesgo_pct"] is None
     assert res["alerta_ia"] is False
     assert "mínimo 4" in res["mensaje"]
 
@@ -58,10 +58,21 @@ def test_api_obtener_prediccion_ml(client):
     res = client.get("/api/cubas/1/ml-prediction")
     assert res.status_code == 200
     data = res.json()
-    assert "riesgo_pct" in data
-    assert "estado_ia" in data
+    assert data["riesgo_pct"] is None
+    assert data["estado_ia"] == "RECOLECTANDO_DATOS"
     assert "alerta_ia" in data
     assert "mensaje" in data
+    assert client.patch("/api/procesos/1/finalizar").status_code == 200
+    assert client.get("/api/cubas/1/ml-prediction").json()["riesgo_pct"] is None
+
+
+def test_missing_model_abstains(monkeypatch):
+    def unavailable():
+        raise OSError("internal model path")
+    monkeypatch.setattr("app.services.ml_service.get_model", unavailable)
+    result = evaluar_riesgo_parada_cuba([15] * 4, [20] * 4)
+    assert result["estado_ia"] == "ERROR" and result["riesgo_pct"] is None
+    assert result["alerta_ia"] is False and "internal model path" not in result["mensaje"]
 
 
 def test_api_simular_anomalia_y_generacion_alerta(client):
