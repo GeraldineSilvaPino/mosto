@@ -104,6 +104,14 @@ de procedencia calcula progreso en horas simuladas y retraso en segundos reales.
 Siguiente puerta: introducir una proyección v2 con calibración y tiempo real
 de adquisición verificables en la misma transacción que la observación. Hoy
 todas las proyecciones se registran como UTC ordinario. Esta guarda impide
-escribir en un proceso acelerado omitiendo la calibración. Permanecen pendientes
-la comprobación de asignación histórica y cierre al instante real de adquisición,
-la disponibilidad real en las consultas públicas y el ensayo de reinicio con backlog.
+escribir en un proceso acelerado omitiendo la calibración.
+
+La ingesta ya verifica la programación antes de esa guarda: resuelve la
+calibración del dispositivo, comprueba secuencia y horizonte, calcula el instante
+real debido y lo compara con recepción, asignación, vigencia y cierre. Una muestra
+vencida anterior a una reasignación sigue su asignación histórica. Desde el
+instante exacto del cambio se exige la nueva asignación. En el instante exacto
+del cierre el proceso deja de aceptar nuevas adquisiciones. La recepción para
+idempotencia sigue siendo la original. Permanecen pendientes la escritura
+transaccional de la proyección, las consultas con dos cortes y el ensayo de
+reinicio con backlog aceptado de extremo a extremo.

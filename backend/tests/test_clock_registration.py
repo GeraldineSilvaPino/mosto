@@ -155,3 +155,50 @@ def test_clock_registration_checks_real_calibration_and_lifecycle(client):
     assert client.post(url, json={**body, "valid_from": anchor.isoformat()}).status_code == 201
     assert client.patch("/api/procesos/1/finalizar").status_code == 200
     assert client.post(url, json={**body, "version": "cerrado"}).status_code == 409
+
+
+@pytest.mark.parametrize("change", ["close", "reassign"])
+def test_accelerated_backlog_is_routed_by_real_due_time_before_projection(client, change):
+    from app.services.telemetry_v2 import aware
+    issued = client.post("/api/dispositivos/1/credenciales", json={"source": "simulado", "label": "backlog"})
+    headers = {"X-Mosto-Device-Key": issued.json()["token"]}
+    with SessionLocal() as db:
+        start = aware(db.get(m.ProcesoFermentacion, 1).fecha_inicio)
+    real = datetime.now(timezone.utc) - timedelta(minutes=40)
+    result = client.post("/api/dispositivos/1/calibraciones", json={
+        "version": "backlog", "method": "synthetic_identity", "valid_from": real.isoformat(),
+        "simulation": {"process_id": 1, "process_start": start.isoformat(), "seed": 42, "scenario": "healthy"},
+        "simulation_clock": {"simulated_anchor": start.isoformat(), "real_anchor": real.isoformat(), "factor": 60},
+    })
+    assert result.status_code == 201
+    boot = str(uuid4())
+
+    def send(sequence):
+        return client.post("/api/v2/telemetria", headers=headers, json={
+            "schema_version": 2, "device_id": 1, "boot_id": boot, "sequence": sequence,
+            "observed_at": (start + timedelta(seconds=300 * sequence)).isoformat(),
+            "calibration_id": result.json()["calibration_id"],
+            "temperature_c": {"value": 20, "quality": "good"}, "brix_apparent": {"value": 19, "quality": "good"},
+        })
+
+    assert send(900).status_code == 422  # Real due time is still ahead of reception.
+    with SessionLocal() as db:
+        boundary_at = real + timedelta(seconds=401 * 5)
+        if change == "close":
+            process = db.get(m.ProcesoFermentacion, 1)
+            process.estado = "finalizada"
+            process.fecha_real_fin = boundary_at
+        else:
+            old = db.query(m.AsignacionDispositivo).filter_by(dispositivo_id=1, activo=True).one()
+            old.activo = False
+            old.desasignado_en = boundary_at
+            db.flush()
+            db.add(m.AsignacionDispositivo(dispositivo_id=1, cuba_id=2, activo=True, asignado_en=boundary_at))
+        db.commit()
+    before = send(400)
+    assert before.status_code == 409 and "todavía no habilitada" in before.json()["detail"]
+    boundary = send(401)
+    reason = "proceso temporal" if change == "close" else "otro proceso"
+    assert boundary.status_code == 409 and reason in boundary.json()["detail"]
+    with SessionLocal() as db:
+        assert db.query(m.LecturaTelemetria).count() == db.query(m.MensajeTelemetria).count() == 0

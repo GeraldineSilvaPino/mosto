@@ -1,5 +1,27 @@
 # Estado A
 
+## 18-11 — A1, enrutamiento temporal del backlog
+
+La ingesta resuelve la calibración registrada y la secuencia antes de convertir
+la observación simulada a su instante real debido. Comprueba disponibilidad,
+revocación, vigencia y asignación del dispositivo; enruta el proceso en ese
+instante real incluso si la recepción llega después de su cierre o reasignación.
+Una adquisición exactamente en el cierre se rechaza. Se conserva el 409
+histórico de una receta 1× que llega a otro proceso. La guarda final impide
+escrituras aceleradas mientras se completa la proyección.
+
+Registro, v2 y simulación: 62 aprobadas y 3 omitidas SQLite, 65 aprobadas
+PostgreSQL. Tras añadir la frontera exacta de reasignación se repitió el archivo
+de registro: 8 aprobadas y 1 omitida SQLite, 9 aprobadas PostgreSQL. Apagados
+confirmados. Último ensayo de restauración publicado en `1b47919`.
+
+**Reanudación A1**: migración posterior a 0009 para que una proyección v2
+autorizada vincule calibración, instante real debido y observación simulada
+de manera verificable por la base. Revisar mosto_validate_reading,
+mosto_validate_v2_message y register_reading_clock. Luego comprobar cortes de
+cinética, histórico y comparación, reinicio HTTP, replay y backlog con escritura.
+B sin solicitudes al último fetch y A5 pendiente de entrega.
+
 ## 18-11 — A3, restauración tras la migración de reloj
 
 Con 0009 y una lectura de prueba en la primera asignación, el ensayo restauró

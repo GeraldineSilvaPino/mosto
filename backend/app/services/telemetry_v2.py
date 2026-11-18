@@ -112,6 +112,13 @@ def evaluate_channels(device, payload, calibration):
     return temperature, temp_quality, calculated, "good", diagnostics
 
 
+def _validate_trajectory_sample(spec, payload):
+    if payload.sequence > spec.duration_hours * 3600 // spec.cadence_seconds:
+        raise HTTPException(422, "La secuencia supera la duración de la simulación")
+    if payload.observed_at - spec.process_start != timedelta(seconds=payload.sequence * spec.cadence_seconds):
+        raise HTTPException(422, "La medición no coincide con la secuencia y el reloj de la simulación")
+
+
 def ingest(db, payload, token):
     received_at = utc_now()
     device, credential = authenticate_device(db, token, payload.device_id, received_at)
@@ -122,12 +129,44 @@ def ingest(db, payload, token):
         # Replays return the original receipt, even if process/calibration later changed.
         return accepted(previous, duplicate=True)
     observed = payload.observed_at
-    if observed > received_at + MAX_FUTURE_SKEW:
+    effective_at = observed
+    calibration = None
+    spec = None
+    clock = None
+    if payload.calibration_id is not None:
+        calibration = db.query(m.CalibracionDispositivo).filter_by(
+            id=payload.calibration_id, dispositivo_id=device.id).first()
+        if calibration is None:
+            raise HTTPException(409, "Referencia de calibración no disponible para este dispositivo")
+        spec_data = calibration.parametros.get("simulation")
+        if spec_data is not None:
+            from app.simulation.model import SimulationSpec
+            spec = SimulationSpec.model_validate(spec_data)
+        clock_data = calibration.parametros.get("simulation_clock")
+        if clock_data is not None:
+            from app.services.demo_access import require_demo_mode
+            from app.simulation.clock import SimulationClock
+            require_demo_mode()
+            if device.origen != "simulado" or spec is None or calibration.metodo != "synthetic_identity":
+                raise HTTPException(409, "El reloj requiere una trayectoria sintética registrada")
+            _validate_trajectory_sample(spec, payload)
+            clock = SimulationClock.model_validate(clock_data)
+            if clock.simulated_anchor != spec.process_start:
+                raise HTTPException(409, "El reloj registrado no corresponde al inicio de la trayectoria")
+            if clock.real_anchor > received_at:
+                raise HTTPException(422, "La trayectoria todavía no ha comenzado en el reloj real")
+            effective_at = clock.real_at(observed)
+            if effective_at > received_at:
+                raise HTTPException(422, "La observación simulada aún no está disponible en el reloj real")
+            if (calibration.revocada_en is not None or effective_at < aware(calibration.valida_desde)
+                    or calibration.valida_hasta is not None and effective_at >= aware(calibration.valida_hasta)):
+                raise HTTPException(409, "La calibración del reloj no está vigente para esta muestra")
+    if effective_at > received_at + MAX_FUTURE_SKEW:
         raise HTTPException(422, "La hora de medición supera la tolerancia futura de dos minutos")
     assignments = db.query(m.AsignacionDispositivo).filter(
         m.AsignacionDispositivo.dispositivo_id == device.id,
-        m.AsignacionDispositivo.asignado_en <= observed,
-        or_(m.AsignacionDispositivo.desasignado_en.is_(None), m.AsignacionDispositivo.desasignado_en > observed)
+        m.AsignacionDispositivo.asignado_en <= effective_at,
+        or_(m.AsignacionDispositivo.desasignado_en.is_(None), m.AsignacionDispositivo.desasignado_en > effective_at)
     ).limit(2).all()
     if len(assignments) != 1:
         raise HTTPException(409, "No hay una asignación temporal inequívoca para esta medición")
@@ -137,8 +176,8 @@ def ingest(db, payload, token):
     if warehouse.empresa_id != device.empresa_id:
         raise HTTPException(409, "La asignación no es coherente con la empresa del dispositivo")
     processes = db.query(m.ProcesoFermentacion).filter(
-        m.ProcesoFermentacion.cuba_id == cube.id, m.ProcesoFermentacion.fecha_inicio <= observed,
-        or_(m.ProcesoFermentacion.fecha_real_fin.is_(None), m.ProcesoFermentacion.fecha_real_fin > observed)
+        m.ProcesoFermentacion.cuba_id == cube.id, m.ProcesoFermentacion.fecha_inicio <= effective_at,
+        or_(m.ProcesoFermentacion.fecha_real_fin.is_(None), m.ProcesoFermentacion.fecha_real_fin > effective_at)
     ).limit(2).all()
     if len(processes) != 1:
         raise HTTPException(409, "No hay un proceso temporal inequívoco para esta medición")
@@ -146,25 +185,13 @@ def ingest(db, payload, token):
     first_source = db.query(m.MensajeTelemetria.origen).filter_by(fermentacion_id=process.id).order_by(m.MensajeTelemetria.id).first()
     if first_source is not None and first_source[0] != device.origen:
         raise HTTPException(409, "Un proceso no puede mezclar telemetría física y simulada")
-    calibration = None
-    if payload.calibration_id is not None:
-        calibration = db.query(m.CalibracionDispositivo).filter_by(
-            id=payload.calibration_id, dispositivo_id=device.id).first()
-        if calibration is None:
-            raise HTTPException(409, "Referencia de calibración no disponible para este dispositivo")
-        if calibration.parametros.get("simulation_clock") is not None:
-            raise HTTPException(409, "Reloj registrado; ingesta acelerada todavía no habilitada")
-        spec = calibration.parametros.get("simulation")
-        if spec is not None:
-            from app.simulation.model import SimulationSpec
-            spec = SimulationSpec.model_validate(spec)
-            if device.origen != "simulado" or process.id != spec.process_id or aware(process.fecha_inicio) != spec.process_start:
-                raise HTTPException(409, "La trayectoria simulada pertenece a otro proceso o reloj")
-            if payload.sequence > spec.duration_hours * 12:
-                raise HTTPException(422, "La secuencia supera la duración de la simulación")
-            expected = spec.process_start + timedelta(seconds=payload.sequence * spec.cadence_seconds)
-            if observed != expected:
-                raise HTTPException(422, "La medición no coincide con la secuencia y el reloj de la simulación")
+    if spec and (device.origen != "simulado" or process.id != spec.process_id
+                 or aware(process.fecha_inicio) != spec.process_start):
+        raise HTTPException(409, "La trayectoria simulada pertenece a otro proceso o reloj")
+    if clock:
+        raise HTTPException(409, "Reloj registrado; ingesta acelerada todavía no habilitada")
+    if spec:
+        _validate_trajectory_sample(spec, payload)
     temperature, tq, brix, bq, diagnostics = evaluate_channels(device, payload, calibration)
     # The legacy projection has numeric(5,2) fields; reject overflow without inventing/clipping a value.
     if brix is not None and not -999.99 <= brix <= 999.99:
@@ -173,7 +200,7 @@ def ingest(db, payload, token):
     latest = db.query(m.MensajeTelemetria).filter_by(dispositivo_id=device.id).order_by(
         m.MensajeTelemetria.observado_en.desc(), m.MensajeTelemetria.id.desc()).first()
     out_of_order = latest is not None and observed < aware(latest.observado_en)
-    delayed = received_at - observed > DELAY_THRESHOLD
+    delayed = received_at - effective_at > DELAY_THRESHOLD
     reading = m.LecturaTelemetria(
         dispositivo_id=device.id, fermentacion_id=process.id, timestamp=observed,
         temp_mosto=temperature, brix=brix, temp_ambiente=None, ph=None, densidad_sg=None,
