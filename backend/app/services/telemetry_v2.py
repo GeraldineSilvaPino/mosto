@@ -73,7 +73,7 @@ def _existing(db, payload, digest):
     return message
 
 
-def evaluate_channels(device, payload, calibration):
+def evaluate_channels(device, payload, calibration, effective_at):
     temp_quality, brix_quality = payload.temperature_c.quality, payload.brix_apparent.quality
     temperature = payload.temperature_c.value if temp_quality == "good" else None
     brix = payload.brix_apparent.value if brix_quality == "good" else None
@@ -84,8 +84,8 @@ def evaluate_channels(device, payload, calibration):
     if brix_quality != "good":
         return temperature, temp_quality, None, brix_quality, diagnostics
     if calibration is None or calibration.revocada_en is not None or (
-        payload.observed_at < aware(calibration.valida_desde) or
-        calibration.valida_hasta is not None and payload.observed_at >= aware(calibration.valida_hasta)
+        effective_at < aware(calibration.valida_desde) or
+        calibration.valida_hasta is not None and effective_at >= aware(calibration.valida_hasta)
     ):
         diagnostics.append("calibration_not_valid")
         return temperature, temp_quality, None, "uncalibrated", diagnostics
@@ -188,11 +188,9 @@ def ingest(db, payload, token):
     if spec and (device.origen != "simulado" or process.id != spec.process_id
                  or aware(process.fecha_inicio) != spec.process_start):
         raise HTTPException(409, "La trayectoria simulada pertenece a otro proceso o reloj")
-    if clock:
-        raise HTTPException(409, "Reloj registrado; ingesta acelerada todavía no habilitada")
-    if spec:
+    if spec and not clock:
         _validate_trajectory_sample(spec, payload)
-    temperature, tq, brix, bq, diagnostics = evaluate_channels(device, payload, calibration)
+    temperature, tq, brix, bq, diagnostics = evaluate_channels(device, payload, calibration, effective_at)
     # The legacy projection has numeric(5,2) fields; reject overflow without inventing/clipping a value.
     if brix is not None and not -999.99 <= brix <= 999.99:
         brix, bq = None, "invalid"
@@ -202,7 +200,8 @@ def ingest(db, payload, token):
     out_of_order = latest is not None and observed < aware(latest.observado_en)
     delayed = received_at - effective_at > DELAY_THRESHOLD
     reading = m.LecturaTelemetria(
-        dispositivo_id=device.id, fermentacion_id=process.id, timestamp=observed,
+        dispositivo_id=device.id, fermentacion_id=process.id, timestamp=effective_at,
+        reloj_calibracion_id=calibration.id if clock else None,
         temp_mosto=temperature, brix=brix, temp_ambiente=None, ph=None, densidad_sg=None,
         origen_dato="v2_" + device.origen, lectura_valida=tq == "good" and bq == "good")
     try:

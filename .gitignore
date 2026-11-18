@@ -22,7 +22,9 @@ Thumbs.db
 
 # Variables de entorno
 .env
-.env.*.local
+.env.*
+*.env
+backend/.env*
 
 # Bases de datos locales
 *.db

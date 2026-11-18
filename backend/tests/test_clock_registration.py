@@ -13,7 +13,7 @@ from app import models as m
 from app.services import demo_access
 
 
-def test_registered_clock_is_scoped_frozen_and_not_yet_ingestible(client, monkeypatch):
+def test_registered_clock_is_scoped_frozen_and_ingestible_in_demo(client, monkeypatch):
     credential = client.post('/api/dispositivos/1/credenciales', json={
         'source':'simulado', 'label':'Clock test'}).json()
     with SessionLocal() as db:
@@ -34,12 +34,15 @@ def test_registered_clock_is_scoped_frozen_and_not_yet_ingestible(client, monkey
     packet=dict(schema_version=2,device_id=1,boot_id=str(uuid4()),sequence=0,
         observed_at=start,calibration_id=ident,temperature_c=dict(value=22,quality='good'),
         brix_apparent=dict(value=24,quality='good'))
-    assert client.post('/api/v2/telemetria',headers=headers,json=packet).status_code==409
+    first = client.post('/api/v2/telemetria',headers=headers,json=packet)
+    assert first.status_code == 201 and first.json()["brix_apparent"]["quality"] == "good"
+    replay = client.post('/api/v2/telemetria',headers=headers,json=packet)
+    assert replay.status_code == 200 and replay.json()["received_at"] == first.json()["received_at"]
     assert client.post('/api/v2/telemetria',headers=headers,
-                       json={**packet, 'calibration_id': None,
+                       json={**packet, 'boot_id': str(uuid4()), 'calibration_id': None,
                              'brix_apparent': {'value': None, 'quality': 'missing'}}).status_code == 409
     with SessionLocal() as db:
-        assert not db.query(m.LecturaTelemetria).filter_by(fermentacion_id=1).count()
+        assert db.query(m.LecturaTelemetria).filter_by(fermentacion_id=1).count() == 1
     monkeypatch.setattr(demo_access,'settings',replace(demo_access.settings,environment='development'))
     assert client.post(url,json=body).status_code==403
 
@@ -196,9 +199,9 @@ def test_accelerated_backlog_is_routed_by_real_due_time_before_projection(client
             db.add(m.AsignacionDispositivo(dispositivo_id=1, cuba_id=2, activo=True, asignado_en=boundary_at))
         db.commit()
     before = send(400)
-    assert before.status_code == 409 and "todavía no habilitada" in before.json()["detail"]
+    assert before.status_code == 201 and before.json()["brix_apparent"]["quality"] == "good"
     boundary = send(401)
     reason = "proceso temporal" if change == "close" else "otro proceso"
     assert boundary.status_code == 409 and reason in boundary.json()["detail"]
     with SessionLocal() as db:
-        assert db.query(m.LecturaTelemetria).count() == db.query(m.MensajeTelemetria).count() == 0
+        assert db.query(m.LecturaTelemetria).count() == db.query(m.MensajeTelemetria).count() == 1

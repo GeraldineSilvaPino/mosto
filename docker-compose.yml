@@ -21,9 +21,9 @@ services:
     environment: &demo-env
       MOSTO_ENV: demo
       DATABASE_URL: postgresql+psycopg2://mosto_demo:local-demo-only@mosto-demo-db:5432/mosto_demo
-      JWT_SECRET_KEY: ${MOSTO_DEMO_JWT_KEY:-}
-      MOSTO_SIMULATOR_KEY: ${MOSTO_SIMULATOR_KEY:-}
-      MOSTO_DEMO_PASSWORD: ${MOSTO_DEMO_PASSWORD:-}
+      JWT_SECRET_KEY: ${MOSTO_DEMO_JWT_KEY:-e2d583507a248cd3be29557ace1d9edbad565c4e8b2b4db96c9a0ac01cea8aea}
+      MOSTO_SIMULATOR_KEY: ${MOSTO_SIMULATOR_KEY:-8f923f8b2add20b4e1b18510e31889044bf63c20d1835b81b59cbde86c0d6938}
+      MOSTO_DEMO_PASSWORD: ${MOSTO_DEMO_PASSWORD:-DemoPassword123!}
     depends_on:
       mosto-demo-db:
         condition: service_healthy
@@ -44,11 +44,21 @@ services:
       timeout: 5s
       retries: 10
 
+  frontend:
+    build: ./frontend
+    profiles: [demo]
+    ports: [127.0.0.1:5173:5173]
+    environment:
+      VITE_BACKEND_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+
   simulator:
     build: ./backend
     profiles: [simulator]
     environment:
-      MOSTO_SIMULATOR_KEY: ${MOSTO_SIMULATOR_KEY:-}
+      MOSTO_SIMULATOR_KEY: ${MOSTO_SIMULATOR_KEY:-8f923f8b2add20b4e1b18510e31889044bf63c20d1835b81b59cbde86c0d6938}
     depends_on:
       backend:
         condition: service_healthy

@@ -105,6 +105,7 @@ def scope_predicates(ctx):
         m.CredencialDispositivo: m.CredencialDispositivo.dispositivo_id.in_(device_ids),
         m.CalibracionDispositivo: m.CalibracionDispositivo.dispositivo_id.in_(device_ids),
         m.MensajeTelemetria: m.MensajeTelemetria.fermentacion_id.in_(process_ids),
+        m.RelojProceso: m.RelojProceso.fermentacion_id.in_(process_ids),
         m.EstadoRegla: m.EstadoRegla.fermentacion_id.in_(process_ids),
         m.AuditoriaAlerta: m.AuditoriaAlerta.alerta_id.in_(alert_ids),
     }
@@ -143,7 +144,8 @@ def install_scope(db, context):
             "admin": {m.Usuario, m.UsuarioBodega, m.EmpresaCliente, m.Bodega,
                       m.LecturaTelemetria, m.EventoAlerta},
             "demo": {m.ProcesoFermentacion, m.Dispositivo, m.AsignacionDispositivo,
-                     m.LecturaTelemetria, m.EventoAlerta},
+                     m.LecturaTelemetria, m.EventoAlerta, m.MensajeTelemetria,
+                     m.EstadoRegla, m.AuditoriaAlerta, m.TelemetriaEstadoNodo},
             "provision": {m.Dispositivo, m.CredencialDispositivo, m.CalibracionDispositivo},
         }.get(context.policy, set())
         for obj in changed:

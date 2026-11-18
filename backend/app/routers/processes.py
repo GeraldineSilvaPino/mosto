@@ -32,7 +32,12 @@ def obtener_cinetica(proceso_id: int, response: Response,
     if cutoff > now or cutoff < aware(process.fecha_inicio):
         raise HTTPException(422, "Instante fuera del historial disponible del proceso")
     response.headers["Cache-Control"] = "no-store"
-    result = process_kinetics(db, process, cutoff)
+    from app.services.simulation_time import process_clock_at, observation_end
+    clock = process_clock_at(db, process.id, cutoff)
+    observation = observation_end(process, cutoff, clock) if clock else cutoff
+    result = process_kinetics(db, process, observation, received_as_of=cutoff)
+    result.update(as_of=result["received_as_of"], observation_as_of=observation.isoformat(),
+                  simulation_clock=clock.model_dump(mode="json") if clock else None)
     # Configuration/lifecycle is current, explicitly separate from the historical snapshot.
     result["current_kinetic_rule"] = rule_status(db, process.id)
     from app.services.monitoring import monitoring_status
@@ -69,7 +74,9 @@ def configurar_regla_cinetica(proceso_id: int, payload: KineticRuleConfig, respo
             raise HTTPException(409, "La configuración está congelada para este proceso; usar un nuevo proceso para otra configuración")
     else:
         now = utc_now()
-        state = m.EstadoRegla(fermentacion_id=process.id, codigo=CODE, ultima_observacion=now,
+        from app.services.simulation_time import process_clock_at, observation_end
+        watermark = observation_end(process, now, process_clock_at(db, process.id, now))
+        state = m.EstadoRegla(fermentacion_id=process.id, codigo=CODE, ultima_observacion=watermark,
             configuracion={**config, "configured_at": now.isoformat(), "configured_by": actor_id(db),
                            "profile_id": process.perfil_id})
         db.add(state)

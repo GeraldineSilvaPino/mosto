@@ -15,8 +15,8 @@ def monitoring_status(db, process, now):
         m.MensajeTelemetria.fermentacion_id == process.id,
         m.MensajeTelemetria.recibido_en <= now,
     ).order_by(m.MensajeTelemetria.recibido_en.desc(), m.MensajeTelemetria.id.desc()).first()
-    from app.services.simulation_time import message_clock
-    clock = message_clock(db, received) if received else None
+    from app.services.simulation_time import message_clock, process_clock_at
+    clock = message_clock(db, received) if received else process_clock_at(db, process.id, now)
     observation_cutoff = clock.simulated_at(now) if clock else now
     observed = db.query(m.MensajeTelemetria).filter(
         m.MensajeTelemetria.fermentacion_id == process.id,

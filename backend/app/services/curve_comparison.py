@@ -6,6 +6,7 @@ import math
 from sqlalchemy import and_
 from app import models as m
 from app.services.telemetry_v2 import aware
+from app.services.simulation_time import observation_end
 
 VERSION = 'curve-comparison-v1'
 TELEMETRY_LIMIT = 3000
@@ -19,11 +20,10 @@ VARIABLES = {
 }
 
 
-def curves(db, process, variable, age_start, age_end, cutoff):
+def curves(db, process, variable, age_start, age_end, cutoff, *, clock=None, hours=24):
     start = aware(process.fecha_inicio)
-    left, right = start + timedelta(hours=age_start), min(start + timedelta(hours=age_end), cutoff)
-    if process.fecha_real_fin:
-        right = min(right, aware(process.fecha_real_fin))
+    observation = observation_end(process, cutoff, clock)
+    left, right = start + timedelta(hours=age_start), min(start + timedelta(hours=age_end), observation)
     unit, value_field, quality_field = VARIABLES[variable]
     query = db.query(m.MensajeTelemetria).filter(
         m.MensajeTelemetria.fermentacion_id == process.id,
@@ -53,11 +53,15 @@ def curves(db, process, variable, age_start, age_end, cutoff):
             value=value, observed_at=observed, available_at=aware(row.recibido_en)))
         previous = identity, observed
 
+    manual_left, manual_right = left, right
+    if clock:
+        manual_right = observation_end(process, cutoff, None)
+        manual_left = max(start, manual_right - timedelta(hours=hours))
     manual_query = db.query(m.MedicionManual, m.AnulacionMedicion).outerjoin(m.AnulacionMedicion, and_(
         m.AnulacionMedicion.medicion_id == m.MedicionManual.id,
         m.AnulacionMedicion.registrado_en <= cutoff)).filter(
         m.MedicionManual.fermentacion_id == process.id, m.MedicionManual.variable == variable,
-        m.MedicionManual.observado_en >= left, m.MedicionManual.observado_en <= right,
+        m.MedicionManual.observado_en >= manual_left, m.MedicionManual.observado_en <= manual_right,
         m.MedicionManual.registrado_en <= cutoff)
     manual_count = manual_query.count()
     manual_rows = manual_query.order_by(m.MedicionManual.observado_en, m.MedicionManual.id).limit(MANUAL_LIMIT).all()
@@ -70,6 +74,8 @@ def curves(db, process, variable, age_start, age_end, cutoff):
             annulment=None if annulment is None else dict(reason=annulment.motivo,
                 available_at=aware(annulment.registrado_en), author_id=annulment.usuario_id)))
     warnings = []
+    if clock and manual:
+        warnings.append('mediciones_manuales_en_hora_real')
     if not value_field:
         warnings.append('sin_canal_automatico')
     elif not rows:
@@ -92,7 +98,9 @@ def curves(db, process, variable, age_start, age_end, cutoff):
     cube = db.query(m.Cuba).filter_by(id=process.cuba_id).one()
     return dict(process_id=process.id, tank=cube.codigo, process_start=start,
         window_start=left, window_end=right if right >= left else None,
-        sources=sources, segments=segments, manual=manual, warnings=warnings,
+        sources=sources, segments=segments, manual=[] if clock else manual,
+        manual_real=manual if clock else [], warnings=warnings,
+        observation_as_of=observation, simulation_clock=clock.model_dump(mode="json") if clock else None,
         telemetry=dict(total=count, returned=len(rows), excluded=excluded, truncated=truncated),
         manual_counts=dict(total=manual_count, returned=len(manual), truncated=manual_count > MANUAL_LIMIT),
         # Lifecycle metadata is current, explicitly outside the historical observation snapshot.

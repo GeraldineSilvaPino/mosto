@@ -28,7 +28,7 @@ def fault(kind, start=1, end=4, **parameters):
     return dict(kind=kind, start_sequence=start, end_sequence=end, **parameters)
 
 
-def prepare(events, hot_profile=False):
+def prepare(events, hot_profile=False, clock_factor=1):
     now = datetime.now(timezone.utc).replace(microsecond=0)
     plan = FaultPlan(events=events)
     with SessionLocal() as db:
@@ -37,7 +37,7 @@ def prepare(events, hot_profile=False):
             profile = db.get(m.PerfilFermentacion, 1)
             profile.temp_min, profile.temp_max = 5, 10
             db.flush()
-        config, keys = provision_fleet(db, now=now, fault_plans={1: plan})
+        config, keys = provision_fleet(db, now=now, fault_plans={1: plan}, clock_factor=clock_factor)
         db.commit()
     return config, keys
 
@@ -282,11 +282,14 @@ def test_legacy_emitter_state_upgrade_retains_identity_pending_payload(client, t
         worker.close()
 
 
-def test_real_local_http_recovers_after_outage_without_fabricated_recovery(client, tmp_path, monkeypatch):
+@pytest.mark.parametrize("factor", [1, 60])
+def test_real_local_http_recovers_after_outage_without_fabricated_recovery(client, tmp_path, monkeypatch, factor):
     import uvicorn
-    config, keys = one_device(prepare([fault('communication_outage', 3, 8)], hot_profile=True))
-    start = config.devices[0].simulation.process_start
-    clock = {'now': start + timedelta(minutes=10)}
+    end = 8 if factor == 1 else 320
+    config, keys = one_device(prepare([fault('communication_outage', 3, end)], hot_profile=True, clock_factor=factor))
+    emitter = config.devices[0]
+    start = emitter.simulation_clock.real_anchor if emitter.simulation_clock else emitter.simulation.process_start
+    clock = {'now': start + timedelta(seconds=600 / factor)}
     monkeypatch.setattr(telemetry_v2, 'utc_now', lambda: clock['now'])
     sock = socket.socket()
     sock.bind(('127.0.0.1', 0))
@@ -308,15 +311,17 @@ def test_real_local_http_recovers_after_outage_without_fabricated_recovery(clien
             episode = db.query(m.EventoAlerta).filter_by(fermentacion_id=1).one()
             assert episode.version_regla and episode.estado_condicion == 'activa'
             eid = episode.id
-        clock['now'] = start + timedelta(minutes=35)
+        clock['now'] = start + timedelta(seconds=(end - 1) * 300 / factor)
         assert worker.tick(clock['now'], max_per_device=10) == 0
-        assert worker.statuses()[0]['pending'] == 5
+        assert worker.statuses()[0]['pending'] == min(end - 3, 10)
         with SessionLocal() as db:
             from app.services.monitoring import sweep_silence
             assert sweep_silence(db, clock['now']) == 1
             db.commit()
             assert db.get(m.EventoAlerta, eid).estado_condicion == 'desconocida'
-        clock['now'] = start + timedelta(minutes=40)
+        worker.close()
+        worker = Worker(config, tmp_path / 'tcp.db', keys=keys)
+        clock['now'] = start + timedelta(seconds=end * 300 / factor)
         assert worker.tick(clock['now'], max_per_device=2) == 2  # Only delayed observations are replayed.
         with SessionLocal() as db:
             from app.services.monitoring import monitoring_status

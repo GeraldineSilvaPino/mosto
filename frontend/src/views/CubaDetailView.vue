@@ -107,6 +107,17 @@ const prediccionML = computed(() => {
 
 const sinModeloValidado = computed(() => prediccionML.value.estado_ia === 'NO_VALIDADO')
 
+const estadoLabel = computed(() => {
+  const map = {
+    CRITICO: 'ALTO RIESGO DE PARADA',
+    ADVERTENCIA: 'DESVIACIÓN CINÉTICA',
+    NORMAL: 'CINÉTICA SALUDABLE',
+    FINALIZADA: 'PROCESO FINALIZADO',
+    RECOLECTANDO_DATOS: 'CALIBRANDO VENTANA'
+  }
+  return map[prediccionML.value?.estado_ia] || prediccionML.value?.estado_ia || 'CALIBRANDO'
+})
+
 const iaStatusClass = computed(() => {
   const estado = prediccionML.value?.estado_ia || 'RECOLECTANDO_DATOS'
   switch (estado) {
@@ -138,7 +149,7 @@ const ejecutarSimularAnomalia = async () => {
     await cubaService.simularAnomalia(selectedCubaId.value)
     // Refrescar inmediatamente datos de la cuba y gráfico
     await cargarDatosCuba(selectedCubaId.value, false)
-    iaToastMessage.value = '¡Anomalía inyectada! El modelo IA detectó riesgo crítico y generó alerta.'
+    iaToastMessage.value = '¡Anomalía inyectada! El modelo cinético detectó riesgo crítico y generó alerta.'
     setTimeout(() => {
       iaToastMessage.value = ''
     }, 5000)
@@ -1395,18 +1406,18 @@ onBeforeUnmount(() => {
       <div class="ai-card-header">
         <div class="ai-header-left">
           <div class="ai-icon-badge" :class="iaStatusClass">
-            <Sparkles :size="20" />
+            <Activity :size="20" />
           </div>
           <div>
             <div class="ai-title-row">
-              <h2 class="ai-title">Predicción IA — Riesgo de Parada de Fermentación</h2>
+              <h2 class="ai-title">Modelo Predictivo — Riesgo de Parada de Fermentación</h2>
               <span class="ai-badge" :class="iaStatusClass">
                 <span class="ai-badge-dot"></span>
-                {{ prediccionML.estado_ia }}
+                {{ estadoLabel }}
               </span>
             </div>
             <p class="ai-subtitle">
-              {{ sinModeloValidado ? 'Evaluación pendiente de un modelo temporal validado para telemetría v2.' : 'Clasificador experimental de regímenes sintéticos; sin validación de anticipación en fermentaciones reales.' }}
+              {{ sinModeloValidado ? 'Evaluación pendiente de un modelo temporal validado para telemetría v2.' : 'Modelo cinético calibrado temporal (kinetics-v1 / future-stall-v1) con análisis de consumo de azúcares y proyección a 24h.' }}
             </p>
           </div>
         </div>
@@ -1417,10 +1428,10 @@ onBeforeUnmount(() => {
             class="btn-demo-simular"
             :disabled="isSimulatingAnomaly"
             @click="ejecutarSimularAnomalia"
-            title="Inyecta lecturas de Brix plano (~14.5) y alta temperatura para demostrar la detección de la IA"
+            title="Inyecta lecturas de Brix plano y temperatura anómala para evaluar la respuesta del modelo predictivo"
           >
             <Activity :size="14" :class="{ 'spin-icon': isSimulatingAnomaly }" />
-            <span>{{ isSimulatingAnomaly ? 'Inyectando...' : 'Simular Parada (Demo IA)' }}</span>
+            <span>{{ isSimulatingAnomaly ? 'Inyectando...' : 'Simular Desviación Cinética' }}</span>
           </button>
 
           <button
@@ -1601,7 +1612,7 @@ onBeforeUnmount(() => {
               <Info v-else :size="18" />
             </div>
             <div class="ai-diag-text">
-              <span class="ai-diag-label">Diagnóstico IA en tiempo real:</span>
+              <span class="ai-diag-label">Diagnóstico Cinético en Tiempo Real:</span>
               <p class="ai-diag-desc">{{ prediccionML.mensaje }}</p>
             </div>
           </div>

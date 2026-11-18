@@ -10,8 +10,12 @@ def main():
     parser.add_argument("--env-file", type=Path, required=True, help="Explicit demo configuration; never backend/.env")
     parser.add_argument("--output", type=Path, required=True, help="New private directory for fleet manifest and device keys")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
+    parser.add_argument("--clock-factor", type=float, default=1,
+                        help="Simulated seconds per real second (1 to 3600)")
     parser.add_argument("--fault-plan", type=Path, help="Optional JSON mapping simulated device IDs 1..5 to frozen fault plans")
     args = parser.parse_args()
+    if not 1 <= args.clock_factor <= 3600:
+        parser.error("--clock-factor must be finite and between 1 and 3600")
     from dotenv import load_dotenv
     load_dotenv(args.env_file, override=False)
     from app.database import settings, SessionLocal
@@ -51,7 +55,8 @@ def main():
             raise SystemExit("Database is not empty; existing demos are never overwritten")
         now = datetime.now(timezone.utc).replace(microsecond=0)
         seed_demo(db, password, process_starts=demo_process_starts(now), commit=False)
-        fleet, keys = provision_fleet(db, args.base_url, now=now, fault_plans=fault_plans)
+        fleet, keys = provision_fleet(db, args.base_url, now=now, fault_plans=fault_plans,
+                                      clock_factor=args.clock_factor)
         args.output.mkdir(parents=True, mode=0o700)
         (args.output / "fleet.json").write_text(fleet.model_dump_json(indent=2), encoding="utf-8")
         secret_path = args.output / "device-keys.env"

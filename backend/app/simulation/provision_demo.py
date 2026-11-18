@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from app import models as m
 from app.simulation.model import SimulationSpec, MODEL_VERSION
+from app.simulation.clock import SimulationClock
 from app.simulation.worker import FleetConfig, EmitterConfig
 from app.services.telemetry_v2 import token_hash
 from app.telemetry_contract import CalibrationCreate
@@ -17,7 +18,7 @@ def demo_process_starts(now):
     return {index: now - timedelta(hours=entry[1]) for index, entry in enumerate(DEMO_SCENARIOS, 1)}
 
 
-def provision_fleet(db, base_url="http://127.0.0.1:8000", now=None, fault_plans=None):
+def provision_fleet(db, base_url="http://127.0.0.1:8000", now=None, fault_plans=None, clock_factor=1):
     """Called immediately after seed_demo on a fresh database; caller commits."""
     now = (now or datetime.now(timezone.utc)).replace(microsecond=0)
     from app.simulation.faults import FaultPlan
@@ -68,7 +69,10 @@ def provision_fleet(db, base_url="http://127.0.0.1:8000", now=None, fault_plans=
         scenario, _, fault = scenarios[index - 1]
         spec = SimulationSpec(process_id=process.id, process_start=start, seed=202600 + index,
                               scenario=scenario, fault_at_hours=fault)
+        clock = None if clock_factor == 1 else SimulationClock(real_anchor=now - (now - start) / clock_factor,
+                                                               simulated_anchor=start, factor=clock_factor)
         params = CalibrationCreate(version=MODEL_VERSION, method="synthetic_identity", valid_from=start, simulation=spec,
+                                   simulation_clock=clock,
                                    emitter_faults=fault_plans.get(device.id))
         calibration = m.CalibracionDispositivo(dispositivo_id=device.id, version=params.version,
                       metodo=params.method, parametros=params.model_dump(mode="json"), valida_desde=start,
@@ -81,5 +85,5 @@ def provision_fleet(db, base_url="http://127.0.0.1:8000", now=None, fault_plans=
         key_env = f"MOSTO_SIM_DEVICE_{device.id}"
         keys[key_env] = token
         emitters.append(EmitterConfig(device_id=device.id, calibration_id=calibration.id, key_env=key_env, simulation=spec,
-                                     emitter_faults=params.emitter_faults))
+                                     emitter_faults=params.emitter_faults, simulation_clock=clock))
     return FleetConfig(base_url=base_url, devices=emitters), keys

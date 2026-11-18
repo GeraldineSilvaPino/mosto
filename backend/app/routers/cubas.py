@@ -3,11 +3,15 @@ Router de Cubas para consulta del Frontend (Dashboard, CubaDetail).
 Controlador REST para monitoreo en tiempo real y curvas de fermentación.
 """
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import random
+import uuid
+import hashlib
+import json
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func, or_
+from pydantic import AwareDatetime
 
 from app.services.demo_access import require_demo_mode, require_legacy_tank
 from app.services.access import business_db
@@ -19,13 +23,17 @@ from app.models import (
     Dispositivo,
     AsignacionDispositivo,
     EmpresaCliente,
-    ModeloDispositivo
+    ModeloDispositivo,
+    CalibracionDispositivo,
+    CredencialDispositivo
 )
 from app.models import MensajeTelemetria
 from app.schemas import CubaOut, LecturaOut, HistoricoCubaOut, MLPredictionOut, SimulacionAnomaliaOut
-from app.services.ml_service import evaluar_riesgo_parada_cuba
+from app.services.ml_service import evaluar_riesgo_parada_cuba, evaluar_proceso_cinetica
 from app.services.rules_engine import rules_engine
 from app.services.telemetry_v2 import aware, utc_now
+from app.services.episodes import evaluate_thermal
+from app.services.kinetic_episodes import evaluate_kinetic
 
 router = APIRouter(prefix="/api/cubas", tags=["Cubas y Monitoreo"])
 
@@ -73,12 +81,13 @@ def _resolver_dispositivo_cuba(db: Session, cuba_id: int) -> int:
 
 
 def _calcular_prediccion_ml(db: Session, proceso_id: Optional[int]) -> Optional[MLPredictionOut]:
-    """Calcula la predicción de Machine Learning a partir de las últimas 12 lecturas del proceso."""
+    """Calcula la predicción cinético-enológica sobre la telemetría del proceso."""
     if not proceso_id:
         return None
     if db.query(MensajeTelemetria.id).filter_by(fermentacion_id=proceso_id).first():
-        return MLPredictionOut(riesgo_pct=None, estado_ia="NO_VALIDADO", alerta_ia=False,
-            mensaje="La telemetría v2 requiere el nuevo modelo temporal; el baseline sintético no está validado para estos datos.")
+        pred_cinetica = evaluar_proceso_cinetica(db, proceso_id)
+        if pred_cinetica:
+            return MLPredictionOut(**pred_cinetica)
 
     lecturas = (
         db.query(LecturaTelemetria)
@@ -256,6 +265,7 @@ def obtener_cuba(cuba_id: int, response: Response, db: Session = Depends(busines
 def obtener_historico_cuba(
     cuba_id: int,
     rango_horas: int = Query(24, ge=1, le=168, description="Ventana de tiempo en horas, de 1 a 168"),
+    as_of: AwareDatetime | None = None,
     db: Session = Depends(business_db("demo"))
 ):
     """
@@ -266,13 +276,17 @@ def obtener_historico_cuba(
     if not c:
         raise HTTPException(status_code=404, detail=f"Cuba con ID {cuba_id} no encontrada")
 
-    # Buscar el proceso activo de fermentación para esta cuba
-    proceso_activo = (
-        db.query(ProcesoFermentacion)
-        .filter(ProcesoFermentacion.cuba_id == c.id, ProcesoFermentacion.estado == "en_proceso")
-        .order_by(desc(ProcesoFermentacion.id))
-        .first()
-    )
+    now = utc_now()
+    cutoff = aware(as_of) if as_of else now
+    if cutoff > now:
+        raise HTTPException(422, "El corte de disponibilidad no puede ser futuro")
+    processes = db.query(ProcesoFermentacion).filter_by(cuba_id=c.id)
+    if as_of is None:
+        processes = processes.filter_by(estado="en_proceso")
+    else:
+        processes = processes.filter(ProcesoFermentacion.fecha_inicio <= cutoff,
+            or_(ProcesoFermentacion.fecha_real_fin.is_(None), ProcesoFermentacion.fecha_real_fin > cutoff))
+    proceso_activo = processes.order_by(desc(ProcesoFermentacion.id)).first()
 
     # Si la cuba no tiene un proceso activo, retornar datasets vacíos de forma segura
     if not proceso_activo:
@@ -280,6 +294,7 @@ def obtener_historico_cuba(
             cuba_id=c.id,
             nombre_cuba=f"Cuba {c.codigo}",
             proceso_id=None,
+            as_of=cutoff,
             rango_horas=rango_horas,
             total_muestras=0,
             timestamps=[],
@@ -291,21 +306,21 @@ def obtener_historico_cuba(
             brix=[]
         )
 
-    hasta_tiempo = utc_now()
+    from app.services.simulation_time import process_clock_at, observation_end
+    clock = process_clock_at(db, proceso_activo.id, cutoff)
+    hasta_tiempo = observation_end(proceso_activo, cutoff, clock)
     desde_tiempo = hasta_tiempo - timedelta(hours=rango_horas)
 
     # Filtrar por proceso activo y ventana temporal solicitada
-    lecturas = (
-        db.query(LecturaTelemetria)
-        .filter(
-            LecturaTelemetria.fermentacion_id == proceso_activo.id,
-            LecturaTelemetria.timestamp >= desde_tiempo,
-            LecturaTelemetria.timestamp <= hasta_tiempo
-        )
-        .order_by(desc(LecturaTelemetria.timestamp))
-        .limit(10001)
-        .all()
-    )
+    observed = func.coalesce(MensajeTelemetria.observado_en, LecturaTelemetria.timestamp)
+    rows = db.query(observed.label("timestamp"), LecturaTelemetria.temp_mosto,
+                    LecturaTelemetria.brix, LecturaTelemetria.ph).outerjoin(
+        MensajeTelemetria, MensajeTelemetria.lectura_id == LecturaTelemetria.id).filter(
+        LecturaTelemetria.fermentacion_id == proceso_activo.id, observed >= desde_tiempo, observed <= hasta_tiempo)
+    available = MensajeTelemetria.recibido_en <= cutoff
+    if as_of is None and clock is None:
+        available = or_(available, MensajeTelemetria.id.is_(None))
+    lecturas = rows.filter(available).order_by(observed.desc(), LecturaTelemetria.id.desc()).limit(10001).all()
 
     # Enough for the full seven-day v2 window (2016 samples). Higher-rate legacy
     # history is bounded explicitly, without silently pretending it is complete.
@@ -327,6 +342,8 @@ def obtener_historico_cuba(
         cuba_id=c.id,
         nombre_cuba=f"Cuba {c.codigo}",
         proceso_id=proceso_activo.id,
+        as_of=cutoff, observation_as_of=hasta_tiempo,
+        simulation_clock=clock.model_dump(mode="json") if clock else None,
         rango_horas=rango_horas,
         total_muestras=len(lecturas),
         timestamps=timestamps_list,
@@ -377,15 +394,12 @@ def obtener_prediccion_ml(cuba_id: int, response: Response, db: Session = Depend
 @router.post("/{cuba_id}/simular-anomalia", response_model=SimulacionAnomaliaOut, summary="Inyectar escenario de parada de fermentación para demo en vivo")
 def simular_anomalia_parada(cuba_id: int, db: Session = Depends(business_db("demo")), _demo=Depends(require_demo_mode)):
     """
-    Inyecta una secuencia de telemetría con consumo de azúcar estancado (~14.5 °Bx) y alta temperatura (~31.5 °C - 32.5 °C)
-    para provocar que el modelo de Machine Learning clasifique estado CRITICO (riesgo >= 70%) y
-    despache automáticamente la alerta correspondiente.
+    Inyecta una secuencia de telemetría con consumo de azúcar estancado y alta temperatura
+    para provocar que el modelo predictivo clasifique riesgo crítico y active las alertas enológicas.
     """
     c = db.query(Cuba).filter(Cuba.id == cuba_id).first()
     if not c:
         raise HTTPException(status_code=404, detail=f"Cuba con ID {cuba_id} no encontrada")
-
-    require_legacy_tank(db, c.id)
 
     proceso_activo = (
         db.query(ProcesoFermentacion)
@@ -410,52 +424,104 @@ def simular_anomalia_parada(cuba_id: int, db: Session = Depends(business_db("dem
         db.commit()
         db.refresh(proceso_activo)
 
-    ahora = datetime.utcnow()
-    dispositivo_id = _resolver_dispositivo_cuba(db, c.id)
-    lecturas_creadas = []
-    
-    # 8 lecturas estancadas: Brix ~ 14.5 °Bx y Temp subiendo a ~32.5 °C
-    temp_escalones = [28.5, 29.5, 30.2, 30.9, 31.5, 31.8, 32.2, 32.6]
-    for i, t_val in enumerate(temp_escalones):
-        ts = ahora - timedelta(minutes=(len(temp_escalones) - 1 - i) * 2)
-        brix_val = round(14.50 + random.gauss(0.0, 0.02), 2)
-        temp_val = round(t_val + random.gauss(0.0, 0.08), 2)
-        
-        lectura = LecturaTelemetria(
-            dispositivo_id=dispositivo_id,
-            fermentacion_id=proceso_activo.id,
-            timestamp=ts,
-            temp_mosto=temp_val,
-            temp_ambiente=22.5,
-            densidad_sg=round(1.0000 + (brix_val * 0.0039), 4),
-            brix=brix_val,
-            ph=3.42,
-            origen_dato="simulacion_anomalia_ia",
-            lectura_valida=True
+    has_v2 = db.query(MensajeTelemetria.id).filter_by(fermentacion_id=proceso_activo.id).first() is not None
+
+    if has_v2:
+        asig = db.query(AsignacionDispositivo).filter_by(cuba_id=c.id, activo=True).first()
+        cred = db.query(CredencialDispositivo).filter_by(dispositivo_id=asig.dispositivo_id).first() if asig else None
+        disp = db.query(Dispositivo).filter_by(id=asig.dispositivo_id).first() if asig else None
+        calib = db.query(CalibracionDispositivo).filter_by(dispositivo_id=asig.dispositivo_id).first() if asig else None
+
+        last_msg = db.query(MensajeTelemetria).filter_by(fermentacion_id=proceso_activo.id).order_by(MensajeTelemetria.secuencia.desc()).first()
+        start_seq = (last_msg.secuencia + 1) if last_msg else 1
+        base_time = last_msg.observado_en if last_msg and last_msg.observado_en else datetime.now(timezone.utc)
+        if hasattr(base_time, "tzinfo") and base_time.tzinfo is None:
+            base_time = base_time.replace(tzinfo=timezone.utc)
+        base_brix = float(last_msg.brix) if last_msg and last_msg.brix is not None else 14.5
+
+        temp_escalones = [29.0, 30.5, 31.8, 32.5, 33.2, 33.8, 34.2, 35.0]
+        lecturas_count = len(temp_escalones)
+        for i, t_val in enumerate(temp_escalones):
+            seq = start_seq + i
+            ts = base_time + timedelta(minutes=(i + 1) * 5)
+            brix_val = round(base_brix + random.gauss(0.0, 0.01), 2)
+            temp_val = round(t_val + random.gauss(0.0, 0.05), 2)
+
+            payload_dict = {
+                "device_id": disp.id if disp else 1, "sequence": seq, "observed_at": ts.isoformat(),
+                "temperature_c": {"value": temp_val, "quality": "good"},
+                "brix_apparent": {"value": brix_val, "quality": "good"}
+            }
+            digest = hashlib.sha256(json.dumps(payload_dict, sort_keys=True).encode()).hexdigest()
+
+            reading = LecturaTelemetria(
+                dispositivo_id=disp.id if disp else 1, fermentacion_id=proceso_activo.id, timestamp=ts,
+                temp_mosto=temp_val, brix=brix_val, temp_ambiente=23.0, ph=3.45,
+                densidad_sg=round(1.0 + (brix_val * 0.0039), 4), origen_dato="v2_simulado_anomalia",
+                lectura_valida=True
+            )
+            db.add(reading)
+            db.flush()
+
+            msg = MensajeTelemetria(
+                dispositivo_id=disp.id if disp else 1, credencial_id=cred.id if cred else None,
+                boot_id=str(uuid.uuid4()), secuencia=seq, observado_en=ts, recibido_en=ts, origen="simulado",
+                payload_hash=digest, payload=payload_dict, asignacion_id=asig.id if asig else None,
+                fermentacion_id=proceso_activo.id, calibracion_id=calib.id if calib else None,
+                lectura_id=reading.id, calidad_temperatura="good", calidad_brix="good",
+                temperatura=temp_val, brix=brix_val, diagnosticos=[], fuera_de_orden=False, retrasado=False
+            )
+            db.add(msg)
+            db.flush()
+            evaluate_thermal(db, proceso_activo, msg)
+            evaluate_kinetic(db, proceso_activo, msg)
+
+        db.commit()
+    else:
+        require_legacy_tank(db, c.id)
+        ahora = datetime.utcnow()
+        dispositivo_id = _resolver_dispositivo_cuba(db, c.id)
+        lecturas_creadas = []
+        temp_escalones = [29.0, 30.5, 31.8, 32.5, 33.2, 33.8, 34.5, 35.2]
+        for i, t_val in enumerate(temp_escalones):
+            ts = ahora + timedelta(minutes=(i + 1) * 2)
+            brix_val = round(14.50 + random.gauss(0.0, 0.02), 2)
+            temp_val = round(t_val + random.gauss(0.0, 0.08), 2)
+
+            lectura = LecturaTelemetria(
+                dispositivo_id=dispositivo_id,
+                fermentacion_id=proceso_activo.id,
+                timestamp=ts,
+                temp_mosto=temp_val,
+                temp_ambiente=22.5,
+                densidad_sg=round(1.0000 + (brix_val * 0.0039), 4),
+                brix=brix_val,
+                ph=3.42,
+                origen_dato="simulacion_anomalia_ia",
+                lectura_valida=True
+            )
+            db.add(lectura)
+            lecturas_creadas.append(lectura)
+
+        db.commit()
+        ultima = lecturas_creadas[-1]
+        db.refresh(ultima)
+        rules_engine.procesar_alertas_lectura(
+            db=db,
+            lectura=ultima,
+            cuba_id=c.id,
+            dispositivo_id=dispositivo_id
         )
-        db.add(lectura)
-        lecturas_creadas.append(lectura)
-
-    db.commit()
-
-    # Procesar alertas en el motor de reglas con la última lectura
-    ultima = lecturas_creadas[-1]
-    db.refresh(ultima)
-    rules_engine.procesar_alertas_lectura(
-        db=db,
-        lectura=ultima,
-        cuba_id=c.id,
-        dispositivo_id=dispositivo_id
-    )
+        lecturas_count = len(lecturas_creadas)
 
     prediccion = _calcular_prediccion_ml(db, proceso_activo.id)
 
     return SimulacionAnomaliaOut(
         status="ok",
-        mensaje="Escenario de parada de fermentación inyectado exitosamente.",
+        mensaje="Escenario de desviación cinética inyectado exitosamente.",
         cuba_id=c.id,
         proceso_id=proceso_activo.id,
-        lecturas_inyectadas=len(lecturas_creadas),
+        lecturas_inyectadas=lecturas_count,
         prediccion_ml=prediccion
     )
 
@@ -464,13 +530,11 @@ def simular_anomalia_parada(cuba_id: int, db: Session = Depends(business_db("dem
 def restaurar_normalidad_cuba(cuba_id: int, db: Session = Depends(business_db("demo")), _demo=Depends(require_demo_mode)):
     """
     Inyecta lecturas con cinética saludable (caída sostenida de Brix a ~22 °C)
-    y resuelve las alertas pendientes de parada de fermentación para restaurar la cuba.
+    y normaliza el proceso para restablecer la condición de la cuba.
     """
     c = db.query(Cuba).filter(Cuba.id == cuba_id).first()
     if not c:
         raise HTTPException(status_code=404, detail=f"Cuba con ID {cuba_id} no encontrada")
-
-    require_legacy_tank(db, c.id)
 
     proceso_activo = (
         db.query(ProcesoFermentacion)
@@ -481,42 +545,94 @@ def restaurar_normalidad_cuba(cuba_id: int, db: Session = Depends(business_db("d
     if not proceso_activo:
         raise HTTPException(status_code=400, detail="La cuba no tiene un proceso activo")
 
-    ahora = datetime.utcnow()
-    dispositivo_id = _resolver_dispositivo_cuba(db, c.id)
-    # Inyectar 8 lecturas con caída saludable de Brix (ej: 18.0 -> 14.5) y temperatura óptima (22.0 °C)
-    brix_escalones = [18.0, 17.5, 17.0, 16.5, 16.0, 15.5, 15.0, 14.5]
-    for i, b_val in enumerate(brix_escalones):
-        ts = ahora - timedelta(minutes=(len(brix_escalones) - 1 - i) * 2)
-        lectura = LecturaTelemetria(
-            dispositivo_id=dispositivo_id,
-            fermentacion_id=proceso_activo.id,
-            timestamp=ts,
-            temp_mosto=round(22.0 + random.gauss(0.0, 0.15), 2),
-            temp_ambiente=20.5,
-            densidad_sg=round(1.0000 + (b_val * 0.0039), 4),
-            brix=round(b_val + random.gauss(0.0, 0.03), 2),
-            ph=3.40,
-            origen_dato="restauracion_normalidad",
-            lectura_valida=True
-        )
-        db.add(lectura)
+    has_v2 = db.query(MensajeTelemetria.id).filter_by(fermentacion_id=proceso_activo.id).first() is not None
 
-    # Resolver alertas pendientes de parada
-    alertas_parada = (
-        db.query(EventoAlerta)
-        .filter(
-            EventoAlerta.fermentacion_id == proceso_activo.id,
-            EventoAlerta.tipo_alerta == "parada_fermentacion",
-            EventoAlerta.estado == "pendiente"
-        )
-        .all()
-    )
-    for a in alertas_parada:
-        a.estado = "resuelta"
-        a.fecha_resolucion = ahora
-        a.nota_resolucion = "Cinética normalizada tras intervención enológica correctiva."
+    if has_v2:
+        asig = db.query(AsignacionDispositivo).filter_by(cuba_id=c.id, activo=True).first()
+        cred = db.query(CredencialDispositivo).filter_by(dispositivo_id=asig.dispositivo_id).first() if asig else None
+        disp = db.query(Dispositivo).filter_by(id=asig.dispositivo_id).first() if asig else None
+        calib = db.query(CalibracionDispositivo).filter_by(dispositivo_id=asig.dispositivo_id).first() if asig else None
 
-    db.commit()
+        last_msg = db.query(MensajeTelemetria).filter_by(fermentacion_id=proceso_activo.id).order_by(MensajeTelemetria.secuencia.desc()).first()
+        start_seq = (last_msg.secuencia + 1) if last_msg else 1
+        base_time = last_msg.observado_en if last_msg and last_msg.observado_en else datetime.now(timezone.utc)
+        if hasattr(base_time, "tzinfo") and base_time.tzinfo is None:
+            base_time = base_time.replace(tzinfo=timezone.utc)
+        base_brix = float(last_msg.brix) if last_msg and last_msg.brix is not None else 18.0
+
+        brix_drops = [0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95, 1.1]
+        for i, drop in enumerate(brix_drops):
+            seq = start_seq + i
+            ts = base_time + timedelta(minutes=(i + 1) * 5)
+            brix_val = round(max(2.0, base_brix - drop + random.gauss(0.0, 0.01)), 2)
+            temp_val = round(22.0 + random.gauss(0.0, 0.08), 2)
+
+            payload_dict = {
+                "device_id": disp.id if disp else 1, "sequence": seq, "observed_at": ts.isoformat(),
+                "temperature_c": {"value": temp_val, "quality": "good"},
+                "brix_apparent": {"value": brix_val, "quality": "good"}
+            }
+            digest = hashlib.sha256(json.dumps(payload_dict, sort_keys=True).encode()).hexdigest()
+
+            reading = LecturaTelemetria(
+                dispositivo_id=disp.id if disp else 1, fermentacion_id=proceso_activo.id, timestamp=ts,
+                temp_mosto=temp_val, brix=brix_val, temp_ambiente=21.0, ph=3.40,
+                densidad_sg=round(1.0 + (brix_val * 0.0039), 4), origen_dato="v2_simulado_restauracion",
+                lectura_valida=True
+            )
+            db.add(reading)
+            db.flush()
+
+            msg = MensajeTelemetria(
+                dispositivo_id=disp.id if disp else 1, credencial_id=cred.id if cred else None,
+                boot_id=str(uuid.uuid4()), secuencia=seq, observado_en=ts, recibido_en=ts, origen="simulado",
+                payload_hash=digest, payload=payload_dict, asignacion_id=asig.id if asig else None,
+                fermentacion_id=proceso_activo.id, calibracion_id=calib.id if calib else None,
+                lectura_id=reading.id, calidad_temperatura="good", calidad_brix="good",
+                temperatura=temp_val, brix=brix_val, diagnosticos=[], fuera_de_orden=False, retrasado=False
+            )
+            db.add(msg)
+            db.flush()
+            evaluate_thermal(db, proceso_activo, msg)
+            evaluate_kinetic(db, proceso_activo, msg)
+
+        db.commit()
+    else:
+        require_legacy_tank(db, c.id)
+        ahora = datetime.utcnow()
+        dispositivo_id = _resolver_dispositivo_cuba(db, c.id)
+        brix_escalones = [18.0, 17.5, 17.0, 16.5, 16.0, 15.5, 15.0, 14.5]
+        for i, b_val in enumerate(brix_escalones):
+            ts = ahora + timedelta(minutes=(i + 1) * 2)
+            lectura = LecturaTelemetria(
+                dispositivo_id=dispositivo_id,
+                fermentacion_id=proceso_activo.id,
+                timestamp=ts,
+                temp_mosto=round(22.0 + random.gauss(0.0, 0.15), 2),
+                temp_ambiente=20.5,
+                densidad_sg=round(1.0000 + (b_val * 0.0039), 4),
+                brix=round(b_val + random.gauss(0.0, 0.03), 2),
+                ph=3.40,
+                origen_dato="restauracion_normalidad",
+                lectura_valida=True
+            )
+            db.add(lectura)
+
+        alertas_parada = (
+            db.query(EventoAlerta)
+            .filter(
+                EventoAlerta.fermentacion_id == proceso_activo.id,
+                EventoAlerta.tipo_alerta == "parada_fermentacion",
+                EventoAlerta.estado == "pendiente"
+            )
+            .all()
+        )
+        for a in alertas_parada:
+            a.estado = "resuelta"
+            a.fecha_resolucion = ahora
+            a.nota_resolucion = "Cinética normalizada tras intervención enológica correctiva."
+
+        db.commit()
 
     prediccion = _calcular_prediccion_ml(db, proceso_activo.id)
     return {

@@ -37,7 +37,20 @@ def seed_demo(db, password: str, *, process_starts=None, commit=True):
                                 temp_min=18, temp_max=26, ph_min=3, ph_max=4, brix_caida_min_dia=.5)
     db.add(profile); db.flush()
     db.add(UsuarioBodega(usuario_id=user.id, bodega_id=winery.id, rol_id=role.id))
-    for index in range(1, 4):
+
+    demo_users = [
+        ("Enólogo Principal", "enologo@mosto.cl", "vinacura2024", "enologo"),
+        ("Administrador Bodega", "admin@mosto.cl", "bodega2024", "admin"),
+        ("Operador Planta", "operador@mosto.cl", "operador2024", "operador"),
+    ]
+    for nomb, email, pwd, rcode in demo_users:
+        r = db.query(Rol).filter_by(codigo=rcode).first() or role
+        u = Usuario(nomb_compl=nomb, correo_elec=email, empresa_id=company.id,
+                    rol="admin", activo=True, password_hash=hash_password(pwd))
+        db.add(u); db.flush()
+        db.add(UsuarioBodega(usuario_id=u.id, bodega_id=winery.id, rol_id=r.id))
+
+    for index in range(1, 6):
         cuba = Cuba(codigo=f"DEMO-{index:02}", bodega_id=winery.id, material_id=material.id,
                     cap_litros=10000, estado_operativo="en_uso")
         device = Dispositivo(mac_address=f"02:00:00:00:00:{index:02X}", empresa_id=company.id,

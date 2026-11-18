@@ -141,6 +141,9 @@ class SimulacionAnomaliaOut(BaseModel):
 
 
 class HistoricoCubaOut(BaseModel):
+    as_of: Optional[datetime] = None
+    observation_as_of: Optional[datetime] = None
+    simulation_clock: Optional[dict] = None
     truncated: bool = False
     timezone: str = "UTC"
     cuba_id: int
