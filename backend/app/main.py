@@ -11,6 +11,7 @@ from pathlib import Path
 from .database import engine, settings
 from .services.auth_service import get_current_user
 from .services.demo_access import require_simulator_key
+from .services.request_tracing import RequestTracing
 from .routers import auth, users, company, binnacle, master, telemetry, cubas, processes, devices, thresholds, alerts
 from .routers import device_provisioning, telemetry_v2, simulations, interventions, manual_measurements, curve_comparison, profile_overrides
 
@@ -19,8 +20,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
+    expose_headers=["Content-Disposition", "X-Request-ID"],
 )
+app.add_middleware(RequestTracing)
 app.include_router(auth.router)
 for router in (users.router, company.router, binnacle.router, master.router, cubas.router,
                processes.router, devices.router, thresholds.router, alerts.router, interventions.router, manual_measurements.router):

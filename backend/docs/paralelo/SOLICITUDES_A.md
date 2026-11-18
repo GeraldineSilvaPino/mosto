@@ -1,5 +1,12 @@
 # Solicitudes / contratos publicados por A
 
+## A-API-002 — disponible: correlación HTTP
+
+Respuestas manejadas incluyen X-Request-ID (UUID del servidor), expuesto por CORS.
+B puede mostrarlo/capturarlo para diagnóstico; no implica éxito ni debe sustituir
+request_id de idempotencia de operaciones. No obligatorio para peticiones.
+Errores 500 no manejados pueden carecer de cabecera. No hay cambio de cuerpos.
+
 ## A-API-001 — disponible: listado paginado de procesos
 
 GET `/api/procesos/pagina?grupo=todos&limit=20&offset=0&cuba_id=1`.

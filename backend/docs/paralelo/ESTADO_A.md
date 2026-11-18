@@ -1,5 +1,15 @@
 # Estado A
 
+## 18-11: A3, correlación HTTP
+
+Middleware registra request_id propio, método, plantilla de ruta, status y duración;
+no query, cuerpo ni credenciales. Cabecera visible en CORS. Configuración explícita
+backend/logging.json y guía OBSERVABILIDAD.md. Cinco pruebas SQLite aprobadas
+(correlación, errores manejados, CORS y paginación), 1,97 s. No certifica retención,
+carga ni redacción de logs ajenos. A3 parcial: faltan instalación limpia, Docker,
+backup/restauración, carga y CI remota. A1 sigue pendiente de migración temporal.
+Commit anterior A2: e4ba4c8, publicado. No se modificó ningún archivo de B.
+
 Inicio: base común, 18-11-2026. Ningún bloque nuevo A1–A5 cerrado en paralelo aún.
 Activo siguiente: A1, migración e integración temporal del reloj.
 
