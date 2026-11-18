@@ -1,5 +1,15 @@
 # Estado A
 
+## 18-11 — A3, restauración tras la migración de reloj
+
+Con 0009 y una lectura de prueba en la primera asignación, el ensayo restauró
+31 tablas, 28 filas y 310 restricciones, incluyendo el vínculo lectura–reloj y
+sus valores. Se verificaron las restricciones en la base restaurada y se confirmó
+el apagado de PostgreSQL 18.4. Los dos trabajos de CI también pasaron para
+[ed783a4](https://github.com/GeraldineSilvaPino/mosto/actions/runs/44394427327).
+La suite PostgreSQL completa previa al ajuste final de vigencia pasó con 350
+aprobadas y 1 omitida; el ajuste posterior quedó cubierto por las 23 focalizadas.
+
 ## 18-11 — A1, identidad del reloj y procedencia pública
 
 Revisión 0009 posterior a 0008. SQLite y PostgreSQL reconstruyen el reloj

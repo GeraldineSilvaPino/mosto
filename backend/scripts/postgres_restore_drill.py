@@ -10,6 +10,7 @@ from app.config import validate_isolated_database
 from app.database import SessionLocal, engine, settings
 from app.demo_seed import seed_demo
 from app.migrations import upgrade_local
+from app.models import AsignacionDispositivo, LecturaTelemetria, ProcesoFermentacion
 
 
 def inventory(db):
@@ -20,12 +21,15 @@ def inventory(db):
                   for name in names}
         revisions = conn.execute(text("SELECT version_num FROM alembic_version ORDER BY 1")).all()
         companies = conn.execute(text('SELECT id, nomb_emp FROM "EMPRESA_CLIENTE" ORDER BY id')).all()
+        readings = conn.execute(text('''SELECT l.id, l.timestamp, l.brix, l.temp_mosto, r.fermentacion_id, r.clave
+            FROM "LECTURA_TELEMETRIA" AS l JOIN "RELOJ_PROCESO" AS r
+              ON l.fermentacion_id = r.fermentacion_id ORDER BY l.id''')).all()
         constraints = conn.execute(text("""
             SELECT conrelid::regclass::text, conname, contype, convalidated
               FROM pg_constraint WHERE connamespace = 'public'::regnamespace
              ORDER BY 1, 2
         """)).all()
-    return counts, revisions, companies, constraints
+    return counts, revisions, companies, constraints, readings
 
 
 def run_restore_drill(binaries, archive):
@@ -37,9 +41,14 @@ def run_restore_drill(binaries, archive):
     upgrade_local(settings.database_url, "test")
     with SessionLocal() as db:
         seed_demo(db, secrets.token_hex(24))
+        process = db.query(ProcesoFermentacion).order_by(ProcesoFermentacion.id).first()
+        assignment = db.query(AsignacionDispositivo).filter_by(cuba_id=process.cuba_id, activo=True).one()
+        db.add(LecturaTelemetria(dispositivo_id=assignment.dispositivo_id, fermentacion_id=process.id,
+                                timestamp=process.fecha_inicio, temp_mosto=21, brix=20))
+        db.commit()
     before = inventory(engine)
-    counts, revisions, companies, constraints = before
-    if not (companies and revisions and constraints and counts["USUARIO"]):
+    counts, revisions, companies, constraints, readings = before
+    if not (companies and revisions and constraints and counts["USUARIO"] and readings):
         raise RuntimeError("Expected a migrated schema with demo data")
     target = source.set(database="mosto_test_restore")
     env = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
@@ -55,7 +64,8 @@ def run_restore_drill(binaries, archive):
     restored = create_engine(target)
     try:
         after = inventory(restored)
-        for label, expected, actual in zip(("counts", "revisions", "companies", "constraints"), before, after):
+        for label, expected, actual in zip(("counts", "revisions", "companies", "constraints", "readings"),
+                                           before, after, strict=True):
             if actual != expected:
                 if label == "constraints":
                     print("Missing constraints:", list(set(expected) - set(actual))[:3])
