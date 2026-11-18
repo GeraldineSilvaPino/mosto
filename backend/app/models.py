@@ -253,6 +253,7 @@ class LecturaTelemetria(Base):
     dispositivo_id = Column(BigInteger, ForeignKey("DISPOSITIVO.id"), nullable=True)
     fermentacion_id = Column(BigInteger, ForeignKey("PROCESO_FERMENTACION.id", ondelete="RESTRICT"), nullable=True, index=True)
     timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+    reloj_calibracion_id = Column(BigInteger, ForeignKey("CALIBRACION_DISPOSITIVO.id"), nullable=True)
 
     temp_mosto = Column(Numeric(5, 2), nullable=True)      # DS18B20 (tempsensmosto.ino)
     temp_ambiente = Column(Numeric(5, 2), nullable=True)   # DHT22 (tempsensmosto.ino)

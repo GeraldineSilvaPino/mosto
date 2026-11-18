@@ -1,5 +1,21 @@
 # Estado A
 
+## 18-11 — A1, proyección temporal en la base
+
+La migración 0010 enlaza la lectura programada con la calibración sintética
+y conserva en la proyección el instante real debido. El sobre conserva la
+observación simulada y la recepción UTC. Los motores comprueban empresa,
+dispositivo, asignación, vigencia, cierre, registro del reloj, secuencia y
+correspondencia de tiempos. La guarda ordinaria continúa cubriendo lecturas
+físicas y recetas antiguas. La vuelta a 0009 rechaza perder pares ya grabados.
+
+Pruebas de proyección y migraciones: 11 aprobadas y 5 omitidas SQLite;
+16 aprobadas PostgreSQL. Verificados factor fraccionario en el cálculo de
+microsegundos (300 segundos / 7), modificación rechazada, conservación de
+datos al rechazar downgrade y ciclo completo con base vacía. La prueba escribe
+ambas filas en una transacción local; sigue pendiente conectar la ingesta HTTP
+y adaptar las consultas antes de anunciar la demo acelerada. B sin solicitudes.
+
 ## 18-11 — A1, enrutamiento temporal del backlog
 
 La ingesta resuelve la calibración registrada y la secuencia antes de convertir
