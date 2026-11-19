@@ -1,5 +1,14 @@
 # Módulo de Machine Learning — Predicción Temprana de Paradas de Fermentación
 
+> Actualización del despliegue: la descripción de Gradient Boosting que sigue
+> corresponde al modelo legacy. Si el proceso tiene mensajes de telemetría v2,
+> la API usa `calibrated_kinetics_model.joblib`: regresión logística estandarizada
+> con calibración sigmoide y diez variables temporales. Evalúa una ventana de
+> 24 horas, exige cobertura ≥80 %, huecos ≤30 minutos y datos recientes ≤15 minutos.
+> Un gráfico con datos no garantiza que esa ventana sea suficiente para inferencia.
+> El porcentaje es experimental y solo aplicable a simulaciones; no es una
+> probabilidad validada en fermentaciones reales. Ver `docs/CINETICA_Y_PIPELINE_ML.md`.
+
 Este directorio contiene los artefactos, datos y especificación técnica del modelo de Machine Learning integrado en la plataforma **MOSTO** para la detección y predicción temprana de paradas de fermentación (*"Stuck Fermentation"*).
 
 ---

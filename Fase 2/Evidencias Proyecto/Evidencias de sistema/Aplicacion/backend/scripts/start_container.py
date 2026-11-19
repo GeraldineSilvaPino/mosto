@@ -10,6 +10,7 @@ from urllib.request import urlopen
 def main():
     port = int(os.environ.get('PORT', '8000'))
     children = []
+    emitter_envs = []
     stopping = False
 
     def stop(*_):
@@ -32,16 +33,22 @@ def main():
                     pass
                 time.sleep(2)
             if not stopping and api.poll() is None:
-                children.append(subprocess.Popen([sys.executable, '-m', 'scripts.simulate_container']))
+                ids = os.environ.get('MOSTO_SIMULATION_DEVICE_IDS', os.environ.get('MOSTO_SIMULATION_DEVICE_ID', '')).split(',')
+                for ident in dict.fromkeys(ids):
+                    env = {**os.environ, 'MOSTO_SIMULATION_DEVICE_ID': str(int(ident.strip()))}
+                    emitter_envs.append(env)
+                    children.append(subprocess.Popen([sys.executable, '-m', 'scripts.simulate_container'], env=env))
         while not stopping and api.poll() is None:
-            if len(children) > 1 and children[1].poll() is not None:
+            failed = [i for i in range(1, len(children)) if children[i].poll() is not None]
+            if failed:
                 print('[simulation] Emitter stopped; restarting in 30 seconds', flush=True)
                 for _ in range(30):
                     if stopping or api.poll() is not None:
                         break
                     time.sleep(1)
                 if not stopping and api.poll() is None:
-                    children[1] = subprocess.Popen([sys.executable, '-m', 'scripts.simulate_container'])
+                    for i in failed:
+                        children[i] = subprocess.Popen([sys.executable, '-m', 'scripts.simulate_container'], env=emitter_envs[i - 1])
             time.sleep(1)
         return 0 if stopping else (api.returncode or 1)
     finally:

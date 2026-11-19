@@ -40,7 +40,7 @@ def provision_config():
         tank = db.get(m.Cuba, process.cuba_id)
         warehouse = db.get(m.Bodega, tank.bodega_id)
         actor = db.get(m.Usuario, calibration.creada_por)
-        if (tank.codigo != 'DEMO-LIVE' or warehouse.empresa_id != device.empresa_id
+        if (tank.codigo not in {'DEMO-LIVE', 'DEMO-ML'} or warehouse.empresa_id != device.empresa_id
                 or actor is None or actor.empresa_id != device.empresa_id
                 or not actor.activo or process.fecha_real_fin is not None
                 or process.estado != 'en_proceso' or aware(process.fecha_inicio) != spec.process_start):
@@ -63,7 +63,7 @@ def provision_config():
         credential = db.get(m.CredencialDispositivo, ident)
         if credential is None:
             db.add(m.CredencialDispositivo(id=ident, dispositivo_id=device.id,
-                token_hash=token_hash(token), etiqueta='Docker DEMO-LIVE',
+                token_hash=token_hash(token), etiqueta=f'Docker {tank.codigo}',
                 creada_en=datetime.now(timezone.utc), expira_en=expires, creada_por=actor.id))
         elif credential.revocada_en is not None or aware(credential.expira_en) <= datetime.now(timezone.utc):
             raise ValueError('Container credential revoked or expired')
@@ -113,7 +113,7 @@ def main():
                             delivered = worker.tick(max_per_device=12)
                             status = worker.statuses()
                             if delivered or status != previous:
-                                print(json.dumps({'simulation': 'DEMO-LIVE', 'delivered': delivered, 'devices': status}), flush=True)
+                                print(json.dumps({'simulation_device': config.device_id, 'delivered': delivered, 'devices': status}), flush=True)
                                 previous = status
                             if any(s['status'] in {'blocked', 'completed'} for s in status):
                                 return
