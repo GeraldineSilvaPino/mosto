@@ -21,6 +21,8 @@ COPY requirements.txt /app/
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+ENV MOSTO_SIMULATION_DEVICE_IDS=12,13
+
 # Copiar el código de la aplicación y scripts
 COPY ./app /app/app
 COPY ./scripts /app/scripts

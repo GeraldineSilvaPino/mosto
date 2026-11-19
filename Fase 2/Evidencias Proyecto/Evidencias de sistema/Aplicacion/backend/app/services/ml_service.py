@@ -32,6 +32,35 @@ _model_instance = None
 _calibrated_model_instance = None
 
 
+def _kinetics_pending_message(result):
+    """Explain the actual evidence gates instead of implying the model is broken."""
+    channels = result['channels']
+    coverage = min(channels[name]['coverage'] for name in ('brix', 'temperature'))
+    age = result['features']['age_hours']
+    reasons = result['abstention_reasons']
+    prefix = (f'El modelo temporal evalúa 24 h de datos. '
+              f'Este proceso tiene {age:.1f} h; cobertura válida: {coverage * 100:.0f} %. ')
+    if age < 23.5:
+        return prefix + ('Necesita cerca de 24 h de historial continuo, con cobertura mínima del 80 % '
+                         'y sin huecos mayores de 30 min. El porcentaje aún no se calcula.')
+    explanations = []
+    if any(reason.endswith('_stale') for reason in reasons):
+        explanations.append('la última lectura válida debe tener como máximo 15 min')
+    if any(reason.endswith('_gap') for reason in reasons):
+        explanations.append('hay huecos de más de 30 min')
+    if any(reason.endswith('_coverage') for reason in reasons):
+        explanations.append('falta cobertura válida en alguna ventana de evaluación')
+    if any(reason.endswith('_latest_quality') for reason in reasons):
+        explanations.append('la lectura más reciente tiene calidad insuficiente')
+    if 'brix_calibration_or_device_change' in reasons:
+        explanations.append('cambió el dispositivo o la calibración dentro de la ventana')
+    if 'ambiguous_timestamps' in reasons:
+        explanations.append('hay fechas de observación duplicadas')
+    if 'mixed_sources' in reasons:
+        explanations.append('se mezclan fuentes de datos')
+    return prefix + 'No se calcula el porcentaje: ' + '; '.join(explanations or ['evidencia insuficiente']) + '.'
+
+
 def get_model():
     """Carga y retorna la instancia singleton del modelo en memoria."""
     global _model_instance
@@ -91,7 +120,7 @@ def evaluar_proceso_cinetica(db, proceso_id: int) -> Optional[Dict[str, Any]]:
         return {**pending, 'estado_ia': 'NO_VALIDADO',
                 'mensaje': 'Modelo experimental disponible solo para simulación.'}
     if not result['eligible']:
-        return pending
+        return {**pending, 'mensaje': _kinetics_pending_message(result)}
     try:
         model = get_calibrated_model()
         if model is None:

@@ -2,7 +2,11 @@
 
 El CMD inicia Uvicorn y, después de `/api/ready`, un emisor local de la cuba
 `DEMO-LIVE`. El Dockerfile de este despliegue habilita `MOSTO_SIMULATION_ENABLED=1`
-y selecciona `MOSTO_SIMULATION_DEVICE_ID=12`. Para desactivarlo, establecer
+y selecciona `MOSTO_SIMULATION_DEVICE_IDS=12,13`: DEMO-LIVE y DEMO-ML.
+Cada emisor usa su propio dispositivo, calibración, secuencias y credencial.
+DEMO-ML tiene un historial inicial de 25 h generado sintéticamente para mostrar
+la evaluación experimental durante una presentación; no representa sensores reales.
+Para desactivarlo, establecer
 `MOSTO_SIMULATION_ENABLED=0` en Render. No configurar un Docker Command que
 sustituya el CMD si se desea este arranque conjunto.
 
