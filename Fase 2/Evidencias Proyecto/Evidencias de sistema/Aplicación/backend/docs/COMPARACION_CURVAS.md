@@ -47,7 +47,7 @@ La lista de referencias usa el endpoint existente de procesos visibles, todavía
 
 `tests/test_curve_comparison.py`: 16 pruebas que cubren fuga temporal por recepción/registro, anulaciones históricas, calidad por canal, huecos, calibraciones, ambigüedad entre dispositivos, límites, edad frente a calendario, procesos cerrados, variables solo manuales, permisos y ausencia de escrituras.
 
-Build Vue y navegador con API/SQLite nuevos: dos trayectorias sintéticas, 97 muestras visibles por proceso y una medición manual por proceso a las siete horas, con métodos distintos y fechas de calendario distintas. Al consultar antes de la recepción/registro, ambos historiales quedan vacíos; al restaurar el corte actual vuelven a mostrarse. Evidencia y suite consolidada en [Estado del plan](ESTADO_PLAN_MAESTRO.md).
+Build Vue y navegador con API/SQLite nuevos: dos trayectorias sintéticas, 97 muestras visibles por proceso y una medición manual por proceso a las siete horas, con métodos distintos y fechas de calendario distintas. Al consultar antes de la recepción/registro, ambos historiales quedan vacíos; al restaurar el corte actual vuelven a mostrarse. Véanse los [resultados de comparación de curvas](evidencias/comparacion-curvas-2026-11-17.md).
 
 Pendiente: overrides explícitos de perfil, validación PostgreSQL, recomendaciones DSS trazables con criterios revisados por enología y evaluación real de utilidad. La coincidencia de edad no controla cepa, perfil, temperatura, método ni intervención; no debe interpretarse como un ensayo causal pareado.
 # Exportación de la consulta (18-11-2026)

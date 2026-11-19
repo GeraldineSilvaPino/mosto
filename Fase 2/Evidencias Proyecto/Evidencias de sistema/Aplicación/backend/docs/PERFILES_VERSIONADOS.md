@@ -65,12 +65,11 @@ proceso, modificar el perfil, enviar primeras lecturas y confirmar que el episod
 usa la versión inicial. Migración reversible y comparación de esquema con ORM.
 
 Vue incorpora historial expandible y control de revisión al guardar; comprobado
-mediante build, sin nueva sesión de navegador para este bloque. El resultado
-consolidado está en [Estado del plan](ESTADO_PLAN_MAESTRO.md).
+mediante build, sin nueva sesión de navegador para este bloque.
 
 Actualización 18-11: [ajustes térmicos explícitos por proceso](AJUSTES_PERFIL_PROCESO.md)
 implementados con motivo, aprobación, vigencia e historial. Conservan el snapshot
 inicial y los límites de episodios abiertos. Las intervenciones estructuradas
-también están implementadas; ver el estado maestro para el orden actual.
+también están implementadas.
 Pendientes: validación concurrente PostgreSQL, adopción de datos remotos y revisión
 integral de controles heredados de la pantalla.
