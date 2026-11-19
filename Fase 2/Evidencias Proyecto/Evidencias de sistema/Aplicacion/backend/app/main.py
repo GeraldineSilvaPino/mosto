@@ -18,7 +18,7 @@ from .routers import device_provisioning, telemetry_v2, simulations, interventio
 app = FastAPI(title="MOSTO API - Plataforma Vitivinícola IoT", version="1.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
+    allow_origins=["https://mosto-blue.vercel.app", "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
     expose_headers=["Content-Disposition", "X-Request-ID"],
 )
