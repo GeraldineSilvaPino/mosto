@@ -42,9 +42,13 @@ const reasons = {
   mediciones_anuladas: 'Las mediciones anuladas al corte permanecen en la tabla y se excluyen del gráfico.',
   metodos_brix_no_equivalentes: 'Los métodos de Brix no se consideran equivalentes; no se calcula error ni azúcar residual.',
   incluye_simulacion: 'Incluye datos simulados; no acredita evolución física ni eficacia de tratamientos.',
+  recepcion_legacy_no_registrada: 'Lecturas antiguas: el corte filtra la hora de medición; no se registró la hora de recepción.',
+  mediciones_manuales_en_hora_real: 'Las mediciones manuales usan hora real y se muestran por separado del reloj simulado.',
   origenes_mixtos: 'Hay distintos orígenes de telemetría, presentados en segmentos separados.'
 }
-const date = value => new Date(value).toLocaleString('es-CL')
+const date = value => value ? new Date(value).toLocaleString('es-CL') : 'Sin registro de recepción'
+const localNow = () => { const now = new Date(); return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }
+const maxCutoff = ref(localNow())
 let chart, generation = 0, controller
 function destroy() { chart?.destroy(); chart = null }
 async function draw() {
@@ -56,9 +60,9 @@ async function draw() {
     const color = index ? '#21758a' : '#76263d'
     const prefix = `${process.tank} · proceso ${process.process_id}`
     process.segments.forEach(segment => datasets.push({
-      label: `${prefix} · ${segment.source} · equipo ${segment.device_id} · calibración ${segment.calibration_id ?? 'N/D'}`,
+      label: `${prefix} · ${segment.source} · equipo ${segment.device_id} · ${segment.calibration_id ? `calibración ${segment.calibration_id}` : 'registro histórico'}`,
       data: segment.points.map(p => ({ x: p.hour, y: p.value, observed: p.observed_at, available: p.available_at })),
-      showLine: true, borderColor: color, backgroundColor: color, borderDash: index ? [6, 4] : [], borderWidth: 2, pointRadius: 2, spanGaps: false
+      showLine: true, cubicInterpolationMode: 'monotone', stepped: false, borderColor: color, backgroundColor: color, borderDash: index ? [6, 4] : [], borderWidth: 2, pointRadius: 2, spanGaps: false
     }))
     const groups = new Map()
     process.manual.filter(p => !p.annulment && p.unit === data.value.unit).forEach(p => {
@@ -81,6 +85,11 @@ async function draw() {
 }
 async function load() {
   exportMessage.value = ''
+  maxCutoff.value = localNow()
+  if (cutoff.value && (!Number.isFinite(new Date(cutoff.value).getTime()) || new Date(cutoff.value) > new Date())) {
+    error.value = 'El corte debe ser una fecha válida anterior o igual a ahora.'
+    return
+  }
   const token = ++generation
   controller?.abort(); controller = new AbortController()
   busy.value = true; error.value = ''; data.value = null; destroy()
@@ -109,29 +118,33 @@ onBeforeUnmount(() => { generation++; controller?.abort(); destroy() })
 
 <template>
   <section class="comparison" aria-label="Comparación de curvas y evidencia manual">
-    <h3>Comparación de curvas y evidencia manual</h3>
-    <p>Contrasta procesos a la misma edad de fermentación. Las observaciones manuales se distinguen por método e instrumento. Esta vista no recomienda tratamientos ni identifica causas.</p>
+    <h3>Curvas del proceso</h3>
+    <p>Compara la evolución a la misma edad de fermentación.</p>
     <form @submit.prevent="load">
       <label>Variable de comparación<select v-model="variable" :disabled="busy"><option v-for="(name, key) in variables" :key="key" :value="key">{{ name }}</option></select></label>
       <label>Proceso de referencia<select v-model="reference" :disabled="busy"><option value="">Solo este proceso</option><option v-for="p in candidates" :key="p.id" :value="p.id">{{ p.codigo_cuba }} · proceso {{ p.id }} · {{ p.estado }}</option></select></label>
       <label>Ventana<select v-model="hours" :disabled="busy"><option :value="24">24 horas</option><option :value="48">48 horas</option><option :value="168">7 días</option></select></label>
-      <label>Corte de información (hora local, vacío = ahora)<input v-model="cutoff" type="datetime-local" :disabled="busy" /></label>
-      <button :disabled="busy">Comparar curvas</button>
+      <label>Ver datos hasta (hora local)<input v-model="cutoff" type="datetime-local" :max="maxCutoff" :disabled="busy" /><small>Vacío: hasta ahora</small></label>
+      <button :disabled="busy">{{ busy ? 'Consultando…' : 'Aplicar filtros' }}</button>
+      <button v-if="cutoff" type="button" :disabled="busy" @click="cutoff = ''; load()">Volver a ahora</button>
     </form>
     <p v-if="busy" role="status">Consultando evidencia…</p>
     <p v-if="error" role="alert">{{ error }}</p>
     <template v-if="data">
       <button type="button" :disabled="busy" @click="exportEvidence">Exportar evidencia consultada (JSON)</button>
-      <p>La exportación conserva el corte, los límites y las advertencias de esta consulta. No incluye muestras excluidas del gráfico ni registros fuera del límite consultado.</p>
+
       <p v-if="exportMessage" role="status">{{ exportMessage }}</p>
-      <p>Corte: {{ date(data.as_of) }} · intervalo de edad: {{ data.age_start.toFixed(2) }}–{{ data.age_end.toFixed(2) }} h. Los datos registrados o recibidos después del corte no se incluyen.</p>
-      <p>Telemetría: líneas y puntos; manuales: triángulos sin unir. Los huecos mayores de 15 minutos y los cambios de equipo/calibración interrumpen las líneas. El estado del proceso mostrado es el actual.</p>
+      <p>Corte: {{ date(data.as_of) }} · intervalo de edad: {{ data.age_start.toFixed(2) }}–{{ data.age_end.toFixed(2) }} h. Se aplica a las mediciones y, cuando existe, a su hora de recepción.</p>
+
+      <p v-if="!data.processes.some(p => p.segments.length || p.manual.length)" role="status">No hay lecturas en este intervalo. Prueba otra ventana o fecha de corte.</p>
       <div class="plot"><canvas ref="canvas" role="img" :aria-label="`Comparación de ${variables[data.variable]} por horas de proceso. Revisa procedencia, cobertura y tabla de evidencia debajo.`" /></div>
       <article v-for="(process, index) in data.processes" :key="process.process_id" :class="index ? 'reference' : 'main'">
         <h4>{{ index ? 'Referencia · azul' : 'Principal · burdeos' }}: {{ process.tank }} · proceso {{ process.process_id }}</h4>
         <p>Inicio: {{ date(process.process_start) }} · estado actual: {{ process.current_state }} · orígenes automáticos: {{ process.sources.join(', ') || 'sin registros' }}</p>
         <p>Telemetría consultada: {{ process.telemetry.returned }} de {{ process.telemetry.total }} muestras; {{ process.telemetry.excluded }} excluidas del gráfico. Manuales: {{ process.manual_counts.returned }} de {{ process.manual_counts.total }}.</p>
-        <ul><li v-for="warning in process.warnings" :key="warning">{{ reasons[warning] || warning }}</li></ul>
+        <details v-if="process.warnings.length"><summary>Notas sobre los datos</summary><ul><li v-for="warning in process.warnings" :key="warning">{{ reasons[warning] || warning }}</li></ul></details>
+        <p v-if="process.simulation_clock">Reloj simulado · mediciones hasta {{ date(process.observation_as_of) }}</p>
+        <details v-if="process.manual_real?.length"><summary>Mediciones manuales · hora real ({{ process.manual_real.length }})</summary><p v-for="row in process.manual_real" :key="row.id">{{ date(row.observed_at) }} · {{ row.value }} {{ row.unit }} · {{ row.method }} · {{ row.annulment ? 'Anulada' : 'Registrada' }}</p></details>
         <details v-if="process.manual.length"><summary>Evidencia manual ({{ process.manual.length }})</summary>
           <div class="table-wrap"><table><caption>Observaciones y anulaciones conocidas al corte</caption><thead><tr><th>Observación</th><th>Valor / método</th><th>Disponibilidad / autor</th><th>Evidencia</th></tr></thead>
             <tbody><tr v-for="row in process.manual" :key="row.id">
@@ -142,7 +155,7 @@ onBeforeUnmount(() => { generation++; controller?.abort(); destroy() })
             </tr></tbody></table></div>
         </details>
       </article>
-      <p>{{ data.warning }} Riesgo y forecast ML: N/D. No se calculan diferencias automáticas entre métodos ni se resuelven alertas desde esta vista.</p>
+
     </template>
   </section>
 </template>

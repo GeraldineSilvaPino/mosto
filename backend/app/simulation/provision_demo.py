@@ -38,7 +38,7 @@ def provision_fleet(db, base_url="http://127.0.0.1:8000", now=None, fault_plans=
     for index in range(1, 7):
         physical = index == 6
         start = now if physical else now - timedelta(hours=scenarios[index - 1][1])
-        if index <= 3:
+        if index <= len(DEMO_SCENARIOS):
             tank = db.get(m.Cuba, index)
             device = db.get(m.Dispositivo, index)
             process = db.query(m.ProcesoFermentacion).filter_by(cuba_id=tank.id).one()

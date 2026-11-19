@@ -7,6 +7,7 @@ from sqlalchemy import and_
 from app import models as m
 from app.services.telemetry_v2 import aware
 from app.services.simulation_time import observation_end
+from app.services.process_series import legacy_series
 
 VERSION = 'curve-comparison-v1'
 TELEMETRY_LIMIT = 3000
@@ -53,6 +54,31 @@ def curves(db, process, variable, age_start, age_end, cutoff, *, clock=None, hou
             value=value, observed_at=observed, available_at=aware(row.recibido_en)))
         previous = identity, observed
 
+    # Older demo processes use LECTURA_TELEMETRIA. Never duplicate projected
+    # v2 readings or fall back across a quality failure in a v2 process.
+    legacy = not clock and db.query(m.MensajeTelemetria.id).filter(
+        m.MensajeTelemetria.fermentacion_id == process.id,
+        m.MensajeTelemetria.recibido_en <= cutoff).first() is None
+    legacy_points = []
+    if legacy:
+        legacy_points, legacy_count = legacy_series(db, process, left, right, variable, TELEMETRY_LIMIT)
+        if legacy_count:
+            count, truncated = legacy_count, legacy_count > TELEMETRY_LIMIT
+            segment, previous, excluded = None, None, 0
+            for point in legacy_points:
+                observed = point['observed_at']
+                identity = (point['source'], point['device_id'])
+                if point['value'] is None:
+                    segment, previous = None, None
+                    excluded += 1
+                    continue
+                if previous is None or identity != previous[0] or (observed - previous[1]).total_seconds() > MAX_GAP_SECONDS:
+                    segment = dict(source=point['source'], device_id=point['device_id'], calibration_id=None, points=[])
+                    segments.append(segment)
+                segment['points'].append(dict(id=point['id'], hour=(observed - start).total_seconds() / 3600,
+                    value=point['value'], observed_at=observed, available_at=None))
+                previous = identity, observed
+
     manual_left, manual_right = left, right
     if clock:
         manual_right = observation_end(process, cutoff, None)
@@ -76,7 +102,9 @@ def curves(db, process, variable, age_start, age_end, cutoff, *, clock=None, hou
     warnings = []
     if clock and manual:
         warnings.append('mediciones_manuales_en_hora_real')
-    if not value_field:
+    if legacy_points:
+        warnings.append('recepcion_legacy_no_registrada')
+    elif not value_field:
         warnings.append('sin_canal_automatico')
     elif not rows:
         warnings.append('sin_telemetria_disponible')
@@ -90,8 +118,8 @@ def curves(db, process, variable, age_start, age_end, cutoff, *, clock=None, hou
         warnings.append('mediciones_anuladas')
     if variable == 'brix_aparente' and manual:
         warnings.append('metodos_brix_no_equivalentes')
-    sources = sorted({row.origen for row in rows})
-    if 'simulado' in sources:
+    sources = sorted({row.origen for row in rows} | {p['source'] for p in legacy_points})
+    if any('simul' in source for source in sources):
         warnings.append('incluye_simulacion')
     if len(sources) > 1:
         warnings.append('origenes_mixtos')
@@ -101,7 +129,7 @@ def curves(db, process, variable, age_start, age_end, cutoff, *, clock=None, hou
         sources=sources, segments=segments, manual=[] if clock else manual,
         manual_real=manual if clock else [], warnings=warnings,
         observation_as_of=observation, simulation_clock=clock.model_dump(mode="json") if clock else None,
-        telemetry=dict(total=count, returned=len(rows), excluded=excluded, truncated=truncated),
+        telemetry=dict(total=count, returned=len(legacy_points) if legacy_points else len(rows), excluded=excluded, truncated=truncated),
         manual_counts=dict(total=manual_count, returned=len(manual), truncated=manual_count > MANUAL_LIMIT),
         # Lifecycle metadata is current, explicitly outside the historical observation snapshot.
         current_state=process.estado, unit=unit)

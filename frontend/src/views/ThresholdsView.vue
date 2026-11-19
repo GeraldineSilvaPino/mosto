@@ -53,10 +53,11 @@ const globalError = ref(null)
 const isCreateModalOpen = ref(false)
 const isCreating = ref(false)
 const createError = ref(null)
+const availableBodegas = ref([])
 const newProfileForm = ref({
   nomb_perfil: '',
   cepa_id: 1,
-  bodega_id: 5,
+  bodega_id: null,
   temp_min: 18.0,
   temp_max: 26.0,
   ph_min: 3.20,
@@ -114,7 +115,7 @@ function mapBackendProfile(p) {
     phMin: phMin,
     phMax: phMax,
     brixCaidaMinDia: brixCaida,
-    bodegaId: p.bodega_id || 5,
+    bodegaId: p.bodega_id,
     bodegaNombre: p.bodega_nombre || 'Bodega Principal',
     cepaId: p.cepa_id || 1,
     cepaNombre: p.cepa_nombre || 'Cabernet Sauvignon',
@@ -166,6 +167,7 @@ async function loadProfiles(isManual = false) {
   if (isManual) isLoadingProfiles.value = true
   globalError.value = null
   try {
+    availableBodegas.value = await masterService.listarBodegas()
     const data = await profileService.listarPerfiles({ activo: true })
     if (Array.isArray(data) && data.length > 0) {
       profiles.value = data.map(mapBackendProfile)
@@ -319,8 +321,8 @@ async function handleConfirmDelete() {
 function openCreateModal() {
   newProfileForm.value = {
     nomb_perfil: '',
-    cepa_id: 1,
-    bodega_id: 5,
+    cepa_id: availableCepas.value[0]?.id ?? null,
+    bodega_id: availableBodegas.value.find(b => b.id === currentProfile.value?.bodegaId)?.id ?? availableBodegas.value[0]?.id ?? null,
     temp_min: 18.0,
     temp_max: 26.0,
     ph_min: 3.20,
@@ -339,6 +341,11 @@ function closeCreateModal() {
 
 async function handleCreateProfile() {
   createError.value = null
+
+  if (!availableBodegas.value.some(b => b.id === Number(newProfileForm.value.bodega_id))) {
+    createError.value = 'Selecciona una bodega disponible para tu usuario.'
+    return
+  }
 
   if (!newProfileForm.value.nomb_perfil || newProfileForm.value.nomb_perfil.trim().length < 2) {
     createError.value = 'El nombre descriptivo del perfil debe tener al menos 2 caracteres.'
@@ -379,7 +386,7 @@ async function handleCreateProfile() {
     profiles.value.push(mapped)
     selectedProfileId.value = mapped.id
 
-    closeCreateModal()
+    isCreateModalOpen.value = false
     showToast(`¡Perfil enológico "${mapped.name}" creado y persistido con éxito!`)
   } catch (err) {
     console.error('Error al crear perfil en backend:', err)
@@ -905,8 +912,8 @@ onMounted(() => {
             <div class="form-group">
               <label class="form-label">Bodega Operativa *</label>
               <select v-model="newProfileForm.bodega_id" class="form-select" required>
-                <option :value="5">Bodega Principal (ID 5)</option>
-                <option :value="1">Bodega Finca Central (ID 1)</option>
+                <option :value="null" disabled>Selecciona una bodega</option>
+                <option v-for="b in availableBodegas" :key="b.id" :value="b.id">{{ b.nombre }}</option>
               </select>
             </div>
 

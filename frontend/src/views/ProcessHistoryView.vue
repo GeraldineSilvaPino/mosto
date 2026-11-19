@@ -8,6 +8,7 @@ import InterventionsPanel from '../components/InterventionsPanel.vue'
 
 const route = useRoute(), router = useRouter()
 const processes = ref([]), process = ref(null), error = ref(''), listError = ref(''), busy = ref(false)
+const revision = ref(0)
 const filter = ref('todos'), selected = computed(() => String(route.params.id || ''))
 const choices = computed(() => processes.value.filter(p => filter.value === 'todos' ||
   (filter.value === 'cerrados' ? !['en_proceso', 'detenida'].includes(p.estado) : ['en_proceso', 'detenida'].includes(p.estado))))
@@ -45,7 +46,7 @@ onBeforeUnmount(() => { generation++; controller?.abort(); listController?.abort
 <template>
   <main class="process-history">
     <h1>Historial de procesos</h1>
-    <p>Consulta un proceso activo o cerrado como principal, aunque la cuba ya tenga otra fermentación. Cada panel corresponde al proceso seleccionado.</p>
+    <p>Revisa lecturas de procesos activos o cerrados y compáralas por fecha.</p>
     <div class="controls">
       <label>Mostrar<select v-model="filter"><option value="todos">Todos</option><option value="cerrados">Cerrados</option><option value="activos">Activos</option></select></label>
       <label>Proceso principal<select :value="selected" @change="router.push($event.target.value ? `/procesos/${$event.target.value}` : '/procesos')">
@@ -53,7 +54,7 @@ onBeforeUnmount(() => { generation++; controller?.abort(); listController?.abort
         <option v-if="selected && !choices.some(p => String(p.id) === selected)" :value="selected">Proceso #{{ selected }} (fuera del filtro)</option>
         <option v-for="p in choices" :key="p.id" :value="String(p.id)">{{ p.codigo_cuba }} · #{{ p.id }} · {{ p.estado }} · {{ date(p.fecha_inicio) }}</option>
       </select></label>
-      <button @click="loadList(); loadProcess()">Actualizar</button>
+      <button @click="revision++; loadList(); loadProcess()">Actualizar</button>
     </div>
     <p v-if="listError" role="alert">{{ listError }}</p>
     <p v-if="busy" role="status">Consultando proceso…</p>
@@ -62,11 +63,11 @@ onBeforeUnmount(() => { generation++; controller?.abort(); listController?.abort
     <template v-if="process">
       <section class="summary" aria-label="Proceso seleccionado">
         <h2>{{ process.codigo_cuba }} · proceso #{{ process.id }}</h2>
-        <p>Estado actual: {{ process.estado }} · Inicio: {{ date(process.fecha_inicio) }} · Cierre: {{ date(process.fecha_real_fin) }}</p>
-        <p>Perfil: {{ process.perfil_nombre || 'Sin perfil registrado' }} · Volumen: {{ process.volumen_litros ?? 'N/D' }} L</p>
+        <p>Estado actual: {{ process.estado }} · Inicio: {{ date(process.fecha_inicio) }} · {{ process.fecha_real_fin ? `Cierre: ${date(process.fecha_real_fin)}` : 'En curso' }}</p>
+        <p>Perfil: {{ process.perfil_nombre || 'Sin perfil registrado' }} <span v-if="process.volumen_litros != null">· Volumen: {{ process.volumen_litros }} L</span></p>
         <RouterLink :to="`/cubas/${process.cuba_id}`">Ver estado actual de la cuba</RouterLink>
       </section>
-      <CurveComparisonPanel :key="`curves-${process.id}`" :process-id="process.id" />
+      <CurveComparisonPanel :key="`curves-${process.id}-${revision}`" :process-id="process.id" />
       <ManualMeasurementsPanel :key="`manual-${process.id}`" :process-id="process.id" />
       <InterventionsPanel :key="`actions-${process.id}`" :process-id="process.id" />
     </template>

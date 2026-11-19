@@ -46,14 +46,13 @@ import {
 
 import { Chart as ChartJS, registerables } from 'chart.js'
 import cubaService from '../services/cubaService'
+import { telemetryPoints } from '../utils/telemetryChart'
 import alertService from '../services/alertService'
 import processService from '../services/processService'
 import SimulationStatus from '../components/SimulationStatus.vue'
 import KineticsPanel from '../components/KineticsPanel.vue'
 import InterventionsPanel from '../components/InterventionsPanel.vue'
 import ManualMeasurementsPanel from '../components/ManualMeasurementsPanel.vue'
-import CurveComparisonPanel from '../components/CurveComparisonPanel.vue'
-import ProcessProfileOverrides from '../components/ProcessProfileOverrides.vue'
 
 ChartJS.register(...registerables)
 
@@ -67,6 +66,7 @@ const cubasDisponibles = ref([])
 const cuba = ref(null)
 const historico = ref(null)
 const alertasCuba = ref([])
+const processToolsOpen = ref(false)
 
 const loading = ref(true)
 const chartLoading = ref(false)
@@ -81,6 +81,8 @@ const activeChartTab = ref('both') // 'both' | 'temp' | 'brix' | 'ph'
 const chartCanvasRef = ref(null)
 let chartInstance = null
 let pollInterval = null
+let dataGeneration = 0
+let polling = false
 
 // ==========================================
 // ESTADO DE MACHINE LEARNING & PREDICCIÓN IA
@@ -92,7 +94,7 @@ const iaToastMessage = ref('')
 const prediccionML = computed(() => {
   return (
     cuba.value?.prediccion_ml || {
-      riesgo_pct: 0.0,
+      riesgo_pct: null,
       estado_ia: 'RECOLECTANDO_DATOS',
       alerta_ia: false,
       mensaje: 'Calibrando ventana temporal (mínimo 4 lecturas)...',
@@ -113,7 +115,9 @@ const estadoLabel = computed(() => {
     ADVERTENCIA: 'DESVIACIÓN CINÉTICA',
     NORMAL: 'CINÉTICA SALUDABLE',
     FINALIZADA: 'PROCESO FINALIZADO',
-    RECOLECTANDO_DATOS: 'CALIBRANDO VENTANA'
+    RECOLECTANDO_DATOS: 'REUNIENDO LECTURAS',
+    NO_VALIDADO: 'MODELO EXPERIMENTAL',
+    ERROR: 'EVALUACIÓN NO DISPONIBLE'
   }
   return map[prediccionML.value?.estado_ia] || prediccionML.value?.estado_ia || 'CALIBRANDO'
 })
@@ -137,9 +141,9 @@ const iaStatusClass = computed(() => {
 const iaGaugeColor = computed(() => {
   if (prediccionML.value?.riesgo_pct == null) return '#64748b'
   const pct = Number(prediccionML.value?.riesgo_pct) || 0
-  if (pct >= 70) return '#ef4444' // Rojo
-  if (pct >= 40) return '#f59e0b' // Ámbar
-  return '#10b981' // Verde
+  if (prediccionML.value.estado_ia === 'CRITICO') return '#e8b7c3'
+  if (prediccionML.value.estado_ia === 'ADVERTENCIA') return '#d5b98d'
+  return '#c9b7bd'
 })
 
 const ejecutarSimularAnomalia = async () => {
@@ -148,13 +152,13 @@ const ejecutarSimularAnomalia = async () => {
     isSimulatingAnomaly.value = true
     await cubaService.simularAnomalia(selectedCubaId.value)
     // Refrescar inmediatamente datos de la cuba y gráfico
-    await cargarDatosCuba(selectedCubaId.value, false)
-    iaToastMessage.value = '¡Anomalía inyectada! El modelo cinético detectó riesgo crítico y generó alerta.'
+    await cargarDatosCuba(selectedCubaId.value, rangoToHoras(activeTimeRange.value))
+    iaToastMessage.value = 'Escenario demo cargado. La evaluación se muestra con las nuevas lecturas.'
     setTimeout(() => {
       iaToastMessage.value = ''
     }, 5000)
   } catch (err) {
-    console.error('Error al simular anomalía de parada:', err)
+    iaToastMessage.value = err.message || 'No se pudo cargar el escenario.'
   } finally {
     isSimulatingAnomaly.value = false
   }
@@ -165,13 +169,13 @@ const ejecutarRestaurarNormalidad = async () => {
   try {
     isRestoringNormality.value = true
     await cubaService.restaurarNormalidad(selectedCubaId.value)
-    await cargarDatosCuba(selectedCubaId.value, false)
+    await cargarDatosCuba(selectedCubaId.value, rangoToHoras(activeTimeRange.value))
     iaToastMessage.value = 'Cinética saludable restablecida con éxito.'
     setTimeout(() => {
       iaToastMessage.value = ''
     }, 5000)
   } catch (err) {
-    console.error('Error al restaurar normalidad:', err)
+    iaToastMessage.value = err.message || 'No se pudo restaurar el escenario.'
   } finally {
     isRestoringNormality.value = false
   }
@@ -319,13 +323,13 @@ const statusOperativo = computed(() => {
   if (!tieneProcesoActivo.value) return 'disponible'
 
   const temp = temperaturaActual.value
-  const min = cuba.value.temp_min_perfil ?? 16.0
-  const max = cuba.value.temp_max_perfil ?? 26.0
+  const min = cuba.value.temp_min_perfil
+  const max = cuba.value.temp_max_perfil
 
-  if (temp !== null && temp !== undefined && (temp < min || temp > max)) {
+  if (temp != null && min != null && max != null && (temp < min || temp > max)) {
     return 'warning'
   }
-  if (sinModeloValidado.value) return 'no_evaluado'
+  if (temp == null || cuba.value.temp_min_perfil == null || cuba.value.temp_max_perfil == null) return 'no_evaluado'
   return 'optimal'
 })
 
@@ -336,7 +340,7 @@ const statusLabel = computed(() => {
     case 'warning':
       return 'Alerta · Desviación de Parámetros'
     case 'optimal':
-      return 'Normal · Fermentación Activa'
+      return 'Temperatura en rango'
     case 'no_evaluado':
       return 'Monitoreo · Diagnóstico pendiente'
     default:
@@ -347,10 +351,10 @@ const statusLabel = computed(() => {
 const alertReason = computed(() => {
   if (!tieneProcesoActivo.value || !cuba.value) return null
   const temp = temperaturaActual.value
-  const min = cuba.value.temp_min_perfil ?? 16.0
-  const max = cuba.value.temp_max_perfil ?? 26.0
+  const min = cuba.value.temp_min_perfil
+  const max = cuba.value.temp_max_perfil
 
-  if (temp !== null && temp !== undefined) {
+  if (temp != null && min != null && max != null) {
     if (temp > max) {
       return `Alerta Térmica: La temperatura actual (${temp.toFixed(1)}°C) supera el límite superior óptimo (${max.toFixed(1)}°C). Riesgo de estrés térmico en levaduras.`
     }
@@ -497,11 +501,13 @@ function construirDatasets(data) {
   if (activeChartTab.value === 'both' || activeChartTab.value === 'temp') {
     datasets.push({
       label: 'Temperatura DS18B20 (°C)',
-      data: tempData,
+      data: telemetryPoints(data?.timestamps, tempData),
       borderColor: '#761F33',
       backgroundColor: tempGrad,
       borderWidth: 2.5,
-      tension: 0.3,
+      cubicInterpolationMode: 'monotone',
+      stepped: false,
+      spanGaps: false,
       pointRadius: isDense ? 0 : 3,
       pointHoverRadius: 6,
       pointBackgroundColor: '#FFFFFF',
@@ -515,12 +521,14 @@ function construirDatasets(data) {
   if (activeChartTab.value === 'both' || activeChartTab.value === 'brix') {
     datasets.push({
       label: 'Grados Brix MPU-6050 (°Bx)',
-      data: brixData,
+      data: telemetryPoints(data?.timestamps, brixData),
       borderColor: '#C47F17',
       backgroundColor: brixGrad,
       borderWidth: 2.5,
       borderDash: [5, 4],
-      tension: 0.3,
+      cubicInterpolationMode: 'monotone',
+      stepped: false,
+      spanGaps: false,
       pointRadius: isDense ? 0 : 3,
       pointHoverRadius: 6,
       pointBackgroundColor: '#FFFFFF',
@@ -534,11 +542,13 @@ function construirDatasets(data) {
   if (activeChartTab.value === 'ph') {
     datasets.push({
       label: 'pH PH-4502C',
-      data: phData,
+      data: telemetryPoints(data?.timestamps, phData),
       borderColor: '#6B21A8',
       backgroundColor: phGrad,
       borderWidth: 2.5,
-      tension: 0.3,
+      cubicInterpolationMode: 'monotone',
+      stepped: false,
+      spanGaps: false,
       pointRadius: isDense ? 0 : 3,
       pointHoverRadius: 6,
       pointBackgroundColor: '#FFFFFF',
@@ -559,13 +569,15 @@ function construirScalesConfig() {
 
   const scales = {
     x: {
+      type: 'linear',
       grid: { color: 'rgba(232, 224, 221, 0.6)' },
       ticks: {
         color: '#66525B',
         font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 },
         maxRotation: 45,
         autoSkip: true,
-        maxTicksLimit: 12
+        maxTicksLimit: 12,
+        callback: value => new Date(value).toLocaleString('es-CL', activeTimeRange.value === '24h' ? { hour: '2-digit', minute: '2-digit' } : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
       }
     },
     yTemp: {
@@ -653,7 +665,8 @@ async function renderChart() {
         tooltip: {
           backgroundColor: '#300C15',
           padding: 10,
-          titleFont: { size: 12, weight: 'bold' }
+          titleFont: { size: 12, weight: 'bold' },
+          callbacks: { title: items => items.length ? new Date(items[0].parsed.x).toLocaleString('es-CL') : '' }
         }
       },
       scales: scalesConfig
@@ -673,49 +686,7 @@ function actualizarGraficoEnInstancia(data, updateMode = 'default') {
     return
   }
 
-  const labels =
-    data?.labels && data.labels.length > 0
-      ? data.labels
-      : data?.timestamps || []
-
-  const tempData =
-    data?.temp && data.temp.length > 0
-      ? data.temp
-      : data?.temperaturas_vino || []
-
-  const brixData =
-    data?.brix && data.brix.length > 0
-      ? data.brix
-      : data?.grados_brix || []
-
-  const phData = data?.valores_ph || []
-
-  // Actualizar labels del eje X
-  chartInstance.data.labels = labels
-
-  const isBoth = activeChartTab.value === 'both'
-  const isTemp = activeChartTab.value === 'temp'
-  const isBrix = activeChartTab.value === 'brix'
-  const isPh = activeChartTab.value === 'ph'
-
-  const expectedDatasetsCount = isBoth ? 2 : 1
-
-  // Reconstruir si la cantidad de series no coincide con el tab activo
-  if (chartInstance.data.datasets.length !== expectedDatasetsCount) {
-    chartInstance.data.datasets = construirDatasets(data)
-  } else {
-    // Actualizar directamente los arrays de datos en la instancia
-    if (isBoth) {
-      if (chartInstance.data.datasets[0]) chartInstance.data.datasets[0].data = tempData
-      if (chartInstance.data.datasets[1]) chartInstance.data.datasets[1].data = brixData
-    } else if (isTemp) {
-      if (chartInstance.data.datasets[0]) chartInstance.data.datasets[0].data = tempData
-    } else if (isBrix) {
-      if (chartInstance.data.datasets[0]) chartInstance.data.datasets[0].data = brixData
-    } else if (isPh) {
-      if (chartInstance.data.datasets[0]) chartInstance.data.datasets[0].data = phData
-    }
-  }
+  chartInstance.data.datasets = construirDatasets(data)
 
   chartInstance.options.scales = construirScalesConfig()
 
@@ -730,6 +701,7 @@ function actualizarGraficoEnInstancia(data, updateMode = 'default') {
 // CAMBIO DE RANGO TEMPORAL (CRITERIO 4)
 // ==========================================
 async function cambiarRangoHoras(nuevoRango) {
+  const request = ++dataGeneration
   activeTimeRange.value = nuevoRango
   const horas = rangoToHoras(nuevoRango)
   chartLoading.value = true
@@ -741,6 +713,7 @@ async function cambiarRangoHoras(nuevoRango) {
       cubaService.obtenerHistorico(selectedCubaId.value, horas)
     ])
 
+    if (request !== dataGeneration) return
     cuba.value = cubaData
     historico.value = historicoData
     lastSyncTime.value = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -755,7 +728,7 @@ async function cambiarRangoHoras(nuevoRango) {
   } catch (err) {
     console.error('Error al actualizar histórico de la cuba:', err)
   } finally {
-    chartLoading.value = false
+    if (request === dataGeneration) chartLoading.value = false
   }
 }
 
@@ -770,8 +743,11 @@ function cambiarTabGrafico(tab) {
 // POLLING EN TIEMPO REAL (SINCRONIZACIÓN CONTINUA)
 // ==========================================
 async function refrescarDatosEnVivo() {
-  if (loading.value || chartLoading.value || !selectedCubaId.value) return
+  if (polling || loading.value || chartLoading.value || !selectedCubaId.value) return
 
+  const request = dataGeneration
+  const id = selectedCubaId.value
+  polling = true
   try {
     const horas = rangoToHoras(activeTimeRange.value)
     const [cubaData, historicoData] = await Promise.all([
@@ -779,6 +755,7 @@ async function refrescarDatosEnVivo() {
       cubaService.obtenerHistorico(selectedCubaId.value, horas)
     ])
 
+    if (request !== dataGeneration || id !== selectedCubaId.value) return
     const prevTemp = temperaturaActual.value
     const prevBrix = brixActual.value
 
@@ -804,7 +781,7 @@ async function refrescarDatosEnVivo() {
     actualizarGraficoEnInstancia(historicoData, 'none')
   } catch (err) {
     console.warn('Fallo silencioso en polling de telemetría de cuba:', err)
-  }
+  } finally { polling = false }
 }
 
 // ==========================================
@@ -813,6 +790,7 @@ async function refrescarDatosEnVivo() {
 async function cargarAlertasCuba(id) {
   try {
     const data = await alertService.listarAlertas({ cuba_id: id, limit: 10 })
+    if (Number(id) !== Number(selectedCubaId.value)) return
     alertasCuba.value = Array.isArray(data) ? data : data?.alertas || []
   } catch (err) {
     console.warn('No se pudieron cargar alertas de la cuba:', err)
@@ -821,7 +799,9 @@ async function cargarAlertasCuba(id) {
 }
 
 async function cargarDatosCuba(id, rangoHoras = 24) {
+  const request = ++dataGeneration
   loading.value = true
+  chartLoading.value = false
   error.value = null
 
   try {
@@ -831,6 +811,7 @@ async function cargarDatosCuba(id, rangoHoras = 24) {
       cubaService.obtenerHistorico(id, rangoHoras)
     ])
 
+    if (request !== dataGeneration) return
     cuba.value = cubaData
     historico.value = historicoData
     lastSyncTime.value = new Date().toLocaleTimeString('es-CL', {
@@ -842,13 +823,15 @@ async function cargarDatosCuba(id, rangoHoras = 24) {
     // Cargar alertas asociadas de forma asíncrona
     cargarAlertasCuba(id)
 
+    loading.value = false
     await nextTick()
     await renderChart()
   } catch (err) {
     console.error('Error al cargar datos de la cuba:', err)
+    if (request !== dataGeneration) return
     error.value = err.message || 'Error de comunicación al consultar los datos de la cuba'
   } finally {
-    loading.value = false
+    if (request === dataGeneration) loading.value = false
   }
 }
 
@@ -1101,6 +1084,7 @@ async function ejecutarFinalizarProceso() {
 }
 
 onBeforeUnmount(() => {
+  dataGeneration++
   if (pollInterval) {
     clearInterval(pollInterval)
     pollInterval = null
@@ -1287,7 +1271,7 @@ onBeforeUnmount(() => {
             {{
               cuba?.temp_min_perfil !== null && cuba?.temp_min_perfil !== undefined
                 ? `${cuba.temp_min_perfil}°C a ${cuba.temp_max_perfil}°C`
-                : '16.0°C a 26.0°C'
+                : 'Sin banda registrada'
             }}
           </span>
         </div>
@@ -1349,283 +1333,40 @@ onBeforeUnmount(() => {
               'summary-neutral': ['disponible', 'no_evaluado'].includes(statusOperativo)
             }"
           >
-            {{
-              !tieneProcesoActivo
-                ? 'Cuba Disponible'
-                : sinModeloValidado
-                ? (statusOperativo === 'warning' ? 'Temperatura fuera de perfil' : 'Diagnóstico pendiente')
-                : statusOperativo === 'optimal'
-                ? 'Fermentación Normal'
-                : 'Riesgo / Desviación'
-            }}
+            {{ statusLabel }}
           </span>
         </div>
 
         <div class="metric-details">
-          <p class="rule-explanation">
-            {{
-              !tieneProcesoActivo
-                ? 'Cuba en reposo o higienización, lista para recibir una nueva vendimia.'
-                : sinModeloValidado
-                ? 'Telemetría v2 recibida. Consulta las tasas, la cobertura y los episodios en los paneles de seguimiento. La predicción de parada sigue pendiente de validación.'
-                : statusOperativo === 'optimal'
-                ? 'El consumo de azúcar es continuo y la temperatura se mantiene estable dentro de la banda enológica.'
-                : 'Se detectó variación térmica o estancamiento de azúcar fuera del perfil óptimo.'
-            }}
-          </p>
-
-          <div class="card-action-bar">
-            <button
-              v-if="!tieneProcesoActivo"
-              class="btn-card-action btn-card-action--start"
-              :disabled="!estaDisponible"
-              @click="abrirModalIniciar"
-            >
-              <Play :size="13" />
-              <span>{{ estaDisponible ? 'Iniciar Fermentación' : 'Cuba No Disponible' }}</span>
-            </button>
-            <button
-              v-else
-              class="btn-card-action btn-card-action--finish"
-              @click="abrirModalFinalizar"
-            >
-              <Square :size="13" />
-              <span>Finalizar Fermentación</span>
-            </button>
-          </div>
+          <p class="rule-explanation">{{ tieneProcesoActivo ? 'Según la última temperatura y el perfil del proceso.' : 'Sin fermentación activa.' }}</p>
         </div>
       </div>
     </section>
 
     <!-- SECCIÓN PREDICCIÓN IA: Detección Temprana de Parada de Fermentación (Machine Learning) -->
-    <section
-      class="ai-prediction-card"
-      :class="{ 'ai-prediction-card--critical': prediccionML.estado_ia === 'CRITICO' }"
-    >
-      <!-- Cabecera de la Tarjeta IA -->
-      <div class="ai-card-header">
-        <div class="ai-header-left">
-          <div class="ai-icon-badge" :class="iaStatusClass">
-            <Activity :size="20" />
-          </div>
-          <div>
-            <div class="ai-title-row">
-              <h2 class="ai-title">Modelo Predictivo — Riesgo de Parada de Fermentación</h2>
-              <span class="ai-badge" :class="iaStatusClass">
-                <span class="ai-badge-dot"></span>
-                {{ estadoLabel }}
-              </span>
-            </div>
-            <p class="ai-subtitle">
-              {{ sinModeloValidado ? 'Evaluación pendiente de un modelo temporal validado para telemetría v2.' : 'Modelo cinético calibrado temporal (kinetics-v1 / future-stall-v1) con análisis de consumo de azúcares y proyección a 24h.' }}
-            </p>
-          </div>
-        </div>
-
-        <!-- Botones de Acción para Demostración en Vivo -->
-        <div v-if="!sinModeloValidado" class="ai-actions">
-          <button
-            class="btn-demo-simular"
-            :disabled="isSimulatingAnomaly"
-            @click="ejecutarSimularAnomalia"
-            title="Inyecta lecturas de Brix plano y temperatura anómala para evaluar la respuesta del modelo predictivo"
-          >
-            <Activity :size="14" :class="{ 'spin-icon': isSimulatingAnomaly }" />
-            <span>{{ isSimulatingAnomaly ? 'Inyectando...' : 'Simular Desviación Cinética' }}</span>
-          </button>
-
-          <button
-            v-if="prediccionML.estado_ia === 'CRITICO' || prediccionML.riesgo_pct >= 50"
-            class="btn-demo-reset"
-            :disabled="isRestoringNormality"
-            @click="ejecutarRestaurarNormalidad"
-            title="Restaura la cinética saludable de fermentación y resuelve la alerta"
-          >
-            <RefreshCw :size="13" :class="{ 'spin-icon': isRestoringNormality }" />
-            <span>Restaurar</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Feedback de simulación -->
-      <transition name="toast-fade">
-        <div v-if="iaToastMessage" class="ai-toast-message">
-          <Info :size="15" />
-          <span>{{ iaToastMessage }}</span>
-        </div>
-      </transition>
-
-      <!-- Cuerpo de la Tarjeta: Medidor de Riesgo e Indicadores Técnicos -->
-      <div class="ai-card-body">
-        <!-- Columna Izquierda: Medidor Circular Grande y Barra de Progreso -->
-        <div class="ai-gauge-column">
-          <div class="ai-circular-meter">
-            <svg class="ai-meter-svg" viewBox="0 0 120 120">
-              <circle
-                class="ai-meter-bg"
-                cx="60"
-                cy="60"
-                r="50"
-                fill="none"
-                stroke-width="10"
-              />
-              <circle
-                class="ai-meter-fill"
-                cx="60"
-                cy="60"
-                r="50"
-                fill="none"
-                stroke-width="10"
-                stroke-dasharray="314.159"
-                :stroke-dashoffset="314.159 - (314.159 * Math.min(100, Math.max(0, prediccionML.riesgo_pct || 0)) / 100)"
-                :stroke="iaGaugeColor"
-                stroke-linecap="round"
-              />
-            </svg>
-            <div class="ai-meter-center">
-              <span class="ai-meter-num" :style="{ color: iaGaugeColor }">
-                {{ prediccionML.riesgo_pct == null ? 'N/D' : `${prediccionML.riesgo_pct.toFixed(1)}%` }}
-              </span>
-              <span class="ai-meter-lbl">Riesgo Parada</span>
-            </div>
-          </div>
-
-          <div v-if="!sinModeloValidado" class="ai-progress-bar-wrap">
-            <div class="ai-progress-bar-labels">
-              <span>0% Normal</span>
-              <span>40% Alerta</span>
-              <span>70% Crítico</span>
-            </div>
-            <div class="ai-progress-track">
-              <div
-                class="ai-progress-bar-fill"
-                :style="{ width: `${Math.min(100, Math.max(0, prediccionML.riesgo_pct || 0))}%`, backgroundColor: iaGaugeColor }"
-              ></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Columna Derecha: Features Técnicas Explicativas y Diagnóstico -->
-        <div class="ai-metrics-column">
-          <div v-if="!sinModeloValidado" class="ai-features-grid">
-            <!-- Feature 1: Velocidad de caída Brix (Pendiente) -->
-            <div class="ai-feature-card">
-              <div class="ai-feat-top">
-                <span class="ai-feat-name">
-                  <TrendingDown :size="13" /> Velocidad Caída Brix (Pendiente)
-                </span>
-                <span
-                  v-if="prediccionML.pendiente_brix_ventana !== null && prediccionML.pendiente_brix_ventana !== undefined"
-                  class="ai-feat-tag"
-                  :class="prediccionML.pendiente_brix_ventana >= -0.01 ? 'tag-crit' : 'tag-good'"
-                >
-                  {{ prediccionML.pendiente_brix_ventana >= -0.01 ? 'Estancada' : 'Saludable' }}
-                </span>
-              </div>
-              <div class="ai-feat-val-row">
-                <span class="ai-feat-val font-mono">
-                  {{
-                    prediccionML.pendiente_brix_ventana !== null && prediccionML.pendiente_brix_ventana !== undefined
-                      ? `${prediccionML.pendiente_brix_ventana > 0 ? '+' : ''}${prediccionML.pendiente_brix_ventana.toFixed(4)}`
-                      : '--'
-                  }}
-                </span>
-                <span class="ai-feat-unit">°Bx / muestra</span>
-              </div>
-              <span class="ai-feat-hint">Esperado normal: &lt; -0.0300</span>
-            </div>
-
-            <!-- Feature 2: Brix Suavizado -->
-            <div class="ai-feature-card">
-              <div class="ai-feat-top">
-                <span class="ai-feat-name">
-                  <Droplets :size="13" /> Brix Suavizado (3 lecturas)
-                </span>
-              </div>
-              <div class="ai-feat-val-row">
-                <span class="ai-feat-val font-mono">
-                  {{
-                    prediccionML.brix_suavizado !== null && prediccionML.brix_suavizado !== undefined
-                      ? prediccionML.brix_suavizado.toFixed(2)
-                      : '--'
-                  }}
-                </span>
-                <span class="ai-feat-unit">°Bx</span>
-              </div>
-              <span class="ai-feat-hint">Promedio móvil de consumo</span>
-            </div>
-
-            <!-- Feature 3: Temperatura Suavizada -->
-            <div class="ai-feature-card">
-              <div class="ai-feat-top">
-                <span class="ai-feat-name">
-                  <Thermometer :size="13" /> Temperatura Suavizada
-                </span>
-                <span
-                  v-if="prediccionML.temp_suavizada !== null && prediccionML.temp_suavizada !== undefined"
-                  class="ai-feat-tag"
-                  :class="prediccionML.temp_suavizada > 28.0 ? 'tag-crit' : 'tag-good'"
-                >
-                  {{ prediccionML.temp_suavizada > 28.0 ? 'Sobrecalentamiento' : 'Óptima' }}
-                </span>
-              </div>
-              <div class="ai-feat-val-row">
-                <span class="ai-feat-val font-mono">
-                  {{
-                    prediccionML.temp_suavizada !== null && prediccionML.temp_suavizada !== undefined
-                      ? prediccionML.temp_suavizada.toFixed(2)
-                      : '--'
-                  }}
-                </span>
-                <span class="ai-feat-unit">°C</span>
-              </div>
-              <span class="ai-feat-hint">Banda óptima: 21.0°C - 26.0°C</span>
-            </div>
-
-            <!-- Feature 4: Turbulencia Brix -->
-            <div class="ai-feature-card">
-              <div class="ai-feat-top">
-                <span class="ai-feat-name">
-                  <Activity :size="13" /> Turbulencia Brix (Std)
-                </span>
-              </div>
-              <div class="ai-feat-val-row">
-                <span class="ai-feat-val font-mono">
-                  {{
-                    prediccionML.turbulencia_brix_std !== null && prediccionML.turbulencia_brix_std !== undefined
-                      ? prediccionML.turbulencia_brix_std.toFixed(4)
-                      : '--'
-                  }}
-                </span>
-                <span class="ai-feat-unit">σ</span>
-              </div>
-              <span class="ai-feat-hint">Estabilidad de ventana temporal</span>
-            </div>
-          </div>
-
-          <!-- Diagnóstico Textual Asistido -->
-          <div class="ai-diagnosis-banner" :class="iaStatusClass">
-            <div class="ai-diag-icon">
-              <AlertTriangle v-if="prediccionML.estado_ia === 'CRITICO'" :size="18" />
-              <AlertCircle v-else-if="prediccionML.estado_ia === 'ADVERTENCIA'" :size="18" />
-              <CheckCircle2 v-else-if="prediccionML.estado_ia === 'NORMAL'" :size="18" />
-              <Info v-else :size="18" />
-            </div>
-            <div class="ai-diag-text">
-              <span class="ai-diag-label">Diagnóstico Cinético en Tiempo Real:</span>
-              <p class="ai-diag-desc">{{ prediccionML.mensaje }}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <KineticsPanel v-if="cuba?.proceso_activo_id" :key="`kinetics-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" />
-    <ProcessProfileOverrides v-if="cuba?.proceso_activo_id" :key="`adjustments-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" @changed="cargarDatosCuba(cuba.id)" />
-    <InterventionsPanel v-if="cuba?.proceso_activo_id" :key="`interventions-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" />
-    <ManualMeasurementsPanel v-if="cuba?.proceso_activo_id" :key="`manual-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" />
-    <CurveComparisonPanel v-if="cuba?.proceso_activo_id" :key="`comparison-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" />
-    <SimulationStatus v-if="cuba?.proceso_activo_id" :key="cuba.proceso_activo_id" :process-id="cuba.proceso_activo_id" />
+
+    <section v-if="tieneProcesoActivo" class="ml-summary" aria-label="Estimación experimental de riesgo">
+      <div class="ml-copy">
+        <span class="ml-eyebrow">SIMULACIÓN · MACHINE LEARNING</span>
+        <h2>Riesgo de parada <span class="ml-state">{{ estadoLabel }}</span></h2>
+        <p>{{ prediccionML.mensaje }}</p>
+        <details v-if="prediccionML.metodo === 'legacy_experimental'" class="ml-demo">
+          <summary>Escenarios de demostración</summary>
+          <div class="ml-actions">
+            <button :disabled="isSimulatingAnomaly || isRestoringNormality" @click="ejecutarSimularAnomalia">{{ isSimulatingAnomaly ? 'Cargando…' : 'Cargar desviación' }}</button>
+            <button :disabled="isSimulatingAnomaly || isRestoringNormality" @click="ejecutarRestaurarNormalidad">{{ isRestoringNormality ? 'Cargando…' : 'Cargar evolución normal' }}</button>
+          </div>
+        </details>
+        <p v-if="iaToastMessage" role="status">{{ iaToastMessage }}</p>
+      </div>
+      <div v-if="prediccionML.riesgo_pct != null" class="ml-value" :style="{ color: iaGaugeColor }">
+        <strong>{{ prediccionML.riesgo_pct.toFixed(1) }}<small>%</small></strong>
+        <span>Estimación experimental</span>
+        <span v-if="prediccionML.riesgo_instantaneo_pct != null">Instantánea: {{ prediccionML.riesgo_instantaneo_pct.toFixed(1) }} %</span>
+      </div>
+      <span v-else class="ml-wait">{{ sinModeloValidado ? 'Sin modelo aplicable' : 'Esperando evaluación' }}</span>
+    </section>
 
     <!-- Gráficos de Telemetría Chart.js -->
     <section class="chart-section">
@@ -1633,7 +1374,7 @@ onBeforeUnmount(() => {
         <div>
           <h2 class="chart-main-title">Evolución Temporal de la Cuba</h2>
           <p class="chart-main-subtitle">
-            Temperatura del mosto y evolución de Brix aparente · horas en UTC
+            Temperatura y Brix aparente · hora local
           </p>
         </div>
 
@@ -1752,6 +1493,16 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </section>
+    <details v-if="cuba?.proceso_activo_id" class="process-tools" @toggle="processToolsOpen = $event.target.open">
+      <summary>Mediciones e intervenciones <span>Registro del proceso</span></summary>
+      <template v-if="processToolsOpen">
+        <InterventionsPanel :key="`interventions-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" />
+        <ManualMeasurementsPanel :key="`manual-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" />
+        <SimulationStatus :key="cuba.proceso_activo_id" :process-id="cuba.proceso_activo_id" />
+      </template>
+    </details>
+    <RouterLink v-if="cuba?.proceso_activo_id" class="process-history-link" :to="`/procesos/${cuba.proceso_activo_id}`">Ver historial y comparar procesos →</RouterLink>
+
 
     <!-- Historial de Alertas y Eventos Recientes -->
     <section class="events-section">
@@ -3390,439 +3141,20 @@ onBeforeUnmount(() => {
   transform: translateY(-10px) scale(0.95);
 }
 
-/* ======================================================= */
-/* ESTILOS DE LA TARJETA DE PREDICCIÓN IA (ML)            */
-/* ======================================================= */
-.ai-prediction-card {
-  position: relative;
-  background: linear-gradient(135deg, rgba(20, 24, 39, 0.95) 0%, rgba(13, 17, 28, 0.95) 100%);
-  border: 1px solid rgba(75, 85, 99, 0.35);
-  border-radius: 14px;
-  padding: 1.5rem;
-  margin-bottom: 2rem;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-
-.ai-prediction-card--critical {
-  border-color: rgba(239, 68, 68, 0.65);
-  box-shadow: 0 0 30px rgba(239, 68, 68, 0.25);
-  animation: aiPulseRed 2.5s infinite ease-in-out;
-}
-
-@keyframes aiPulseRed {
-  0%, 100% {
-    box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
-    border-color: rgba(239, 68, 68, 0.5);
-  }
-  50% {
-    box-shadow: 0 0 35px rgba(239, 68, 68, 0.45);
-    border-color: rgba(239, 68, 68, 0.9);
-  }
-}
-
-.ai-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1.5rem;
-  padding-bottom: 1.25rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  flex-wrap: wrap;
-}
-
-.ai-header-left {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-}
-
-.ai-icon-badge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: rgba(99, 102, 241, 0.15);
-  color: #818cf8;
-  border: 1px solid rgba(99, 102, 241, 0.3);
-  flex-shrink: 0;
-}
-
-.ai-icon-badge.ia-status--critico {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.4);
-}
-
-.ai-icon-badge.ia-status--advertencia {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
-  border-color: rgba(245, 158, 11, 0.4);
-}
-
-.ai-icon-badge.ia-status--normal {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-  border-color: rgba(16, 185, 129, 0.4);
-}
-
-.ai-title-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.ai-title {
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: #f3f4f6;
-  margin: 0;
-  letter-spacing: -0.01em;
-}
-
-.ai-subtitle {
-  font-size: 0.85rem;
-  color: #9ca3af;
-  margin: 0.25rem 0 0 0;
-}
-
-.ai-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.2rem 0.65rem;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.ai-badge-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background-color: currentColor;
-}
-
-.ia-status--critico {
-  background: rgba(239, 68, 68, 0.18);
-  color: #fca5a5;
-  border: 1px solid rgba(239, 68, 68, 0.4);
-}
-
-.ia-status--advertencia {
-  background: rgba(245, 158, 11, 0.18);
-  color: #fcd34d;
-  border: 1px solid rgba(245, 158, 11, 0.4);
-}
-
-.ia-status--normal {
-  background: rgba(16, 185, 129, 0.18);
-  color: #6ee7b7;
-  border: 1px solid rgba(16, 185, 129, 0.4);
-}
-
-.ia-status--calibrando,
-.ia-status--finalizada {
-  background: rgba(107, 114, 128, 0.18);
-  color: #d1d5db;
-  border: 1px solid rgba(107, 114, 128, 0.4);
-}
-
-.ai-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-left: auto;
-}
-
-.btn-demo-simular {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.45rem 0.9rem;
-  border-radius: 8px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  background: rgba(220, 38, 38, 0.15);
-  color: #fca5a5;
-  border: 1px solid rgba(220, 38, 38, 0.4);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-demo-simular:hover:not(:disabled) {
-  background: rgba(220, 38, 38, 0.28);
-  border-color: #ef4444;
-  color: #ffffff;
-  transform: translateY(-1px);
-}
-
-.btn-demo-simular:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-demo-reset {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0.8rem;
-  border-radius: 8px;
-  font-size: 0.82rem;
-  font-weight: 500;
-  background: rgba(75, 85, 99, 0.2);
-  color: #9ca3af;
-  border: 1px solid rgba(75, 85, 99, 0.35);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-demo-reset:hover:not(:disabled) {
-  background: rgba(75, 85, 99, 0.35);
-  color: #f3f4f6;
-}
-
-.ai-toast-message {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.65rem 1rem;
-  margin-top: 1rem;
-  border-radius: 8px;
-  background: rgba(59, 130, 246, 0.15);
-  color: #93c5fd;
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  font-size: 0.85rem;
-}
-
-.ai-card-body {
-  display: grid;
-  grid-template-columns: 200px 1fr;
-  gap: 2rem;
-  align-items: center;
-  padding-top: 1.5rem;
-}
-
-@media (max-width: 900px) {
-  .ai-card-body {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
-  }
-}
-
-.ai-gauge-column {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-}
-
-.ai-circular-meter {
-  position: relative;
-  width: 120px;
-  height: 120px;
-}
-
-.ai-meter-svg {
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg);
-}
-
-.ai-meter-bg {
-  stroke: rgba(255, 255, 255, 0.08);
-}
-
-.ai-meter-fill {
-  transition: stroke-dashoffset 0.8s ease, stroke 0.4s ease;
-}
-
-.ai-meter-center {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-
-.ai-meter-num {
-  font-size: 1.45rem;
-  font-weight: 800;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-
-.ai-meter-lbl {
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #9ca3af;
-  margin-top: 2px;
-}
-
-.ai-progress-bar-wrap {
-  width: 100%;
-}
-
-.ai-progress-bar-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.65rem;
-  color: #6b7280;
-  margin-bottom: 0.25rem;
-}
-
-.ai-progress-track {
-  width: 100%;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 9999px;
-  overflow: hidden;
-}
-
-.ai-progress-bar-fill {
-  height: 100%;
-  border-radius: 9999px;
-  transition: width 0.8s ease, background-color 0.4s ease;
-}
-
-.ai-metrics-column {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.ai-features-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.85rem;
-}
-
-.ai-feature-card {
-  background: rgba(31, 41, 55, 0.4);
-  border: 1px solid rgba(75, 85, 99, 0.25);
-  border-radius: 10px;
-  padding: 0.85rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.ai-feat-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.74rem;
-  color: #9ca3af;
-}
-
-.ai-feat-name {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-weight: 500;
-}
-
-.ai-feat-tag {
-  font-size: 0.65rem;
-  padding: 0.1rem 0.45rem;
-  border-radius: 4px;
-  font-weight: 600;
-}
-
-.tag-good {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-}
-
-.tag-warn {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-}
-
-.tag-crit {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-}
-
-.ai-feat-val-row {
-  display: flex;
-  align-items: baseline;
-  gap: 0.35rem;
-}
-
-.ai-feat-val {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #f9fafb;
-}
-
-.ai-feat-unit {
-  font-size: 0.75rem;
-  color: #9ca3af;
-}
-
-.ai-feat-hint {
-  font-size: 0.68rem;
-  color: #6b7280;
-}
-
-.ai-diagnosis-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.85rem 1.1rem;
-  border-radius: 10px;
-}
-
-.ai-diag-icon {
-  margin-top: 2px;
-  flex-shrink: 0;
-}
-
-.ai-diag-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.85rem;
-}
-
-.ai-diag-label {
-  font-weight: 600;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.9;
-}
-
-.ai-diag-desc {
-  margin: 0;
-  line-height: 1.4;
-  color: inherit;
-}
-
-.spin-icon {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+.ml-summary { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 24px; border: 1px solid #653747; border-radius: 16px; background: #38202b; color: #f4e9ed; }
+.ml-copy { flex: 1; } .ml-eyebrow { color: #d0aeb9; font-size: 10px; font-weight: 700; letter-spacing: .13em; }
+.ml-summary h2 { font-size: 19px; margin: 8px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.ml-state { font-size: 10px; padding: 5px 9px; border: 1px solid #805364; border-radius: 20px; color: #e2c7d0; }
+.ml-summary p { font-size: 13px; color: #d8c3ca; line-height: 1.6; margin: 6px 0; }
+.ml-value { display: grid; gap: 6px; min-width: 150px; text-align: right; } .ml-value strong { font-size: 40px; font-variant-numeric: tabular-nums; } .ml-value small { font-size: 22px; }
+.ml-value span, .ml-wait { font-size: 12px; color: #d8c3ca; }
+.ml-demo { margin-top: 12px; font-size: 12px; } .ml-demo summary { cursor: pointer; color: #d8c3ca; }
+.ml-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; } .ml-actions button { background: #573342; color: #f4e9ed; border: 1px solid #805364; border-radius: 8px; padding: 9px 12px; cursor: pointer; }
+.ml-actions button:disabled { opacity: .5; cursor: wait; }
+.process-tools { border: 1px solid #e6dadd; border-radius: 12px; padding: 18px 22px; background: #fff; }
+.process-tools summary { cursor: pointer; font-weight: 600; color: #59313f; } .process-tools summary span { font-size: 12px; font-weight: 400; margin-left: 12px; color: #79636b; }
+.process-history-link { color: #76263d; font-size: 13px; align-self: flex-start; }
+@media(max-width: 900px) { .ml-summary { align-items: flex-start; flex-direction: column; padding: 18px; } .ml-value { text-align: left; } }
+.header-left, .title-selector-row, .selector-wrapper { min-width: 0; max-width: 100%; }
+.cuba-select { max-width: 100%; } .cuba-subtitle { overflow-wrap: anywhere; }
 </style>

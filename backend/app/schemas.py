@@ -90,6 +90,9 @@ class LecturaOut(BaseModel):
 class MLPredictionOut(BaseModel):
     """Predicción de Machine Learning para parada temprana de fermentación."""
     riesgo_pct: Optional[float] = Field(..., example=85.4, description="Riesgo estimado; null cuando no hay modelo aplicable")
+    metodo: str = "legacy_experimental"
+    pendiente_unidad: str = "muestra"
+    riesgo_instantaneo_pct: Optional[float] = None
     estado_ia: str = Field(..., example="CRITICO", description="Estado IA: NORMAL, ADVERTENCIA, CRITICO, RECOLECTANDO_DATOS, FINALIZADA")
     alerta_ia: bool = Field(..., example=True, description="Indica si el modelo disparó o debe disparar alerta")
     mensaje: str = Field(..., example="Predicción IA: Riesgo crítico de parada...", description="Diagnóstico textual explicativo")

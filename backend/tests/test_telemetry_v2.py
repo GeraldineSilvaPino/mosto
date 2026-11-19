@@ -171,6 +171,8 @@ def test_client_cannot_supply_server_owned_fields(client, packet, field, value):
 
 
 def test_future_unassigned_and_wrong_calibration_messages_do_not_create_rows(client, packet):
+    with SessionLocal() as db:
+        initial_process_count = db.query(m.ProcesoFermentacion).count()
     body = deepcopy(packet[0]); body["observed_at"] = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
     assert send(client, packet, body).status_code == 422
     body["observed_at"] = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
@@ -180,7 +182,7 @@ def test_future_unassigned_and_wrong_calibration_messages_do_not_create_rows(cli
     assert send(client, packet, body).status_code == 409
     with SessionLocal() as db:
         assert db.query(m.MensajeTelemetria).count() == db.query(m.LecturaTelemetria).count() == 0
-        assert db.query(m.ProcesoFermentacion).count() == 3
+        assert db.query(m.ProcesoFermentacion).count() == initial_process_count
 
 
 def test_late_out_of_order_reading_and_boot_restart(client, packet):
@@ -281,6 +283,9 @@ def test_same_timestamp_with_new_sequence_conflicts_without_partial_message(clie
 
 @pytest.mark.parametrize("source", ["fisico", "simulado"])
 def test_provisioned_device_and_tank_reject_legacy_demo_injection(client, source):
+    with SessionLocal() as db:
+        initial_process_count = db.query(m.ProcesoFermentacion).count()
+        initial_assignment_count = db.query(m.AsignacionDispositivo).count()
     from app.database import settings
     provision(client, source=source)
     # Isolation starts at provisioning, before the first canonical measurement.
@@ -293,8 +298,8 @@ def test_provisioned_device_and_tank_reject_legacy_demo_injection(client, source
         assert response.status_code == 409, response.text
     with SessionLocal() as db:
         assert db.query(m.LecturaTelemetria).count() == 0
-        assert db.query(m.ProcesoFermentacion).count() == 3
-        assert db.query(m.AsignacionDispositivo).count() == 3
+        assert db.query(m.ProcesoFermentacion).count() == initial_process_count
+        assert db.query(m.AsignacionDispositivo).count() == initial_assignment_count
 
 
 def test_process_with_canonical_history_rejects_demo_after_device_reassignment(client, packet):

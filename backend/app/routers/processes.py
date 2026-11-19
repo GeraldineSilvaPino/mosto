@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.services.access import business_db, actor_id
+from app.services.telemetry_v2 import aware
 from app.models import Cuba, ProcesoFermentacion, PerfilFermentacion, Cepa, LecturaTelemetria
 from app.schemas import ProcesoIniciarIn, ProcesoFinalizarIn, ProcesoOut
 from app.services.kinetic_episodes import KineticRuleConfig, CODE, rule_status
@@ -34,7 +35,7 @@ def obtener_cinetica(proceso_id: int, response: Response,
     response.headers["Cache-Control"] = "no-store"
     from app.services.simulation_time import process_clock_at, observation_end
     clock = process_clock_at(db, process.id, cutoff)
-    observation = observation_end(process, cutoff, clock) if clock else cutoff
+    observation = observation_end(process, cutoff, clock)
     result = process_kinetics(db, process, observation, received_as_of=cutoff)
     result.update(as_of=result["received_as_of"], observation_as_of=observation.isoformat(),
                   simulation_clock=clock.model_dump(mode="json") if clock else None)
@@ -42,6 +43,8 @@ def obtener_cinetica(proceso_id: int, response: Response,
     result["current_kinetic_rule"] = rule_status(db, process.id)
     from app.services.monitoring import monitoring_status
     result["current_monitoring"] = monitoring_status(db, process, now)
+    from app.services.process_series import descriptive_metrics
+    result["display"] = descriptive_metrics(db, process, observation, cutoff)
     return result
 
 
@@ -121,9 +124,9 @@ def _mapear_proceso_out(p: ProcesoFermentacion) -> ProcesoOut:
         densidad_inicial_sg=float(p.densidad_inicial_sg) if p.densidad_inicial_sg is not None else None,
         densidad_final_sg=densidad_final,
         estado=p.estado,
-        fecha_inicio=p.fecha_inicio,
-        fecha_estimada_fin=p.fecha_estimada_fin,
-        fecha_real_fin=p.fecha_real_fin,
+        fecha_inicio=aware(p.fecha_inicio) if p.fecha_inicio else None,
+        fecha_estimada_fin=aware(p.fecha_estimada_fin) if p.fecha_estimada_fin else None,
+        fecha_real_fin=aware(p.fecha_real_fin) if p.fecha_real_fin else None,
         dia_fermentacion=dia_ferm
     )
 

@@ -102,10 +102,12 @@ class SimuladorFermentacion:
 
         # Estado dinámico de degradación de azúcares y temperatura
         self.current_brix: float = float(args.brix_inicial)
+        self.current_temperature = max(self.TEMP_MIN_FISICO, min(self.TEMP_MAX_FISICO, self.temp_base))
+        self.brix_noise = 0.0
         self.stuck_fermentation: bool = getattr(args, "stuck_fermentation", False)
         self.stuck_cuba: Optional[int] = getattr(args, "stuck_cuba", None)
         self.stuck_after: int = getattr(args, "stuck_after", 4)
-        self.stuck_temp: float = 29.5
+        self.stuck_temp: float = self.current_temperature
 
         # --- TASK-BE-02B: fallos inyectados (None = desactivado) ----------
         self.spike_temp: Optional[float] = getattr(args, "spike_temp", None)
@@ -156,26 +158,26 @@ class SimuladorFermentacion:
         self.horas_simuladas += self.horas_por_ciclo
 
         if self.is_in_stuck_mode:
-            # Estancamiento: Brix congelado alrededor de ~14.5 °Bx
-            self.current_brix = 14.50
-            # Temperatura sube progresivamente hacia 31.0°C - 33.0°C
-            if self.stuck_temp < 32.2:
-                self.stuck_temp += random.uniform(0.3, 0.7)
+            # A stall retains the current concentration; it cannot teleport
+            # from early fermentation to an unrelated fixed Brix value.
+            target_temperature = 32.2
         else:
             # Caída saludable de Brix (-0.03 a -0.06 por tick de 5s en demo)
             caida = random.uniform(0.03, 0.06)
             self.current_brix = max(self.brix_final, self.current_brix - caida)
+            target_temperature = self.temp_base + self.temp_amplitud * math.sin(2.0 * math.pi * self.horas_simuladas / 24.0)
+        # One sensor state per tick, shared by both outgoing packets. Thermal
+        # inertia and correlated noise avoid steps and contradictory readings.
+        delta = .12 * (target_temperature - self.current_temperature) + random.gauss(0, .01)
+        self.current_temperature = max(self.TEMP_MIN_FISICO, min(self.TEMP_MAX_FISICO,
+            self.current_temperature + max(-.08, min(.08, delta))))
+        self.stuck_temp = self.current_temperature
+        self.brix_noise = .7 * self.brix_noise + random.gauss(0, .008)
 
     # -- Sensores ---------------------------------------------------------
     @property
     def brix(self) -> float:
-        if self.is_in_stuck_mode:
-            # Parada de fermentación: Brix plano en ~14.5 con ruido mínimo N(0, 0.02)
-            valor = 14.50 + random.gauss(0.0, 0.02)
-            return round(valor, 2)
-
-        # Caída saludable con suave ruido gaussiano N(0, 0.05)
-        valor = self.current_brix + random.gauss(0.0, 0.05)
+        valor = self.current_brix + self.brix_noise
         return round(max(self.brix_final, min(self.brix_inicial, valor)), 2)
 
     @property
@@ -188,14 +190,7 @@ class SimuladorFermentacion:
         # TASK-BE-02B: sobrecalentamiento forzado sin clamp ni ruido
         if self.spike_temp is not None:
             return round(self.spike_temp, 2)
-        if self.is_in_stuck_mode:
-            # Parada de fermentación: temperatura elevada hacia 30°C - 33°C
-            return round(self.stuck_temp + random.gauss(0.0, 0.15), 2)
-
-        # Fermentación saludable entre 21°C y 24°C
-        ciclo_diario = self.temp_amplitud * math.sin(2.0 * math.pi * self.horas_simuladas / 24.0)
-        valor = self.temp_base + ciclo_diario + random.gauss(0.0, 0.15)
-        return round(max(21.0, min(24.0, valor)), 2)
+        return round(self.current_temperature, 2)
 
     @property
     def temperatura_ambiente(self) -> float:

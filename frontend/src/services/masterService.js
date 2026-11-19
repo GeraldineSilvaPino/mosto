@@ -1,6 +1,9 @@
 import apiClient from './api.js'
 
 export const masterService = {
+  listarBodegas() {
+    return apiClient.get('/api/bodegas').then((res) => res.data)
+  },
   /**
    * Obtiene el catálogo de cepas viníferas
    */
