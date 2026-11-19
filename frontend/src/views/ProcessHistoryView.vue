@@ -46,7 +46,6 @@ onBeforeUnmount(() => { generation++; controller?.abort(); listController?.abort
 <template>
   <main class="process-history">
     <h1>Historial de procesos</h1>
-    <p>Revisa lecturas de procesos activos o cerrados y compáralas por fecha.</p>
     <div class="controls">
       <label>Mostrar<select v-model="filter"><option value="todos">Todos</option><option value="cerrados">Cerrados</option><option value="activos">Activos</option></select></label>
       <label>Proceso principal<select :value="selected" @change="router.push($event.target.value ? `/procesos/${$event.target.value}` : '/procesos')">
@@ -75,7 +74,10 @@ onBeforeUnmount(() => { generation++; controller?.abort(); listController?.abort
 </template>
 
 <style scoped>
-.process-history { padding: 24px; color: #342832; }
+.process-history { display: grid; gap: 1rem; color: var(--text-primary); }
+.process-history h1 { font-size: clamp(1.45rem, 2vw, 1.85rem); }
+.controls > label, .controls select { min-width: 0; }
+.controls > label { grid-template-columns: minmax(0, 1fr); }
 .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; }
 label { display: grid; gap: 6px; max-width: 100%; }
 select, button { padding: 10px; border: 1px solid #8a7b85; border-radius: 6px; font: inherit; max-width: 100%; }

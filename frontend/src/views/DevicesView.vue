@@ -84,8 +84,6 @@ const newDevice = ref({
 })
 
 // Modal de Diagnóstico / Ping
-const pingResult = ref(null)
-const isPinging = ref(false)
 
 // ==========================================
 // KPIS COMPUTADOS (ESTADO EN VIVO)
@@ -287,13 +285,6 @@ async function handleSaveNewDevice() {
 }
 
 // Simular Ping a dispositivo
-function handlePing(device) {
-  showToast(`Diagnóstico remoto de ${device.code} no disponible: el dispositivo aún no implementa este comando.`)
-}
-
-function handleRestart(device) {
-  showToast(`Reinicio remoto de ${device.code} no disponible: requiere confirmación del firmware.`)
-}
 
 // ==========================================
 // MODAL DE ASIGNACIÓN / VINCULACIÓN A CUBA
@@ -417,11 +408,7 @@ async function handleConfirmUnlink() {
     <!-- Header Principal -->
     <header class="devices-header">
       <div>
-        <div class="module-tag">Módulo 4 · Hardware y Configuración Operativa</div>
-        <h1 class="view-title">Dispositivos IoT y Sensores de Bodega</h1>
-        <p class="view-subtitle">
-          Administración de microcontroladores ESP32, estado de telemetría de sondas DS18B20 e inclinómetros MPU-6050 y emparejamiento con cubas.
-        </p>
+        <h1 class="view-title">Dispositivos IoT</h1>
       </div>
 
       <div class="header-actions">
@@ -441,18 +428,6 @@ async function handleConfirmUnlink() {
         </button>
       </div>
     </header>
-
-    <!-- Banner de Diagnóstico / Ping Activo -->
-    <transition name="toast-fade">
-      <div
-        v-if="pingResult"
-        class="ping-banner"
-        :class="pingResult.status === 'success' ? 'ping-banner--success' : 'ping-banner--error'"
-      >
-        <component :is="pingResult.status === 'success' ? CheckCircle2 : AlertTriangle" :size="18" />
-        <span>{{ pingResult.msg }}</span>
-      </div>
-    </transition>
 
     <!-- Tarjetas KPIs de Hardware -->
     <section class="kpi-grid">
@@ -612,7 +587,7 @@ async function handleConfirmUnlink() {
                 <span class="device-model-tag">{{ device.model }}</span>
                 <span class="device-model-tag">{{ device.source === 'fisico' ? 'Físico' : device.source === 'simulado' ? 'Simulado' : 'Sin aprovisionar' }}</span>
               </div>
-              <p class="device-mac">{{ device.mac }} · IP: {{ device.ipAddress }}</p>
+              <p class="device-mac">{{ device.mac }}</p>
             </div>
           </div>
 
@@ -693,34 +668,15 @@ async function handleConfirmUnlink() {
 
         <!-- Notas técnicas y tiempo -->
         <div class="device-notes-box">
-          <p class="notes-text">{{ device.notes }}</p>
+          <p v-if="device.notes" class="notes-text">{{ device.notes }}</p>
           <div class="telemetry-time">
             <Clock :size="12" />
-            <span>Última trama: {{ device.lastTelemetry }} · Frecuencia: {{ device.samplingInterval }}</span>
+            <span>Última trama: {{ device.lastTelemetry }}</span>
           </div>
         </div>
 
         <!-- Botones de Acción sobre el Dispositivo -->
         <div class="device-actions-footer">
-          <button
-            class="btn-device-action"
-            :disabled="isPinging"
-            @click="handlePing(device)"
-            title="Envía un paquete ICMP de prueba para medir latencia"
-          >
-            <Activity :size="13" />
-            <span>Ping</span>
-          </button>
-
-          <button
-            class="btn-device-action"
-            @click="handleRestart(device)"
-            title="Envía comando de reinicio remoto al microcontrolador"
-          >
-            <RotateCcw :size="13" />
-            <span>Reiniciar</span>
-          </button>
-
           <!-- Acción Asignar o Reasignar a Cuba -->
           <button
             v-if="!device.assignedCubaId"
@@ -1112,34 +1068,18 @@ async function handleConfirmUnlink() {
 .devices-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 1.5rem;
   flex-wrap: wrap;
 }
 
-.module-tag {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--wine-700);
-  margin-bottom: 0.25rem;
-}
-
 .view-title {
   font-family: var(--font-serif);
-  font-size: 2.1rem;
+  font-size: clamp(1.45rem, 2vw, 1.85rem);
   font-weight: 700;
   color: var(--wine-900);
   line-height: 1.15;
-  margin-bottom: 0.4rem;
-}
-
-.view-subtitle {
-  font-size: 0.88rem;
-  color: var(--text-secondary);
-  max-width: 720px;
-  line-height: 1.45;
+  margin-bottom: 0;
 }
 
 .header-actions {
@@ -1304,7 +1244,7 @@ async function handleConfirmUnlink() {
 .search-box {
   position: relative;
   flex: 1;
-  min-width: 260px;
+  min-width: min(100%, 260px);
   display: flex;
   align-items: center;
 }
@@ -1377,7 +1317,7 @@ async function handleConfirmUnlink() {
 /* 3. Cuadrícula de Dispositivos */
 .devices-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
   gap: 1.35rem;
 }
 
@@ -1686,6 +1626,7 @@ async function handleConfirmUnlink() {
 /* Footer de Botones de Acción */
 .device-actions-footer {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.45rem;
   padding-top: 0.65rem;
   border-top: 1px solid var(--border-subtle);

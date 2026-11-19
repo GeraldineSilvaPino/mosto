@@ -37,7 +37,7 @@ import {
   Info,
   RefreshCw,
   AlertCircle,
-  Radio,
+  FlaskConical,
   Play,
   Square,
   Sparkles,
@@ -71,7 +71,6 @@ const processToolsOpen = ref(false)
 const loading = ref(true)
 const chartLoading = ref(false)
 const error = ref(null)
-const lastSyncTime = ref(null)
 const flashUpdate = ref(false)
 
 const selectedCubaId = ref(1)
@@ -114,7 +113,7 @@ const estadoLabel = computed(() => {
     CRITICO: 'ALTO RIESGO DE PARADA',
     ADVERTENCIA: 'DESVIACIÓN CINÉTICA',
     NORMAL: 'CINÉTICA SALUDABLE',
-    FINALIZADA: 'PROCESO FINALIZADO',
+    FINALIZADA: 'BRIX EN TRAMO FINAL',
     RECOLECTANDO_DATOS: 'REUNIENDO LECTURAS',
     NO_VALIDADO: 'MODELO EXPERIMENTAL',
     ERROR: 'EVALUACIÓN NO DISPONIBLE'
@@ -186,6 +185,8 @@ const ejecutarRestaurarNormalidad = async () => {
 // ==========================================
 function rangoToHoras(rango) {
   switch (rango) {
+    case '1h':
+      return 1
     case '48h':
       return 48
     case '7d':
@@ -198,13 +199,15 @@ function rangoToHoras(rango) {
 
 const activeTimeRangeLabel = computed(() => {
   switch (activeTimeRange.value) {
+    case '1h':
+      return '1 h'
     case '48h':
-      return '48 Horas'
+      return '48 h'
     case '7d':
-      return '7 Días'
+      return '7 días'
     case '24h':
     default:
-      return '24 Horas'
+      return '24 h'
   }
 })
 
@@ -227,8 +230,13 @@ const capacidadMaximaLitros = computed(() => {
 
 const tieneLecturas = computed(() => {
   if (!historico.value) return false
-  const labels = historico.value.labels || historico.value.timestamps || []
-  return labels.length > 0 && (historico.value.total_muestras > 0 || labels.length > 0)
+  const series = activeChartTab.value === 'ph' ? ['valores_ph'] : activeChartTab.value === 'temp'
+    ? ['temperaturas_vino'] : activeChartTab.value === 'brix' ? ['grados_brix'] : ['temperaturas_vino', 'grados_brix']
+  return historico.value.timestamps?.some((_, index) => {
+    const origin = historico.value.origenes?.[index]
+    return (scenarioNames[origin] ? origin : 'telemetria') === selectedSource.value &&
+      series.some(key => Number.isFinite(historico.value[key]?.[index]))
+  })
 })
 
 // Extracción unificada y reactiva de la temperatura actual
@@ -283,11 +291,7 @@ const cubasList = computed(() => {
   if (cuba.value) {
     return [cuba.value]
   }
-  return [
-    { id: 1, codigo_cuba: 'CB-01', nombre: 'Cuba CB-01' },
-    { id: 2, codigo_cuba: 'CB-02', nombre: 'Cuba CB-02' },
-    { id: 3, codigo_cuba: 'CB-03', nombre: 'Cuba CB-03' }
-  ]
+  return []
 })
 
 const cubaNombre = computed(() => {
@@ -300,13 +304,13 @@ const cubaNombre = computed(() => {
 const cubaVariedad = computed(() => {
   if (!cuba.value) return '--'
   if (!tieneProcesoActivo.value) return 'Sin proceso activo'
-  return cuba.value.variedad || 'Cabernet Sauvignon'
+  return cuba.value.variedad || 'Sin variedad'
 })
 
 const cubaLote = computed(() => {
   if (!cuba.value) return '--'
   if (!tieneProcesoActivo.value) return 'Cuba Disponible'
-  return cuba.value.lote || `Lote ${cuba.value.proceso_activo_id || 1}-2026`
+  return cuba.value.lote || 'Sin lote'
 })
 
 const diaFermentacion = computed(() => {
@@ -392,7 +396,7 @@ const tempChangeText = computed(() => {
       return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}°C en últimas lecturas`
     }
   }
-  return 'Estable en últimas lecturas'
+  return 'Sin muestras suficientes'
 })
 
 const brixDeltaText = computed(() => {
@@ -407,10 +411,6 @@ const brixDeltaText = computed(() => {
   return 'Sin muestras suficientes'
 })
 
-const tiltAngleCalculado = computed(() => {
-  // The summary API does not expose measured tilt; do not reverse an invented curve.
-  return 'No informada'
-})
 
 const alertsList = computed(() => {
   if (alertasCuba.value && alertasCuba.value.length > 0) {
@@ -456,25 +456,34 @@ const alertsList = computed(() => {
 // ==========================================
 // CONFIGURACIÓN Y DATASETS DE CHART.JS
 // ==========================================
+const scenarioNames = {
+  simulacion_anomalia_ia: 'Ensayo de desviación',
+  restauracion_normalidad: 'Ensayo de recuperación'
+}
+const chartSource = ref('telemetria')
+const scenarioSources = computed(() => [...new Set(historico.value?.origenes || [])].filter(key => scenarioNames[key]))
+const selectedSource = computed(() => scenarioSources.value.includes(chartSource.value) ? chartSource.value : 'telemetria')
+
+function chartPoints(data, values) {
+  const times = []
+  const readings = []
+  for (const [i, time] of (data?.timestamps || []).entries()) {
+    const origin = data.origenes?.[i]
+    const source = scenarioNames[origin] ? origin : 'telemetria'
+    if (source === selectedSource.value) {
+      times.push(time)
+      readings.push(values[i])
+    }
+  }
+  return telemetryPoints(times, readings)
+}
+
+watch(chartSource, () => {
+  if (chartInstance && historico.value) actualizarGraficoEnInstancia(historico.value, 'none')
+})
+
 function construirDatasets(data) {
   if (!chartCanvasRef.value) return []
-  const ctx = chartCanvasRef.value.getContext('2d')
-
-  // Gradiente suave de temperatura
-  const tempGrad = ctx.createLinearGradient(0, 0, 0, 260)
-  tempGrad.addColorStop(0, 'rgba(118, 31, 51, 0.25)')
-  tempGrad.addColorStop(1, 'rgba(118, 31, 51, 0.02)')
-
-  // Gradiente suave de brix
-  const brixGrad = ctx.createLinearGradient(0, 0, 0, 260)
-  brixGrad.addColorStop(0, 'rgba(196, 127, 23, 0.25)')
-  brixGrad.addColorStop(1, 'rgba(196, 127, 23, 0.02)')
-
-  // Gradiente suave de pH
-  const phGrad = ctx.createLinearGradient(0, 0, 0, 260)
-  phGrad.addColorStop(0, 'rgba(107, 33, 168, 0.25)')
-  phGrad.addColorStop(1, 'rgba(107, 33, 168, 0.02)')
-
   const labels =
     data?.labels && data.labels.length > 0
       ? data.labels
@@ -500,12 +509,12 @@ function construirDatasets(data) {
 
   if (activeChartTab.value === 'both' || activeChartTab.value === 'temp') {
     datasets.push({
-      label: 'Temperatura DS18B20 (°C)',
-      data: telemetryPoints(data?.timestamps, tempData),
+      label: 'Temperatura (°C)',
+      data: chartPoints(data, tempData),
       borderColor: '#761F33',
-      backgroundColor: tempGrad,
-      borderWidth: 2.5,
-      cubicInterpolationMode: 'monotone',
+      backgroundColor: '#761F33',
+      borderWidth: 1.8,
+      tension: 0,
       stepped: false,
       spanGaps: false,
       pointRadius: isDense ? 0 : 3,
@@ -513,20 +522,20 @@ function construirDatasets(data) {
       pointBackgroundColor: '#FFFFFF',
       pointBorderColor: '#761F33',
       pointBorderWidth: 2,
-      fill: true,
+      fill: false,
       yAxisID: 'yTemp'
     })
   }
 
   if (activeChartTab.value === 'both' || activeChartTab.value === 'brix') {
     datasets.push({
-      label: 'Grados Brix MPU-6050 (°Bx)',
-      data: telemetryPoints(data?.timestamps, brixData),
+      label: 'Brix aparente (°Bx)',
+      data: chartPoints(data, brixData),
       borderColor: '#C47F17',
-      backgroundColor: brixGrad,
-      borderWidth: 2.5,
+      backgroundColor: '#C47F17',
+      borderWidth: 1.8,
       borderDash: [5, 4],
-      cubicInterpolationMode: 'monotone',
+      tension: 0,
       stepped: false,
       spanGaps: false,
       pointRadius: isDense ? 0 : 3,
@@ -534,19 +543,19 @@ function construirDatasets(data) {
       pointBackgroundColor: '#FFFFFF',
       pointBorderColor: '#C47F17',
       pointBorderWidth: 2,
-      fill: true,
+      fill: false,
       yAxisID: activeChartTab.value === 'both' ? 'yBrix' : 'yTemp'
     })
   }
 
   if (activeChartTab.value === 'ph') {
     datasets.push({
-      label: 'pH PH-4502C',
-      data: telemetryPoints(data?.timestamps, phData),
+      label: 'pH',
+      data: chartPoints(data, phData),
       borderColor: '#6B21A8',
-      backgroundColor: phGrad,
-      borderWidth: 2.5,
-      cubicInterpolationMode: 'monotone',
+      backgroundColor: '#6B21A8',
+      borderWidth: 1.8,
+      tension: 0,
       stepped: false,
       spanGaps: false,
       pointRadius: isDense ? 0 : 3,
@@ -554,7 +563,7 @@ function construirDatasets(data) {
       pointBackgroundColor: '#FFFFFF',
       pointBorderColor: '#6B21A8',
       pointBorderWidth: 2,
-      fill: true,
+      fill: false,
       yAxisID: 'yTemp'
     })
   }
@@ -570,19 +579,21 @@ function construirScalesConfig() {
   const scales = {
     x: {
       type: 'linear',
+      bounds: 'data',
       grid: { color: 'rgba(232, 224, 221, 0.6)' },
       ticks: {
         color: '#66525B',
         font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 },
         maxRotation: 45,
         autoSkip: true,
-        maxTicksLimit: 12,
-        callback: value => new Date(value).toLocaleString('es-CL', activeTimeRange.value === '24h' ? { hour: '2-digit', minute: '2-digit' } : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+        maxTicksLimit: 7,
+        callback: value => new Date(value).toLocaleString('es-CL', ['1h', '24h'].includes(activeTimeRange.value) ? { hour: '2-digit', minute: '2-digit' } : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
       }
     },
     yTemp: {
       type: 'linear',
       position: 'left',
+      ...(isBrix ? { suggestedMin: 0, suggestedMax: 25 } : isPh ? { suggestedMin: 3, suggestedMax: 4 } : { suggestedMin: 18, suggestedMax: 26 }),
       title: {
         display: true,
         text: isBrix ? 'Grados Brix (°Bx)' : isPh ? 'pH Enológico' : 'Temperatura (°C)',
@@ -601,6 +612,8 @@ function construirScalesConfig() {
     scales.yBrix = {
       type: 'linear',
       position: 'right',
+      suggestedMin: 0,
+      suggestedMax: 25,
       title: {
         display: true,
         text: 'Grados Brix (°Bx)',
@@ -716,7 +729,6 @@ async function cambiarRangoHoras(nuevoRango) {
     if (request !== dataGeneration) return
     cuba.value = cubaData
     historico.value = historicoData
-    lastSyncTime.value = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
     await nextTick()
     if (!chartInstance) {
@@ -761,11 +773,6 @@ async function refrescarDatosEnVivo() {
 
     cuba.value = cubaData
     historico.value = historicoData
-    lastSyncTime.value = new Date().toLocaleTimeString('es-CL', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    })
 
     const newTemp = temperaturaActual.value
     const newBrix = brixActual.value
@@ -814,11 +821,6 @@ async function cargarDatosCuba(id, rangoHoras = 24) {
     if (request !== dataGeneration) return
     cuba.value = cubaData
     historico.value = historicoData
-    lastSyncTime.value = new Date().toLocaleTimeString('es-CL', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    })
 
     // Cargar alertas asociadas de forma asíncrona
     cargarAlertasCuba(id)
@@ -1140,6 +1142,7 @@ onBeforeUnmount(() => {
               <select
                 :value="selectedCubaId"
                 @change="onCubaChange"
+                aria-label="Seleccionar cuba"
                 class="cuba-select"
               >
                 <option v-for="c in cubasList" :key="c.id" :value="c.id">
@@ -1149,7 +1152,7 @@ onBeforeUnmount(() => {
               <ChevronDown :size="18" class="select-chevron" />
             </div>
             <p class="cuba-subtitle">
-              {{ cubaVariedad }} · {{ cubaLote }} · Monitoreo de Fermentación
+              {{ cubaVariedad }} · {{ cubaLote }}
             </p>
           </div>
         </div>
@@ -1181,10 +1184,7 @@ onBeforeUnmount(() => {
             <span>Finalizar Fermentación</span>
           </button>
 
-          <span v-if="lastSyncTime" class="sync-badge">
-            <Radio :size="12" class="sync-icon-pulse" />
-            <span>En vivo ({{ lastSyncTime }})</span>
-          </span>
+
 
           <button
             class="btn-refresh"
@@ -1297,88 +1297,44 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="metric-details">
-          <div class="tilt-info">
-            <span>Inclinación medida:</span>
-            <strong>{{ tiltAngleCalculado }}</strong>
-          </div>
           <span class="metric-subtext">Variación: {{ brixDeltaText }}</span>
         </div>
       </div>
 
-      <!-- 3. Estado del Proceso (Diagnóstico Simple) -->
       <div class="metric-card">
         <div class="metric-card-top">
           <div>
-            <span class="sensor-tag">Diagnóstico de Reglas</span>
-            <h3 class="metric-title">Estado del Proceso</h3>
+            <span class="sensor-tag">Sensor PH-4502C</span>
+            <h3 class="metric-title">Acidez del mosto</h3>
           </div>
-          <div
-            class="metric-icon"
-            :class="{
-              'metric-icon-good': statusOperativo === 'optimal',
-              'metric-icon-warn': statusOperativo === 'warning',
-              'metric-icon-neutral': ['disponible', 'loading', 'no_evaluado'].includes(statusOperativo)
-            }"
-          >
-            <Activity :size="22" />
-          </div>
+          <div class="metric-icon metric-icon-ph"><FlaskConical :size="22" /></div>
         </div>
-
         <div class="metric-val-group">
-          <span
-            class="status-summary-text"
-            :class="{
-              'summary-optimal': statusOperativo === 'optimal',
-              'summary-warning': statusOperativo === 'warning',
-              'summary-neutral': ['disponible', 'no_evaluado'].includes(statusOperativo)
-            }"
-          >
-            {{ statusLabel }}
-          </span>
+          <span class="metric-number">{{ cuba?.ultimo_ph?.toFixed(2) ?? '—' }}</span>
+          <span class="metric-unit">pH</span>
         </div>
-
         <div class="metric-details">
-          <p class="rule-explanation">{{ tieneProcesoActivo ? 'Según la última temperatura y el perfil del proceso.' : 'Sin fermentación activa.' }}</p>
+          <span class="metric-subtext" v-if="cuba?.ultima_lectura_timestamp">Última lectura · {{ new Date(cuba.ultima_lectura_timestamp).toLocaleTimeString('es-CL') }}</span>
+          <span class="metric-subtext" v-else>Sin lecturas registradas</span>
         </div>
       </div>
-    </section>
-
-    <!-- SECCIÓN PREDICCIÓN IA: Detección Temprana de Parada de Fermentación (Machine Learning) -->
-    <KineticsPanel v-if="cuba?.proceso_activo_id" :key="`kinetics-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" />
-
-    <section v-if="tieneProcesoActivo" class="ml-summary" aria-label="Estimación experimental de riesgo">
-      <div class="ml-copy">
-        <span class="ml-eyebrow">SIMULACIÓN · MACHINE LEARNING</span>
-        <h2>Riesgo de parada <span class="ml-state">{{ estadoLabel }}</span></h2>
-        <p>{{ prediccionML.mensaje }}</p>
-        <details v-if="prediccionML.metodo === 'legacy_experimental'" class="ml-demo">
-          <summary>Escenarios de demostración</summary>
-          <div class="ml-actions">
-            <button :disabled="isSimulatingAnomaly || isRestoringNormality" @click="ejecutarSimularAnomalia">{{ isSimulatingAnomaly ? 'Cargando…' : 'Cargar desviación' }}</button>
-            <button :disabled="isSimulatingAnomaly || isRestoringNormality" @click="ejecutarRestaurarNormalidad">{{ isRestoringNormality ? 'Cargando…' : 'Cargar evolución normal' }}</button>
-          </div>
-        </details>
-        <p v-if="iaToastMessage" role="status">{{ iaToastMessage }}</p>
-      </div>
-      <div v-if="prediccionML.riesgo_pct != null" class="ml-value" :style="{ color: iaGaugeColor }">
-        <strong>{{ prediccionML.riesgo_pct.toFixed(1) }}<small>%</small></strong>
-        <span>Estimación experimental</span>
-        <span v-if="prediccionML.riesgo_instantaneo_pct != null">Instantánea: {{ prediccionML.riesgo_instantaneo_pct.toFixed(1) }} %</span>
-      </div>
-      <span v-else class="ml-wait">{{ sinModeloValidado ? 'Sin modelo aplicable' : 'Esperando evaluación' }}</span>
     </section>
 
     <!-- Gráficos de Telemetría Chart.js -->
     <section class="chart-section">
       <div class="chart-header">
         <div>
-          <h2 class="chart-main-title">Evolución Temporal de la Cuba</h2>
+          <h2 class="chart-main-title">Evolución de la cuba</h2>
           <p class="chart-main-subtitle">
-            Temperatura y Brix aparente · hora local
+            Hora local
           </p>
         </div>
 
         <div class="chart-controls">
+          <select v-if="scenarioSources.length" v-model="chartSource" aria-label="Origen de las lecturas" class="chart-source">
+            <option value="telemetria">Telemetría continua</option>
+            <option v-for="source in scenarioSources" :key="source" :value="source">{{ scenarioNames[source] }}</option>
+          </select>
           <!-- Filtro de series -->
           <div class="btn-group">
             <button
@@ -1386,28 +1342,28 @@ onBeforeUnmount(() => {
               :class="{ active: activeChartTab === 'both' }"
               @click="cambiarTabGrafico('both')"
             >
-              Ambos Sensores
+              Temp. y Brix
             </button>
             <button
               class="btn-filter"
               :class="{ active: activeChartTab === 'temp' }"
               @click="cambiarTabGrafico('temp')"
             >
-              Solo Temperatura
+              Temperatura
             </button>
             <button
               class="btn-filter"
               :class="{ active: activeChartTab === 'brix' }"
               @click="cambiarTabGrafico('brix')"
             >
-              Solo Brix
+              Brix
             </button>
             <button
               class="btn-filter"
               :class="{ active: activeChartTab === 'ph' }"
               @click="cambiarTabGrafico('ph')"
             >
-              Solo pH
+              pH
             </button>
           </div>
 
@@ -1415,11 +1371,19 @@ onBeforeUnmount(() => {
           <div class="btn-group">
             <button
               class="btn-filter"
+              :class="{ active: activeTimeRange === '1h' }"
+              :disabled="chartLoading"
+              @click="cambiarRangoHoras('1h')"
+            >
+              1 h
+            </button>
+            <button
+              class="btn-filter"
               :class="{ active: activeTimeRange === '24h' }"
               :disabled="chartLoading"
               @click="cambiarRangoHoras('24h')"
             >
-              24 Horas
+              24 h
             </button>
             <button
               class="btn-filter"
@@ -1427,7 +1391,7 @@ onBeforeUnmount(() => {
               :disabled="chartLoading"
               @click="cambiarRangoHoras('48h')"
             >
-              48 Horas
+              48 h
             </button>
             <button
               class="btn-filter"
@@ -1435,7 +1399,7 @@ onBeforeUnmount(() => {
               :disabled="chartLoading"
               @click="cambiarRangoHoras('7d')"
             >
-              7 Días
+              7 días
             </button>
           </div>
         </div>
@@ -1475,24 +1439,32 @@ onBeforeUnmount(() => {
         <canvas ref="chartCanvasRef"></canvas>
       </div>
 
-      <div class="chart-legend-box">
-        <div class="legend-item">
-          <span class="legend-color legend-temp"></span>
-          <span><strong>Temperatura (°C):</strong> Curva del sensor sumergible DS18B20.</span>
-        </div>
-        <div class="legend-item">
-          <span class="legend-color legend-brix"></span>
-          <span><strong>Brix aparente (°Bx):</strong> Medida derivada del flotador; requiere calibración.</span>
-        </div>
-        <div
-          class="legend-item"
-          v-if="activeChartTab === 'ph' || historico?.valores_ph?.some(value => value != null)"
-        >
-          <span class="legend-color legend-ph"></span>
-          <span><strong>Acidez (pH):</strong> Sensor de pH sumergible PH-4502C.</span>
-        </div>
-      </div>
     </section>
+    <!-- SECCIÓN PREDICCIÓN IA: Detección Temprana de Parada de Fermentación (Machine Learning) -->
+    <KineticsPanel v-if="cuba?.proceso_activo_id" :key="`kinetics-${cuba.proceso_activo_id}`" :process-id="cuba.proceso_activo_id" />
+
+    <section v-if="tieneProcesoActivo" class="ml-summary" aria-label="Estimación experimental de riesgo">
+      <div class="ml-copy">
+        <span class="ml-eyebrow">SIMULACIÓN · MACHINE LEARNING</span>
+        <h2>Riesgo de parada <span class="ml-state">{{ estadoLabel }}</span></h2>
+        <p>{{ prediccionML.mensaje }}</p>
+        <details v-if="prediccionML.metodo === 'legacy_experimental'" class="ml-demo">
+          <summary>Escenarios de demostración</summary>
+          <div class="ml-actions">
+            <button :disabled="isSimulatingAnomaly || isRestoringNormality" @click="ejecutarSimularAnomalia">{{ isSimulatingAnomaly ? 'Cargando…' : 'Cargar desviación' }}</button>
+            <button :disabled="isSimulatingAnomaly || isRestoringNormality" @click="ejecutarRestaurarNormalidad">{{ isRestoringNormality ? 'Cargando…' : 'Cargar evolución normal' }}</button>
+          </div>
+        </details>
+        <p v-if="iaToastMessage" role="status">{{ iaToastMessage }}</p>
+      </div>
+      <div v-if="prediccionML.riesgo_pct != null" class="ml-value" :style="{ color: iaGaugeColor }">
+        <strong>{{ prediccionML.riesgo_pct.toFixed(1) }}<small>%</small></strong>
+        <span>Estimación experimental</span>
+        <span v-if="prediccionML.riesgo_instantaneo_pct != null">Instantánea: {{ prediccionML.riesgo_instantaneo_pct.toFixed(1) }} %</span>
+      </div>
+      <span v-else class="ml-wait">{{ sinModeloValidado ? 'Sin modelo aplicable' : 'Esperando evaluación' }}</span>
+    </section>
+
     <details v-if="cuba?.proceso_activo_id" class="process-tools" @toggle="processToolsOpen = $event.target.open">
       <summary>Mediciones e intervenciones <span>Registro del proceso</span></summary>
       <template v-if="processToolsOpen">
@@ -1997,6 +1969,8 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
 }
 
+.metric-icon-ph { background: #f3edf9; color: #75419a; }
+.header-actions-row > button, .header-actions-row > .status-pill { min-height: 36px; }
 .header-actions-row {
   display: flex;
   align-items: center;
@@ -2344,6 +2318,7 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
 }
 
+.chart-source { background: white; border: 1px solid var(--border-color); border-radius: 6px; padding: 0 .5rem; min-height: 32px; }
 .chart-controls {
   display: flex;
   gap: 0.75rem;
@@ -2442,41 +2417,6 @@ onBeforeUnmount(() => {
   font-size: 0.84rem;
   color: var(--text-secondary);
   line-height: 1.45;
-}
-
-.chart-legend-box {
-  margin-top: 1rem;
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--border-subtle);
-  display: flex;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
-.legend-color {
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-}
-
-.legend-temp {
-  background-color: #761f33;
-}
-
-.legend-brix {
-  background-color: #c47f17;
-}
-
-.legend-ph {
-  background-color: #6b21a8;
 }
 
 /* Eventos / Historial */

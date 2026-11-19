@@ -19,6 +19,7 @@ class TelemetriaESP32In(BaseModel):
     """
     mac_address: str = Field(..., example="C8:F0:9E:4B:82:10", description="MAC física del ESP32")
     cuba_id: Optional[int] = Field(None, example=1, description="ID de la cuba (opcional si ya está asignado en DB)")
+    proceso_id: Optional[int] = Field(None, gt=0)
     temperatura_vino: float = Field(..., example=18.45, description="Temperatura del mosto/vino en °C (DS18B20)")
     temperatura_ambiente: Optional[float] = Field(None, example=21.20, description="Temperatura ambiental en °C (DHT22)")
     humedad_ambiente: Optional[float] = Field(None, example=65.0, description="Humedad relativa en % (DHT22)")
@@ -35,6 +36,7 @@ class TelemetriaESP8266In(BaseModel):
     """
     mac_address: str = Field(..., example="5C:CF:7F:12:34:56", description="MAC física del ESP8266")
     cuba_id: Optional[int] = Field(None, example=1, description="ID de la cuba (opcional si ya está asignado)")
+    proceso_id: Optional[int] = Field(None, gt=0)
     angulo_tilt: Optional[float] = Field(None, example=43.20, description="Ángulo de inclinación en grados respecto a Z")
     ax: Optional[float] = Field(None, example=0.045, description="Aceleración en X (g)")
     ay: Optional[float] = Field(None, example=0.680, description="Aceleración en Y (g)")
@@ -112,6 +114,7 @@ class CubaOut(BaseModel):
     estado_operativo: str
     
     # Proceso de fermentación activo
+    perfil_activo_id: Optional[int] = None
     proceso_activo_id: Optional[int] = None
     variedad: Optional[str] = None
     lote: Optional[str] = None
@@ -155,6 +158,7 @@ class HistoricoCubaOut(BaseModel):
     rango_horas: int
     total_muestras: int
     timestamps: List[str]
+    origenes: List[Optional[str]] = []
     temperaturas_vino: List[Optional[float]]
     grados_brix: List[Optional[float]]
     valores_ph: List[Optional[float]]

@@ -56,13 +56,14 @@ services:
 
   simulator:
     build: ./backend
-    profiles: [simulator]
+    profiles: [simulator, demo]
+    restart: unless-stopped
     environment:
       MOSTO_SIMULATOR_KEY: ${MOSTO_SIMULATOR_KEY:-8f923f8b2add20b4e1b18510e31889044bf63c20d1835b81b59cbde86c0d6938}
     depends_on:
       backend:
         condition: service_healthy
-    command: python scripts/simulate_esp.py --base-url http://backend:8000 --cuba 1,2,3 --interval 5 --timeout 15
+    command: python scripts/simulate_esp.py --base-url http://backend:8000 --cuba 1,2,3,4,5 --interval 20 --horas-por-ciclo 0.04 --reanudar --timeout 15
 
   mosto-test-db:
     image: postgres:16

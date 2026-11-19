@@ -125,7 +125,7 @@ def _mapear_dispositivo_out(d: Dispositivo, db: Session) -> DispositivoOut:
 
     # 5. Sensor y Fuente de Energía
     tipo_str = (d.tipo_dispositivo or "").upper()
-    if "MPU" in tipo_str or "TILT" in tipo_str or "INCLINOMETRO" in tipo_str:
+    if "FLOTADOR" in tipo_str or "MPU" in tipo_str or "TILT" in tipo_str or "INCLINOMETRO" in tipo_str:
         sensor_type = "MPU-6050"
         sensor_label = "Inclinómetro Giroscopio MPU-6050"
         power_source = "battery"
@@ -157,7 +157,7 @@ def _mapear_dispositivo_out(d: Dispositivo, db: Session) -> DispositivoOut:
 
     return DispositivoOut(
         id=d.id,
-        code=f"ESP32-DEV-{d.id:02d}",
+        code=f"{'ESP8266' if 'ESP8266' in tipo_str else 'ESP32'}-DEV-{d.id:02d}",
         name=f"Nodo {sensor_type} ({cuba_asignada.codigo if cuba_asignada else 'Sin Asignar'})",
         mac=d.mac_address,
         model=modelo_nombre,

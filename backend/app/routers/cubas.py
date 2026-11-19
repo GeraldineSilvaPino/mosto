@@ -24,7 +24,7 @@ from app.models import (
 )
 from app.models import MensajeTelemetria
 from app.schemas import CubaOut, LecturaOut, HistoricoCubaOut, MLPredictionOut, SimulacionAnomaliaOut
-from app.services.ml_service import evaluar_riesgo_parada_cuba, evaluar_proceso_cinetica
+from app.services.ml_service import evaluar_riesgo_parada_cuba, evaluar_proceso_cinetica, ventana_modelo_legacy
 from app.services.rules_engine import rules_engine
 from app.services.telemetry_v2 import aware, utc_now
 
@@ -82,19 +82,7 @@ def _calcular_prediccion_ml(db: Session, proceso_id: Optional[int]) -> Optional[
         if pred_cinetica:
             return MLPredictionOut(**pred_cinetica)
 
-    lecturas = (
-        db.query(LecturaTelemetria)
-        .filter(
-            LecturaTelemetria.fermentacion_id == proceso_id,
-            LecturaTelemetria.timestamp <= utc_now(),
-            LecturaTelemetria.lectura_valida.is_(True),
-            LecturaTelemetria.brix.isnot(None),
-            LecturaTelemetria.temp_mosto.isnot(None)
-        )
-        .order_by(desc(LecturaTelemetria.timestamp), desc(LecturaTelemetria.id))
-        .limit(17)
-        .all()
-    )
+    lecturas = ventana_modelo_legacy(db, proceso_id, 17)
 
     if not lecturas:
         return MLPredictionOut(
@@ -116,6 +104,10 @@ def _calcular_prediccion_ml(db: Session, proceso_id: Optional[int]) -> Optional[
     pred = evaluar_riesgo_parada_cuba(lecturas_brix, lecturas_temp)
     # A deterministic trailing average of overlapping model windows, based on
     # samples rather than requests. Refreshing cannot advance the displayed risk.
+    if pred['estado_ia'] == 'RECOLECTANDO_DATOS' and lecturas[0].origen_dato == 'simulado_legacy':
+        pred['mensaje'] = (f"{len(lecturas)} de 4 muestras temporales disponibles. "
+                           "Con lecturas continuas, la primera estimación requiere unos 45 minutos "
+                           "(una muestra cada 15 minutos).")
     instant = pred['riesgo_pct']
     if len(lecturas_cron) >= 12 and instant is not None and pred['estado_ia'] != 'FINALIZADA':
         estimates = [evaluar_riesgo_parada_cuba(lecturas_brix[:end], lecturas_temp[:end])['riesgo_pct']
@@ -182,6 +174,7 @@ def _mapear_cuba_out(
         
         # Datos del proceso
         proceso_activo_id=proceso_activo.id if proceso_activo else None,
+        perfil_activo_id=proceso_activo.perfil_id if proceso_activo else None,
         variedad=variedad,
         lote=f"Lote {proceso_activo.id}-2026" if proceso_activo else None,
         volumen_actual_lts=float(proceso_activo.volumen_litros) if proceso_activo and proceso_activo.volumen_litros else None,
@@ -324,7 +317,7 @@ def obtener_historico_cuba(
     # Filtrar por proceso activo y ventana temporal solicitada
     observed = func.coalesce(MensajeTelemetria.observado_en, LecturaTelemetria.timestamp)
     rows = db.query(observed.label("timestamp"), LecturaTelemetria.temp_mosto,
-                    LecturaTelemetria.brix, LecturaTelemetria.ph).outerjoin(
+                    LecturaTelemetria.brix, LecturaTelemetria.ph, LecturaTelemetria.origen_dato).outerjoin(
         MensajeTelemetria, MensajeTelemetria.lectura_id == LecturaTelemetria.id).filter(
         LecturaTelemetria.fermentacion_id == proceso_activo.id, observed >= desde_tiempo, observed <= hasta_tiempo)
     available = MensajeTelemetria.recibido_en <= cutoff
@@ -357,6 +350,7 @@ def obtener_historico_cuba(
         rango_horas=rango_horas,
         total_muestras=len(lecturas),
         timestamps=timestamps_list,
+        origenes=[l.origen_dato for l in lecturas],
         temperaturas_vino=temp_list,
         grados_brix=brix_list,
         valores_ph=ph_list,

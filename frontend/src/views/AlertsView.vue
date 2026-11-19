@@ -392,7 +392,6 @@ onBeforeUnmount(() => {
     <!-- Header Principal -->
     <header class="alerts-header">
       <div>
-        <div class="module-tag">Módulo 3 · Alertas y Protocolo</div>
         <div class="title-with-counter">
           <h1 class="view-title">Alertas y Gestión de Incidencias</h1>
           <span class="badge-pending-header" :class="{ 'has-pending': totalActive > 0 }">
@@ -400,9 +399,6 @@ onBeforeUnmount(() => {
             {{ totalActive }} Pendiente{{ totalActive === 1 ? '' : 's' }}
           </span>
         </div>
-        <p class="view-subtitle">
-          Supervisión en tiempo real de anomalías de fermentación, fallas en sensores DS18B20 / MPU-6050 y protocolo operativo del enólogo.
-        </p>
       </div>
 
       <div class="header-actions">
@@ -856,34 +852,18 @@ onBeforeUnmount(() => {
 .alerts-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 1.5rem;
   flex-wrap: wrap;
 }
 
-.module-tag {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--wine-700);
-  margin-bottom: 0.25rem;
-}
-
 .view-title {
   font-family: var(--font-serif);
-  font-size: 2.1rem;
+  font-size: clamp(1.45rem, 2vw, 1.85rem);
   font-weight: 700;
   color: var(--wine-900);
   line-height: 1.15;
-  margin-bottom: 0.4rem;
-}
-
-.view-subtitle {
-  font-size: 0.88rem;
-  color: var(--text-secondary);
-  max-width: 720px;
-  line-height: 1.45;
+  margin-bottom: 0;
 }
 
 .header-actions {

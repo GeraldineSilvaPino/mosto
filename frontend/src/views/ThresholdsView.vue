@@ -70,24 +70,10 @@ const isDeleteModalOpen = ref(false)
 const deleteError = ref(null)
 
 // Catálogo de Cepas Disponibles para Selección
-const availableCepas = ref([
-  { id: 1, name: 'Cabernet Sauvignon' },
-  { id: 2, name: 'Carménère' },
-  { id: 3, name: 'Sauvignon Blanc' },
-  { id: 4, name: 'Syrah' },
-  { id: 5, name: 'Chardonnay' },
-  { id: 6, name: 'Malbec' }
-])
+const availableCepas = ref([])
 
 // Asignación de Cubas
-const cubasMapping = ref([
-  { id: '1', code: 'CB-01', name: 'Cuba 01 · Cabernet Sauvignon', profileId: 2, currentTemp: 24.6 },
-  { id: '2', code: 'CB-02', name: 'Cuba 02 · Carménère Reserva', profileId: 2, currentTemp: 17.5 },
-  { id: '3', code: 'CB-03', name: 'Cuba 03 · Sauvignon Blanc', profileId: 2, currentTemp: 15.2 },
-  { id: '4', code: 'CB-04', name: 'Cuba 04 · Syrah Gran Corte', profileId: 2, currentTemp: 26.8 },
-  { id: '5', code: 'CB-05', name: 'Cuba 05 · Chardonnay Finca', profileId: 2, currentTemp: 14.8 },
-  { id: '6', code: 'CB-06', name: 'Cuba 06 · Malbec Single Vineyard', profileId: 2, currentTemp: 23.2 }
-])
+const cubasMapping = ref([])
 
 // ==========================================
 // MAPEO DE DATOS BACKEND ⇄ VISTA
@@ -107,7 +93,7 @@ function mapBackendProfile(p) {
     revision: p.revision,
     name: p.nomb_perfil,
     varieties: p.cepa_nombre || 'Cepas Enológicas',
-    description: `Configuración para ${p.cepa_nombre || 'variedad no informada'}. Bodega ${p.bodega_nombre || 'no informada'}.`,
+    description: p.bodega_nombre,
     optimalMin: tempMin,
     optimalMax: tempMax,
     critMin: critMin,
@@ -119,12 +105,7 @@ function mapBackendProfile(p) {
     bodegaNombre: p.bodega_nombre || 'Bodega Principal',
     cepaId: p.cepa_id || 1,
     cepaNombre: p.cepa_nombre || 'Cabernet Sauvignon',
-    activo: p.activo,
-    // Reglas extendidas
-    maxDelta2h: 2.0,
-    stuckBrixHours: 16,
-    tiltMin: 10,
-    tiltMax: 70
+    activo: p.activo
   }
 }
 
@@ -169,49 +150,21 @@ async function loadProfiles(isManual = false) {
   try {
     availableBodegas.value = await masterService.listarBodegas()
     const data = await profileService.listarPerfiles({ activo: true })
-    if (Array.isArray(data) && data.length > 0) {
-      profiles.value = data.map(mapBackendProfile)
-      if (!selectedProfileId.value || !profiles.value.some(p => p.id === selectedProfileId.value)) {
-        selectedProfileId.value = profiles.value[0].id
-      }
-    } else {
-      // Si no hay activos, intentar cargar catálogo general
-      const allData = await profileService.listarPerfiles({})
-      if (Array.isArray(allData) && allData.length > 0) {
-        profiles.value = allData.map(mapBackendProfile)
-        selectedProfileId.value = profiles.value[0].id
-      }
+    profiles.value = data.map(mapBackendProfile)
+    if (!profiles.value.some(p => p.id === selectedProfileId.value)) {
+      selectedProfileId.value = profiles.value[0]?.id ?? null
     }
-
-    // Cargar catálogo de cepas enológicas
-    try {
-      const cepasData = await masterService.listarCepas()
-      if (Array.isArray(cepasData) && cepasData.length > 0) {
-        availableCepas.value = cepasData
-      }
-    } catch {
-      // Ignorar fallback de cepas
-    }
-
-    // Cargar sincronización de cubas
-    try {
-      const cubasData = await cubaService.listarCubas()
-      if (Array.isArray(cubasData) && cubasData.length > 0) {
-        cubasMapping.value = cubasData.map(c => ({
-          id: String(c.id),
-          code: c.codigo_cuba || `CB-${String(c.id).padStart(2, '0')}`,
-          name: c.nombre || `Cuba ${c.codigo_cuba || c.id}`,
-          profileId: c.proceso_activo_id && c.proceso_activo?.perfil_id ? c.proceso_activo.perfil_id : (profiles.value[0]?.id || null),
-          currentTemp: c.ultima_temperatura || 21.5
-        }))
-      }
-    } catch {
-      // Ignorar fallback de cubas
-    }
+    const [cepas, cubas] = await Promise.all([masterService.listarCepas(), cubaService.listarCubas()])
+    availableCepas.value = cepas
+    cubasMapping.value = cubas.filter(c => c.proceso_activo_id).map(c => ({
+      id: c.id,
+      code: c.codigo_cuba,
+      profileId: c.perfil_activo_id,
+      currentTemp: c.ultima_temperatura
+    }))
   } catch (err) {
     console.error('Error al conectar con GET /api/perfiles:', err)
     globalError.value = err.message || 'Error de conexión con el catálogo de perfiles enológicos'
-    showToast('Aviso: Catálogo cargado en modo contingencia.')
   } finally {
     if (isManual) isLoadingProfiles.value = false
   }
@@ -263,7 +216,7 @@ async function handleSaveSettings() {
       }
     }
 
-    showToast(`¡Configuración del perfil "${currentProfile.value.name}" guardada y sincronizada con éxito!`)
+    showToast(`¡Perfil "${currentProfile.value.name}" guardado!`)
   } catch (err) {
     console.error('Error al actualizar perfil en backend:', err)
     formError.value = err.message || 'Error del servidor al persistir los umbrales del perfil.'
@@ -306,7 +259,7 @@ async function handleConfirmDelete() {
       selectedProfileId.value = null
     }
 
-    closeDeleteModal()
+    isDeleteModalOpen.value = false
     showToast(`Perfil "${deletedName}" desactivado con éxito.`)
   } catch (err) {
     console.error('Error al desactivar perfil:', err)
@@ -396,15 +349,6 @@ async function handleCreateProfile() {
   }
 }
 
-function handleAssignProfile(cubaId, profileId) {
-  const target = cubasMapping.value.find(c => c.id === cubaId)
-  if (target) {
-    target.profileId = Number(profileId) || profileId
-    const profName = profiles.value.find(p => p.id === target.profileId)?.name
-    showToast(`${target.code} ahora utiliza el perfil: ${profName || 'Personalizado'}.`)
-  }
-}
-
 onMounted(() => {
   loadProfiles(true)
 })
@@ -423,11 +367,7 @@ onMounted(() => {
     <!-- Header Principal -->
     <header class="thresholds-header">
       <div>
-        <div class="module-tag">Módulo 4 · Hardware y Configuración Operativa</div>
         <h1 class="view-title">Perfiles Enológicos y Umbrales</h1>
-        <p class="view-subtitle">
-          Definición de límites térmicos (sensor DS18B20), bandas de acidez pH (PH-4502C), reglas de parada por estancamiento de Brix y persistencia REST.
-        </p>
       </div>
 
       <div class="header-actions">
@@ -435,15 +375,13 @@ onMounted(() => {
           class="btn-secondary"
           :disabled="isLoadingProfiles"
           @click="loadProfiles(true)"
-          title="Recargar catálogo desde el backend"
+          title="Recargar catálogo" aria-label="Recargar catálogo"
         >
           <RefreshCw :size="15" :class="{ 'spin-icon': isLoadingProfiles }" />
-          <span>{{ isLoadingProfiles ? 'Sincronizando...' : 'Recargar Catálogo' }}</span>
         </button>
 
-        <button class="btn-secondary btn-new-profile" @click="openCreateModal">
+        <button class="btn-secondary btn-new-profile" title="Nuevo perfil" aria-label="Nuevo perfil" @click="openCreateModal">
           <Plus :size="16" />
-          <span>Nuevo Perfil</span>
         </button>
 
         <button
@@ -451,20 +389,18 @@ onMounted(() => {
           class="btn-danger-outline"
           :disabled="isDeleting"
           @click="openDeleteModal"
-          title="Desactivar este perfil del catálogo de fermentación"
+          title="Desactivar perfil" aria-label="Desactivar perfil"
         >
           <Trash2 :size="15" />
-          <span>Desactivar Perfil</span>
         </button>
 
         <button
           class="btn-primary"
           :disabled="isSaving || !currentProfile"
-          @click="handleSaveSettings"
+          @click="handleSaveSettings" title="Guardar configuración" aria-label="Guardar configuración"
         >
           <RefreshCw v-if="isSaving" :size="16" class="spin-icon" />
           <Save v-else :size="16" />
-          <span>{{ isSaving ? 'Guardando en BD...' : 'Guardar Configuración' }}</span>
         </button>
       </div>
     </header>
@@ -486,8 +422,7 @@ onMounted(() => {
     <!-- Selector de Perfiles Enológicos (Tabs) -->
     <section class="profiles-catalog">
       <div class="catalog-header">
-        <h2 class="section-title">Catálogo de Perfiles de Fermentación</h2>
-        <span class="catalog-hint">Selecciona un perfil para calibrar sus umbrales o haz clic en "Nuevo Perfil"</span>
+        <h2 class="section-title">Perfiles activos</h2>
       </div>
 
       <div v-if="profiles.length === 0 && !isLoadingProfiles" class="empty-profiles-notice">
@@ -628,40 +563,17 @@ onMounted(() => {
         <div class="card-header-clean">
           <div class="card-title-icon icon-wine">
             <Thermometer :size="18" />
-            <h3 class="card-title">Límites Térmicos (Sensor DS18B20)</h3>
+            <h3 class="card-title">Temperatura</h3>
           </div>
-          <span class="sensor-chip-tag">Sonda Térmica</span>
         </div>
 
-        <p class="config-card-desc">
-          Ajusta los puntos de corte donde el sistema disparará advertencias enológicas o alertas térmicas en bodega.
-        </p>
 
         <div class="form-inputs-stack">
-          <!-- Mínimo Crítico -->
-          <div class="threshold-field">
-            <div class="field-label-row">
-              <span class="field-title">Temperatura Mínima Crítica</span>
-              <span class="field-value-badge">{{ Number(currentProfile.critMin).toFixed(1) }} °C</span>
-            </div>
-            <div class="slider-row">
-              <input
-                v-model.number="currentProfile.critMin"
-                type="range"
-                min="8.0"
-                max="20.0"
-                step="0.5"
-                class="slider-input slider--cold"
-              />
-            </div>
-            <span class="field-hint">Bajo este valor las levaduras se aletargan y caen al fondo.</span>
-          </div>
-
           <!-- Mínimo Óptimo (temp_min) -->
           <div class="threshold-field">
             <div class="field-label-row">
-              <span class="field-title">Temperatura Mínima Óptima (temp_min) *</span>
-              <span class="field-value-badge badge--optimal">{{ Number(currentProfile.optimalMin).toFixed(1) }} °C</span>
+              <span class="field-title">Temperatura mínima</span>
+              <span class="field-value-badge badge--optimal">{{ currentProfile.optimalMin == null ? '—' : Number(currentProfile.optimalMin).toFixed(1) }} °C</span>
             </div>
             <div class="slider-row">
               <input
@@ -673,14 +585,13 @@ onMounted(() => {
                 class="slider-input slider--optimal"
               />
             </div>
-            <span class="field-hint">Punto inferior ideal para la cinética fermentativa de esta cepa (restricción ck_perfil_temp).</span>
           </div>
 
           <!-- Máximo Óptimo (temp_max) -->
           <div class="threshold-field">
             <div class="field-label-row">
-              <span class="field-title">Temperatura Máxima Óptima (temp_max) *</span>
-              <span class="field-value-badge badge--optimal">{{ Number(currentProfile.optimalMax).toFixed(1) }} °C</span>
+              <span class="field-title">Temperatura máxima</span>
+              <span class="field-value-badge badge--optimal">{{ currentProfile.optimalMax == null ? '—' : Number(currentProfile.optimalMax).toFixed(1) }} °C</span>
             </div>
             <div class="slider-row">
               <input
@@ -692,27 +603,8 @@ onMounted(() => {
                 class="slider-input slider--optimal"
               />
             </div>
-            <span class="field-hint">Límite superior antes de activar camisas de refrigeración en cuba.</span>
           </div>
 
-          <!-- Máximo Crítico -->
-          <div class="threshold-field">
-            <div class="field-label-row">
-              <span class="field-title">Temperatura Máxima Crítica</span>
-              <span class="field-value-badge badge--danger">{{ Number(currentProfile.critMax).toFixed(1) }} °C</span>
-            </div>
-            <div class="slider-row">
-              <input
-                v-model.number="currentProfile.critMax"
-                type="range"
-                min="20.0"
-                max="36.0"
-                step="0.5"
-                class="slider-input slider--danger"
-              />
-            </div>
-            <span class="field-hint">Superado este punto, las levaduras sufren muerte por shock térmico.</span>
-          </div>
         </div>
       </section>
 
@@ -721,21 +613,17 @@ onMounted(() => {
         <div class="card-header-clean">
           <div class="card-title-icon icon-amber">
             <FlaskConical :size="18" />
-            <h3 class="card-title">Bandas de Acidez (pH) y Cinética de Azúcar</h3>
+            <h3 class="card-title">Acidez y consumo de azúcar</h3>
           </div>
-          <span class="sensor-chip-tag">Sonda PH-4502C & Hidrómetro</span>
         </div>
 
-        <p class="config-card-desc">
-          Calibración de límites físicoquímicos para control microbiológico y seguimiento del consumo de azúcares.
-        </p>
 
         <div class="form-inputs-stack">
           <!-- pH Mínimo -->
           <div class="threshold-field">
             <div class="field-label-row">
-              <span class="field-title">pH Mínimo Aceptable (ph_min) *</span>
-              <span class="field-value-badge">{{ Number(currentProfile.phMin).toFixed(2) }} pH</span>
+              <span class="field-title">pH mínimo</span>
+              <span class="field-value-badge">{{ currentProfile.phMin == null ? '—' : Number(currentProfile.phMin).toFixed(2) }} pH</span>
             </div>
             <div class="slider-row">
               <input
@@ -747,14 +635,13 @@ onMounted(() => {
                 class="slider-input slider--amber"
               />
             </div>
-            <span class="field-hint">pH excesivamente ácido inhibe la fermentación alcohólica (restricción ck_perfil_ph).</span>
           </div>
 
           <!-- pH Máximo -->
           <div class="threshold-field">
             <div class="field-label-row">
-              <span class="field-title">pH Máximo Aceptable (ph_max) *</span>
-              <span class="field-value-badge">{{ Number(currentProfile.phMax).toFixed(2) }} pH</span>
+              <span class="field-title">pH máximo</span>
+              <span class="field-value-badge">{{ currentProfile.phMax == null ? '—' : Number(currentProfile.phMax).toFixed(2) }} pH</span>
             </div>
             <div class="slider-row">
               <input
@@ -766,14 +653,13 @@ onMounted(() => {
                 class="slider-input slider--amber"
               />
             </div>
-            <span class="field-hint">pH elevado incrementa el riesgo de contaminación bacteriana y pérdida de frescura.</span>
           </div>
 
           <!-- Caída mínima diaria de Brix -->
           <div class="threshold-field">
             <div class="field-label-row">
-              <span class="field-title">Caída Mínima Diaria de Azúcar (°Bx/día)</span>
-              <span class="field-value-badge">{{ Number(currentProfile.brixCaidaMinDia).toFixed(2) }} °Bx</span>
+              <span class="field-title">Descenso mínimo diario</span>
+              <span class="field-value-badge">{{ currentProfile.brixCaidaMinDia == null ? '—' : Number(currentProfile.brixCaidaMinDia).toFixed(2) }} °Bx</span>
             </div>
             <div class="slider-row">
               <input
@@ -785,27 +671,8 @@ onMounted(() => {
                 class="slider-input slider--optimal"
               />
             </div>
-            <span class="field-hint">Velocidad mínima de atenuación de densidad para no declarar parada de fermentación.</span>
           </div>
 
-          <!-- Regla de Detección Térmica Brusca -->
-          <div class="threshold-field">
-            <div class="field-label-row">
-              <span class="field-title">Gradiente Térmico Máximo Permitido (2 horas)</span>
-              <span class="field-value-badge">± {{ Number(currentProfile.maxDelta2h).toFixed(1) }} °C</span>
-            </div>
-            <div class="slider-row">
-              <input
-                v-model.number="currentProfile.maxDelta2h"
-                type="range"
-                min="0.5"
-                max="3.5"
-                step="0.1"
-                class="slider-input slider--cold"
-              />
-            </div>
-            <span class="field-hint">Alerta por falla en sistemas de refrigeración o calentamiento de bodega.</span>
-          </div>
         </div>
       </section>
     </div>
@@ -814,11 +681,11 @@ onMounted(() => {
     <section class="assignment-section">
       <div class="catalog-header">
         <div>
-          <h2 class="section-title">Asignación de Perfiles a Cubas Activas</h2>
-          <span class="catalog-hint">Selecciona qué perfil enológico gobierna la telemetría de cada cuba</span>
-        </div>
+          <h2 class="section-title">Perfiles en uso</h2>
+          </div>
       </div>
 
+      <p v-if="!cubasMapping.length">Sin fermentaciones activas.</p>
       <div class="cubas-assignment-grid">
         <div
           v-for="cuba in cubasMapping"
@@ -830,23 +697,13 @@ onMounted(() => {
               <Cylinder :size="16" />
               <span>{{ cuba.code }}</span>
             </div>
-            <span class="cuba-live-temp">{{ cuba.currentTemp }} °C</span>
+            <span class="cuba-live-temp">{{ cuba.currentTemp == null ? 'Sin lectura' : `${cuba.currentTemp.toFixed(1)} °C` }}</span>
           </div>
 
-          <h4 class="cuba-assign-name">{{ cuba.name }}</h4>
-
-          <div class="assign-selector-wrapper">
-            <label class="assign-label">Perfil Enológico Aplicado:</label>
-            <select
-              :value="cuba.profileId"
-              @change="handleAssignProfile(cuba.id, $event.target.value)"
-              class="assign-select"
-            >
-              <option v-for="p in profiles" :key="p.id" :value="p.id">
-                {{ p.name }} ({{ p.optimalMin }}° - {{ p.optimalMax }}°)
-              </option>
-            </select>
-          </div>
+          <RouterLink :to="`/cubas/${cuba.id}`" class="assigned-profile-link">
+            {{ profiles.find(p => p.id === cuba.profileId)?.name || (cuba.profileId ? 'Perfil #' + cuba.profileId : 'Sin perfil') }}
+            <span aria-hidden="true"> →</span>
+          </RouterLink>
         </div>
       </div>
     </section>
@@ -1125,34 +982,18 @@ onMounted(() => {
 .thresholds-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 1.5rem;
   flex-wrap: wrap;
 }
 
-.module-tag {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--wine-700);
-  margin-bottom: 0.25rem;
-}
-
 .view-title {
   font-family: var(--font-serif);
-  font-size: 2.1rem;
+  font-size: clamp(1.45rem, 2vw, 1.85rem);
   font-weight: 700;
   color: var(--wine-900);
   line-height: 1.15;
-  margin-bottom: 0.4rem;
-}
-
-.view-subtitle {
-  font-size: 0.88rem;
-  color: var(--text-secondary);
-  max-width: 720px;
-  line-height: 1.45;
+  margin-bottom: 0;
 }
 
 .header-actions {
@@ -1160,6 +1001,14 @@ onMounted(() => {
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.header-actions button {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
 }
 
 .btn-new-profile {
@@ -1731,6 +1580,8 @@ onMounted(() => {
   color: var(--text-primary);
 }
 
+.assigned-profile-link { font-size: .84rem; font-weight: 600; }
+.assigned-profile-link:hover { text-decoration: underline; }
 .assign-selector-wrapper {
   display: flex;
   flex-direction: column;

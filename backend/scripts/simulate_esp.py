@@ -103,7 +103,7 @@ class SimuladorFermentacion:
         # Estado dinámico de degradación de azúcares y temperatura
         self.current_brix: float = float(args.brix_inicial)
         self.current_temperature = max(self.TEMP_MIN_FISICO, min(self.TEMP_MAX_FISICO, self.temp_base))
-        self.brix_noise = 0.0
+        self.phase_offset = (self.cuba_id - 1) * 0.9
         self.stuck_fermentation: bool = getattr(args, "stuck_fermentation", False)
         self.stuck_cuba: Optional[int] = getattr(args, "stuck_cuba", None)
         self.stuck_after: int = getattr(args, "stuck_after", 4)
@@ -115,6 +115,7 @@ class SimuladorFermentacion:
         self.drop_ph: Optional[float] = getattr(args, "drop_ph", None)
 
         self.horas_simuladas: float = 0.0
+        self.proceso_id = None
         self.ciclo: int = 0
 
     @property
@@ -155,30 +156,28 @@ class SimuladorFermentacion:
 
     def avanzar(self) -> None:
         self.ciclo += 1
-        self.horas_simuladas += self.horas_por_ciclo
+        self.horas_simuladas = min(self.horas_totales, self.horas_simuladas + self.horas_por_ciclo)
 
         if self.is_in_stuck_mode:
             # A stall retains the current concentration; it cannot teleport
             # from early fermentation to an unrelated fixed Brix value.
             target_temperature = 32.2
         else:
-            # Caída saludable de Brix (-0.03 a -0.06 por tick de 5s en demo)
-            caida = random.uniform(0.03, 0.06)
-            self.current_brix = max(self.brix_final, self.current_brix - caida)
-            target_temperature = self.temp_base + self.temp_amplitud * math.sin(2.0 * math.pi * self.horas_simuladas / 24.0)
+            rate = (self.brix_inicial - self.brix_final) / self.horas_totales
+            self.current_brix = max(self.brix_final, self.current_brix - rate * self.horas_por_ciclo)
+            phase = 2 * math.pi * self.horas_simuladas / 24 + self.phase_offset
+            target_temperature = self.temp_base + self.temp_amplitud * math.sin(phase)
         # One sensor state per tick, shared by both outgoing packets. Thermal
         # inertia and correlated noise avoid steps and contradictory readings.
         delta = .12 * (target_temperature - self.current_temperature) + random.gauss(0, .01)
         self.current_temperature = max(self.TEMP_MIN_FISICO, min(self.TEMP_MAX_FISICO,
             self.current_temperature + max(-.08, min(.08, delta))))
         self.stuck_temp = self.current_temperature
-        self.brix_noise = .7 * self.brix_noise + random.gauss(0, .008)
 
     # -- Sensores ---------------------------------------------------------
     @property
     def brix(self) -> float:
-        valor = self.current_brix + self.brix_noise
-        return round(max(self.brix_final, min(self.brix_inicial, valor)), 2)
+        return round(self.current_brix, 2)
 
     @property
     def densidad_sg(self) -> float:
@@ -231,7 +230,6 @@ class SimuladorFermentacion:
         la convertira de vuelta con: Brix = (tilt - 25.0) * 0.60.
         """
         tilt = TILT_AGUA_CERO_BRIX + self.brix / FACTOR_TILT_A_BRIX
-        tilt += random.gauss(0.0, 0.4)
         return round(max(25.0, min(70.0, tilt)), 2)
 
     @property
@@ -425,6 +423,31 @@ def imprimir_resumen(sim: SimuladorFermentacion, exito: bool, error: str = "") -
         print(error, file=sys.stderr, flush=True)
 
 
+def reanudar_proceso(sim, args):
+    """Keep a tank idle when its fermentation closes; resume a new process independently."""
+    url = f"{args.base_url.rstrip('/')}/api/telemetria/simulador/{sim.cuba_id}/estado"
+    req = url_request.Request(url, headers={"X-Mosto-Simulator-Key": os.environ["MOSTO_SIMULATOR_KEY"]})
+    try:
+        with url_request.urlopen(req, timeout=args.timeout) as response:
+            estado = json.load(response)
+    except url_error.HTTPError as exc:
+        if exc.code == 404:
+            return False
+        raise
+    if sim.proceso_id != estado["proceso_id"]:
+        sim.proceso_id = estado["proceso_id"]
+        sim.ciclo = 0
+        sim.brix_inicial = float(estado["brix_inicial"] if estado["brix_inicial"] is not None else args.brix_inicial)
+        sim.current_brix = sim.brix_inicial if estado["brix"] is None else float(estado["brix"])
+        objetivo = estado["brix_objetivo"] if estado["brix_objetivo"] is not None else args.brix_final
+        sim.brix_final = min(float(objetivo), sim.current_brix)
+        span = sim.brix_inicial - sim.brix_final
+        progress = max(0, 1 - (sim.current_brix - sim.brix_final) / span) if span > 0 else 1
+        sim.horas_simuladas = sim.horas_totales * progress
+        sim.current_temperature = float(estado["temperatura"]) if estado["temperatura"] is not None else sim.temp_base
+    return True
+
+
 def ejecutar(args: argparse.Namespace) -> int:
     if args.seed is not None:
         random.seed(args.seed)
@@ -456,11 +479,20 @@ def ejecutar(args: argparse.Namespace) -> int:
         perdidas: List[Tuple[str, str]] = []
 
         for sim in simuladores:
+            if args.reanudar:
+                try:
+                    if not reanudar_proceso(sim, args):
+                        continue
+                except OSError as exc:
+                    perdidas.append((f"Cuba {sim.cuba_id}", str(exc)))
+                    continue
             sim.avanzar()
             envios = construir_envios(sim, args)
             resultados: List[Tuple[str, ResultadoEnvio]] = []
 
             for etiqueta, url, payload in envios:
+                if args.reanudar:
+                    payload["proceso_id"] = sim.proceso_id
                 resultado = post_json(url, payload, timeout=args.timeout)
                 resultados.append((etiqueta, resultado))
                 if resultado.sin_conexion:
@@ -516,7 +548,7 @@ def ejecutar(args: argparse.Namespace) -> int:
         except KeyboardInterrupt:
             break
 
-    imprimir_resumen(sim, exito_total, error_final)
+    imprimir_resumen(simuladores[-1], exito_total, error_final)
     return 0 if exito_total else 1
 
 
@@ -559,6 +591,7 @@ def parsear_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     )
 
     destino = parser.add_argument_group("destino y frecuencia")
+    destino.add_argument("--reanudar", action="store_true", help="Retomar la última medición del proceso activo")
     destino.add_argument(
         "--cuba", default="1",
         help="ID o lista de IDs de cubas destino (ej: 1 o 1,12,13)",

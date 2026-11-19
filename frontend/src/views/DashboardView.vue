@@ -1,52 +1,21 @@
 <script setup>
-/**
- * 🍇 MOSTO — Dashboard General Rediseñado
- * Inspirado en la interfaz SaaS moderna de Searchable
- *
- * Incluye:
- * 1. Pestañas secundarias de navegación (Visibilidad, Salud & IA, Comparativa, Cuadrícula IoT).
- * 2. Barra de filtros de precisión (Entidad, Rango temporal, Frecuencia, Switch alertas, Selector cepas).
- * 3. Tarjeta de Gráfico de Tendencia Térmica & Brix (Visibility Score style).
- * 4. Tarjeta de Tabla de Rankings de Cubas con estados y telemetría en vivo.
- * 5. Tarjeta de Índice de Salud de Fermentación con medidor circular (92/100) y diagnóstico asistido.
- * 6. Tarjeta de Cinética de Azúcares (Sentiment Score style) y Comparativa de Lotes Head-to-Head.
- * 7. Cuadrícula de Cubas IoT con detección de fluctuaciones en tiempo real y resplandor reactivo.
- * 8. Polling en vivo cada 5 segundos contra el backend de MOSTO.
- */
-
-import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Cylinder,
   Thermometer,
   Droplets,
   AlertTriangle,
-  CheckCircle2,
-  AlertCircle,
   Search,
-  Filter,
   RefreshCw,
   ChevronRight,
-  ChevronDown,
   TrendingUp,
   TrendingDown,
   Layers,
-  Clock,
-  Sparkles,
-  Radio,
-  Eye,
-  ShieldCheck,
-  Scale,
-  LayoutGrid,
-  Check,
-  X,
-  Sliders,
-  ExternalLink
+  Sparkles
 } from 'lucide-vue-next'
-import { Chart as ChartJS, registerables } from 'chart.js'
 import cubaService from '../services/cubaService'
 
-ChartJS.register(...registerables)
 
 const router = useRouter()
 const route = useRoute()
@@ -71,16 +40,7 @@ const searchQuery = ref('')
 const selectedVariety = ref('todas')
 const selectedStatusFilter = ref('todos')
 const onlyAlertsSwitch = ref(false)
-const timeRange = ref('7d')
-const telemetryFrequency = ref('5s')
 const selectedSort = ref('id')
-
-// Referencias a Gráficos Chart.js
-const trendChartRef = ref(null)
-let trendChartInstance = null
-
-const brixChartRef = ref(null)
-let brixChartInstance = null
 
 // Mapeo de DTO Backend a Modelo Frontend
 const mapearCuba = (item, previa = null) => {
@@ -123,13 +83,13 @@ const mapearCuba = (item, previa = null) => {
     }
   }
 
-  const tempMin = typeof item.temp_min_perfil === 'number' ? item.temp_min_perfil : 16.0
-  const tempMax = typeof item.temp_max_perfil === 'number' ? item.temp_max_perfil : 26.0
+  const tempMin = item.temp_min_perfil
+  const tempMax = item.temp_max_perfil
 
-  let estado = 'normal'
+  let estado = temp == null || tempMin == null || tempMax == null ? 'sin_datos' : 'normal'
   let alertaMsg = null
 
-  if (temp !== null) {
+  if (temp !== null && tempMin != null && tempMax != null) {
     if (temp > tempMax + 1.5) {
       estado = 'critico'
       alertaMsg = `Alerta crítica: ${temp.toFixed(1)} °C > ${tempMax} °C`
@@ -149,15 +109,14 @@ const mapearCuba = (item, previa = null) => {
     id: item.id,
     codigo: item.codigo_cuba || `Cuba ${item.id}`,
     nombre: item.nombre || `Cuba ${item.codigo_cuba || item.id}`,
-    variedad: item.variedad || (estaEnUso ? 'Cabernet Sauvignon' : 'Disponible'),
-    lote: item.lote || (estaEnUso ? `Lote ${item.id}-2026` : 'Sin Lote'),
+    variedad: item.variedad || '—',
+    lote: item.lote || 'Sin lote',
     volumenActual: typeof item.volumen_actual_lts === 'number' ? item.volumen_actual_lts : 0,
     volumenTotal: typeof item.capacidad_lts === 'number' ? item.capacidad_lts : 10000,
     temperatura: temp,
     tempMin,
     tempMax,
     brix,
-    brixInicial: 24.5,
     fase,
     dia: item.dia_fermentacion || 1,
     estado_operativo: item.estado_operativo || 'disponible',
@@ -173,7 +132,7 @@ const mapearCuba = (item, previa = null) => {
 // Formateador de tiempo relativo
 const formatTiempoLectura = (timestamp, estaEnUso) => {
   void currentSecondsTick.value
-  if (!timestamp) return estaEnUso ? 'En línea' : 'Sin lecturas'
+  if (!timestamp) return 'Sin lecturas'
 
   const lecturaDate = new Date(timestamp)
   const ahora = Date.now()
@@ -187,6 +146,7 @@ const formatTiempoLectura = (timestamp, estaEnUso) => {
 
 // Carga de Cubas desde la API
 const fetchCubas = async (isInitial = false) => {
+  if (isRefreshing.value) return
   if (isInitial) {
     loading.value = true
     error.value = null
@@ -222,9 +182,7 @@ const fetchCubas = async (isInitial = false) => {
     })
     error.value = null
 
-    // Actualizar gráficos si están montados
-    updateCharts()
-  } catch (err) {
+    } catch (err) {
     console.error('[DashboardView] Error cargando telemetría:', err)
     error.value = err.message || 'Error al conectar con la telemetría de MOSTO'
   } finally {
@@ -247,20 +205,10 @@ const stats = computed(() => {
     (c) => typeof c.temperatura === 'number' && !isNaN(c.temperatura)
   )
   const sumTemp = cubasConTemp.reduce((acc, c) => acc + c.temperatura, 0)
-  const avgTemp = cubasConTemp.length > 0 ? (sumTemp / cubasConTemp.length).toFixed(1) : '21.4'
+  const avgTemp = cubasConTemp.length > 0 ? (sumTemp / cubasConTemp.length).toFixed(1) : '—'
 
-  // Score de Salud Global de la Bodega (0 a 100)
-  let healthScore = 94
-  if (total > 0) {
-    const penaltyWarn = (advertencias / total) * 20
-    const penaltyCrit = (criticos / total) * 50
-    healthScore = Math.max(20, Math.min(100, Math.round(100 - penaltyWarn - penaltyCrit)))
-  }
-
-  // Porcentaje de Cubas en Estado Óptimo
-  const pctOptimo = total > 0 ? Math.round((normales / total) * 100) : 85
-  const pctAtencion = total > 0 ? Math.round((advertencias / total) * 100) : 10
-  const pctCritico = total > 0 ? Math.round((criticos / total) * 100) : 5
+  const evaluadas = normales + advertencias + criticos
+  const pctOptimo = evaluadas ? Math.round(normales * 100 / evaluadas) : null
 
   return {
     total,
@@ -269,10 +217,8 @@ const stats = computed(() => {
     advertencias,
     criticos,
     avgTemp,
-    healthScore,
-    pctOptimo,
-    pctAtencion,
-    pctCritico
+    evaluadas,
+    pctOptimo
   }
 })
 
@@ -290,7 +236,7 @@ const filteredCubas = computed(() => {
   return cubas.value
     .filter((c) => {
       // Switch "Solo en riesgo"
-      if (onlyAlertsSwitch.value && c.estado === 'normal') return false
+      if (onlyAlertsSwitch.value && !['critico', 'advertencia'].includes(c.estado)) return false
 
       // Filtro de Estado
       if (selectedStatusFilter.value !== 'todos' && c.estado !== selectedStatusFilter.value) {
@@ -328,20 +274,19 @@ const filteredCubas = computed(() => {
 
 // Top Rankings de Cubas para la Tabla Resumen (Estilo Searchable)
 const rankingCubas = computed(() => {
-  return [...cubas.value]
+  return [...filteredCubas.value]
     .sort((a, b) => {
       const order = { critico: 0, advertencia: 1, normal: 2 }
       if (order[a.estado] !== order[b.estado]) return order[a.estado] - order[b.estado]
-      return b.id - a.id
+      return a.id - b.id
     })
-    .slice(0, 6)
+
 })
 
 const getStatusBadge = (cuba) => {
-  if (cuba.estado === 'normal' && cuba.prediccion_ml?.estado_ia === 'NO_VALIDADO') {
-    return { label: 'Sin diagnóstico', class: '', dot: 'gray' }
-  }
   switch (cuba.estado) {
+    case 'sin_datos':
+      return { label: 'Sin diagnóstico', class: '', dot: 'gray' }
     case 'critico':
       return { label: 'Crítico', class: 'danger', dot: 'red' }
     case 'advertencia':
@@ -361,186 +306,29 @@ const getIABadge = (pred) => {
     case 'ADVERTENCIA':
       return { label: `IA: ${pct}% Riesgo`, class: 'badge-ia-advertencia', isCritico: false }
     case 'NORMAL':
-      return { label: `IA: ${pct}% Normal`, class: 'badge-ia-normal', isCritico: false }
+      return { label: `Riesgo estimado: ${pct}%`, class: 'badge-ia-normal', isCritico: false }
     case 'NO_VALIDADO':
       return { label: 'IA: Sin modelo validado', class: 'badge-ia-calibrando', isCritico: false }
     case 'FINALIZADA':
-      return { label: 'IA: Fin', class: 'badge-ia-finalizada', isCritico: false }
+      return { label: 'Brix en tramo final', class: 'badge-ia-finalizada', isCritico: false }
     default:
       return { label: 'IA: Calibrando', class: 'badge-ia-calibrando', isCritico: false }
   }
 }
 
-const getBrixProgress = (cuba) => {
-  if (cuba.brix === null || cuba.brix === undefined) return 0
-  const brixInicial = cuba.brixInicial || 24.5
-  const consumed = Math.max(0, brixInicial - cuba.brix)
-  return Math.min(100, Math.max(0, Math.round((consumed / brixInicial) * 100)))
-}
+const temperatureScale = computed(() => Math.max(30, ...filteredCubas.value.map(c => c.temperatura ?? 0)))
+const brixScale = computed(() => Math.max(25, ...filteredCubas.value.map(c => c.brix ?? 0)))
+const barWidth = (value, scale) => `${Math.max(0, value ?? 0) * 100 / scale}%`
 
 const goToDetail = (cubaId) => {
   router.push(`/cubas/${cubaId}`)
 }
 
-// Inicialización de Gráficos Chart.js
-const initTrendChart = () => {
-  if (!trendChartRef.value) return
-  if (trendChartInstance) {
-    trendChartInstance.destroy()
-    trendChartInstance = null
-  }
-
-  const ctx = trendChartRef.value.getContext('2d')
-  const gradient = ctx.createLinearGradient(0, 0, 0, 240)
-  gradient.addColorStop(0, 'rgba(16, 185, 129, 0.18)')
-  gradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)')
-
-  const labels = ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00', 'Ahora']
-  const dataPoints = [20.2, 20.8, 21.1, 21.4, 21.9, 21.6, 21.5, 21.8, Number(stats.value.avgTemp) || 21.8]
-
-  trendChartInstance = new ChartJS(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Temperatura Promedio (°C)',
-          data: dataPoints,
-          borderColor: '#10B981',
-          borderWidth: 2.2,
-          backgroundColor: gradient,
-          fill: true,
-          tension: 0.38,
-          pointRadius: 3,
-          pointBackgroundColor: '#FFFFFF',
-          pointBorderColor: '#10B981',
-          pointBorderWidth: 2,
-          pointHoverRadius: 6
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#0F172A',
-          titleFont: { size: 12, family: 'Plus Jakarta Sans' },
-          bodyFont: { size: 12, family: 'JetBrains Mono' },
-          padding: 10,
-          cornerRadius: 6,
-          displayColors: false,
-          callbacks: {
-            label: (context) => ` ${context.parsed.y.toFixed(1)} °C`
-          }
-        }
-      },
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: { color: '#94A3B8', font: { size: 11, family: 'Plus Jakarta Sans' } },
-          border: { color: '#E2E8F0' }
-        },
-        y: {
-          min: 16,
-          max: 28,
-          grid: { color: '#F1F5F9' },
-          ticks: {
-            color: '#94A3B8',
-            font: { size: 11, family: 'JetBrains Mono' },
-            stepSize: 4,
-            callback: (v) => `${v}°`
-          },
-          border: { display: false }
-        }
-      }
-    }
-  })
-}
-
-const initBrixChart = () => {
-  if (!brixChartRef.value) return
-  if (brixChartInstance) {
-    brixChartInstance.destroy()
-    brixChartInstance = null
-  }
-
-  const ctx = brixChartRef.value.getContext('2d')
-  const labels = ['Día 1', 'Día 2', 'Día 3', 'Día 4', 'Día 5', 'Día 6', 'Día 7']
-  const brixConsumedBars = [2.1, 2.4, 2.8, 3.1, 2.5, 2.0, 1.8]
-  const trendLine = [24.5, 22.4, 20.0, 17.2, 14.1, 11.6, 9.6]
-
-  brixChartInstance = new ChartJS(ctx, {
-    data: {
-      labels,
-      datasets: [
-        {
-          type: 'line',
-          label: 'Evolución Brix (°Bx)',
-          data: trendLine,
-          borderColor: '#0F172A',
-          borderWidth: 2,
-          pointRadius: 3,
-          pointBackgroundColor: '#0F172A',
-          tension: 0.35,
-          yAxisID: 'y1'
-        },
-        {
-          type: 'bar',
-          label: 'Azúcar Convertida/Día',
-          data: brixConsumedBars,
-          backgroundColor: '#A7F3D0',
-          borderRadius: 4,
-          yAxisID: 'y'
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#0F172A',
-          padding: 8,
-          cornerRadius: 6
-        }
-      },
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: { color: '#94A3B8', font: { size: 10 } },
-          border: { color: '#E2E8F0' }
-        },
-        y: {
-          position: 'left',
-          grid: { color: '#F1F5F9' },
-          ticks: { color: '#94A3B8', font: { size: 10 } }
-        },
-        y1: {
-          position: 'right',
-          grid: { display: false },
-          ticks: { color: '#94A3B8', font: { size: 10 }, callback: (v) => `${v}°Bx` }
-        }
-      }
-    }
-  })
-}
-
-const updateCharts = () => {
-  if (trendChartInstance && stats.value.avgTemp !== '--') {
-    const currentData = trendChartInstance.data.datasets[0].data
-    currentData[currentData.length - 1] = Number(stats.value.avgTemp)
-    trendChartInstance.update('none')
-  }
-}
-
-watch(activeTab, async () => {
-  await nextTick()
-  initTrendChart()
-  initBrixChart()
-})
+// El buscador global comparte la consulta con la cuadrícula de cubas.
+watch(() => route.query.q, query => {
+  searchQuery.value = String(query || '')
+  if (searchQuery.value) activeTab.value = 'grid'
+}, { immediate: true })
 
 onMounted(() => {
   fetchCubas(true)
@@ -549,28 +337,18 @@ onMounted(() => {
     currentSecondsTick.value = Date.now()
   }, 1000)
 
-  // Iniciar gráficos una vez montado el DOM
-  nextTick(() => {
-    initTrendChart()
-    initBrixChart()
-  })
 
-  // Sincronizar parámetro de búsqueda de la URL si viene del topbar
-  if (route.query.q) {
-    searchQuery.value = String(route.query.q)
-  }
 })
 
 onBeforeUnmount(() => {
   if (pollInterval) clearInterval(pollInterval)
   if (secondTicker) clearInterval(secondTicker)
-  if (trendChartInstance) trendChartInstance.destroy()
-  if (brixChartInstance) brixChartInstance.destroy()
 })
 </script>
 
 <template>
   <div class="dashboard-container">
+    <h1 class="dashboard-title">Dashboard general</h1>
     <!-- 1. Pestañas Secundarias de Navegación (Estilo Searchable) -->
     <nav class="saas-tabs-nav">
       <button
@@ -579,7 +357,7 @@ onBeforeUnmount(() => {
         :class="{ active: activeTab === 'overview' }"
         @click="activeTab = 'overview'"
       >
-        Visibilidad & Telemetría
+        Resumen
       </button>
       <button
         type="button"
@@ -587,7 +365,7 @@ onBeforeUnmount(() => {
         :class="{ active: activeTab === 'health' }"
         @click="activeTab = 'health'"
       >
-        Salud & Diagnóstico IA
+        Estado térmico
       </button>
       <button
         type="button"
@@ -595,7 +373,7 @@ onBeforeUnmount(() => {
         :class="{ active: activeTab === 'comparison' }"
         @click="activeTab = 'comparison'"
       >
-        Comparativa de Lotes
+        Comparar lotes
       </button>
       <button
         type="button"
@@ -603,41 +381,22 @@ onBeforeUnmount(() => {
         :class="{ active: activeTab === 'grid' }"
         @click="activeTab = 'grid'"
       >
-        Cuadrícula de Cubas IoT ({{ filteredCubas.length }})
+        Cubas ({{ filteredCubas.length }})
       </button>
     </nav>
 
     <!-- 2. Barra de Filtros de Alta Precisión (Estilo Searchable) -->
     <section class="saas-filter-bar">
-      <!-- Selector de Entidad / Viña -->
-      <div class="saas-filter-pill-entity">
-        <span class="entity-dot"></span>
-        <span>vina-santaemiliana.cl</span>
-        <ChevronDown :size="13" style="color: var(--text-muted);" />
-      </div>
-
-      <!-- Selector de Rango Temporal -->
-      <div class="saas-filter-select">
-        <span>Últimas 24 horas</span>
-        <ChevronDown :size="13" style="color: var(--text-muted);" />
-      </div>
-
-      <!-- Frecuencia de Telemetría -->
-      <div class="saas-filter-select">
-        <span>Tiempo Real (5s)</span>
-        <ChevronDown :size="13" style="color: var(--text-muted);" />
-      </div>
-
       <!-- Switch Toggle "Solo en Riesgo" -->
-      <div class="saas-switch-wrapper" @click="onlyAlertsSwitch = !onlyAlertsSwitch">
+      <button type="button" role="switch" :aria-checked="onlyAlertsSwitch" class="saas-switch-wrapper" @click="onlyAlertsSwitch = !onlyAlertsSwitch">
         <div class="saas-switch-track" :class="{ active: onlyAlertsSwitch }">
           <div class="saas-switch-thumb"></div>
         </div>
-        <span>Solo en Riesgo</span>
-      </div>
+        <span>Solo en riesgo</span>
+      </button>
 
       <!-- Selector de Cepa / Variedad -->
-      <select v-model="selectedVariety" class="saas-filter-select">
+      <select aria-label="Cepa" v-model="selectedVariety" class="saas-filter-select">
         <option value="todas">Todas las Cepas</option>
         <option v-for="varName in variedadesDisponibles" :key="varName" :value="varName">
           {{ varName }}
@@ -645,18 +404,12 @@ onBeforeUnmount(() => {
       </select>
 
       <!-- Selector de Estado de Cubas -->
-      <select v-model="selectedStatusFilter" class="saas-filter-select">
+      <select aria-label="Estado" v-model="selectedStatusFilter" class="saas-filter-select">
         <option value="todos">Todos los Estados</option>
         <option value="normal">Normales</option>
         <option value="advertencia">Advertencias</option>
         <option value="critico">Riesgo Crítico</option>
       </select>
-
-      <!-- Ubicación / Bodega -->
-      <div class="saas-filter-select">
-        <span>Planta Central</span>
-        <ChevronDown :size="13" style="color: var(--text-muted);" />
-      </div>
 
       <!-- Botón de Sincronización Manual a la Derecha -->
       <button
@@ -688,44 +441,72 @@ onBeforeUnmount(() => {
          CONTENIDO PRINCIPAL (Paneles según Pestaña Activa o Vista Unificada)
          ==================================================================== -->
 
-    <!-- VISTA 1: OVERVIEW (Visibilidad & Telemetría - Replica Imagen 1) -->
+    <!-- VISTA 1: OVERVIEW (Resumen - Replica Imagen 1) -->
     <div v-show="activeTab === 'overview' || activeTab === 'all'" class="tab-pane-content">
+      <!-- Fila 2 Inferior: Tarjetas KPI de Resumen Rápido -->
+      <div class="kpi-metrics-row">
+        <!-- KPI 1: Temperatura Promedio Bodega -->
+        <div class="saas-card kpi-subcard">
+          <div class="kpi-subcard-header">
+            <span class="kpi-subcard-title">Temp. Promedio Bodega</span>
+            <span class="kpi-subcard-sub">Sensores activos</span>
+          </div>
+          <div class="kpi-subcard-value">
+            <span>{{ stats.avgTemp }} °C</span>
+          </div>
+        </div>
+
+        <!-- KPI 2: Cubas en Fermentación Activa -->
+        <div class="saas-card kpi-subcard">
+          <div class="kpi-subcard-header">
+            <span class="kpi-subcard-title">Cubas en Fermentación</span>
+            <span class="kpi-subcard-sub">Capacidad en proceso</span>
+          </div>
+          <div class="kpi-subcard-value">
+            <span>{{ stats.enFermentacion }} / {{ stats.total }}</span>
+          </div>
+        </div>
+
+        <!-- KPI 3: Desvíos y Advertencias -->
+        <div class="saas-card kpi-subcard">
+          <div class="kpi-subcard-header">
+            <span class="kpi-subcard-title">Desvíos térmicos</span>
+            <span class="kpi-subcard-sub">Fuera de perfil</span>
+          </div>
+          <div class="kpi-subcard-value">
+            <span :class="{ 'text-danger': stats.criticos > 0 }">
+              {{ stats.advertencias + stats.criticos }} cubas
+            </span>
+            <span v-if="stats.criticos === 0 && stats.advertencias === 0 && stats.evaluadas > 0" class="delta-tag positive">Normalizado</span>
+            <span v-if="stats.criticos > 0" class="delta-tag negative">{{ stats.criticos }} críticas</span>
+          </div>
+        </div>
+
+        <!-- KPI 4: Índice Global de Calidad -->
+        <div class="saas-card kpi-subcard">
+          <div class="kpi-subcard-header">
+            <span class="kpi-subcard-title">Dentro del rango</span>
+            <span class="kpi-subcard-sub">Cubas con perfil evaluado</span>
+          </div>
+          <div class="kpi-subcard-value">
+            <span>{{ stats.pctOptimo ?? '—' }}%</span>
+          </div>
+        </div>
+      </div>
       <!-- Fila 1: Gráfico de Tendencia (Izquierda) + Tabla de Rankings (Derecha) -->
       <div class="overview-grid-row">
         <!-- Tarjeta Izquierda: Tendencia Térmica & Brix (Visibility Score) -->
         <article class="saas-card metric-chart-card">
           <header class="card-header-clean">
-            <div class="card-title-group">
-              <span class="card-category-label">
-                <Eye :size="14" />
-                <span>Estabilidad Térmica</span>
-              </span>
-              <span class="card-subtitle-sub">Tendencia promedio de fermentación en tiempo real</span>
-            </div>
-            <div class="card-action-mini">
-              <span class="live-tag-pill">En Vivo</span>
-            </div>
+            <h2 class="panel-heading">Temperatura por cuba</h2>
+            <span class="chart-unit">°C</span>
           </header>
-
-          <div class="score-callout-row">
-            <div class="big-score-digits">
-              {{ stats.avgTemp }}<small>°C</small>
-            </div>
-            <div class="delta-tag positive">
-              <TrendingUp :size="14" />
-              <span>+0.4 °C</span>
-            </div>
-          </div>
-
-          <!-- Canvas del Gráfico Lineal Suave Chart.js -->
-          <div class="chart-canvas-container">
-            <canvas ref="trendChartRef"></canvas>
-          </div>
-
-          <footer class="card-footer-sub">
-            <span>Mostrando telemetría de las últimas 24 horas</span>
-            <span class="positive-text">● +1.2% consistencia térmica</span>
-          </footer>
+          <p v-if="!filteredCubas.length" class="empty-message">Sin cubas para los filtros seleccionados.</p>
+          <button v-for="c in filteredCubas" :key="c.id" class="reading-row" @click="goToDetail(c.id)">
+            <span>{{ c.codigo }}</span>
+            <span class="reading-track"><span :style="{ width: barWidth(c.temperatura, temperatureScale) }"></span></span>
+            <strong>{{ c.temperatura?.toFixed(1) ?? '—' }}</strong>
+          </button>
         </article>
 
         <!-- Tarjeta Derecha: Tabla de Rankings de Cubas (Rankings Table) -->
@@ -734,9 +515,9 @@ onBeforeUnmount(() => {
             <div class="card-title-group">
               <span class="card-category-label">
                 <Layers :size="14" />
-                <span>Ranking & Monitoreo</span>
+                <span>Estado de las cubas</span>
               </span>
-              <span class="card-subtitle-sub">Haga clic en una cuba para ver telemetría completa</span>
+
             </div>
           </header>
 
@@ -781,13 +562,13 @@ onBeforeUnmount(() => {
                         {{ getStatusBadge(cuba).label }}
                       </span>
                       <span
-                        v-if="getIABadge(cuba.prediccion_ml)"
+                        v-if="cuba.prediccion_ml?.riesgo_pct != null"
                         class="badge-ia"
                         :class="getIABadge(cuba.prediccion_ml).class"
                         :title="cuba.prediccion_ml.mensaje"
                       >
                         <Sparkles :size="10" />
-                        <span>{{ cuba.prediccion_ml.riesgo_pct == null ? 'N/D' : `${cuba.prediccion_ml.riesgo_pct}%` }}</span>
+                        <span>{{ cuba.prediccion_ml.riesgo_pct == null ? 'Pendiente' : `Riesgo exp. ${cuba.prediccion_ml.riesgo_pct}%` }}</span>
                       </span>
                     </div>
                   </td>
@@ -798,238 +579,35 @@ onBeforeUnmount(() => {
         </article>
       </div>
 
-      <!-- Fila 2 Inferior: Tarjetas KPI de Resumen Rápido -->
-      <div class="kpi-metrics-row">
-        <!-- KPI 1: Temperatura Promedio Bodega -->
-        <div class="saas-card kpi-subcard">
-          <div class="kpi-subcard-header">
-            <span class="kpi-subcard-title">Temp. Promedio Bodega</span>
-            <span class="kpi-subcard-sub">Sensores activos</span>
-          </div>
-          <div class="kpi-subcard-value">
-            <span>{{ stats.avgTemp }} °C</span>
-            <span class="delta-tag positive">-0.3 °C</span>
-          </div>
-        </div>
-
-        <!-- KPI 2: Cubas en Fermentación Activa -->
-        <div class="saas-card kpi-subcard">
-          <div class="kpi-subcard-header">
-            <span class="kpi-subcard-title">Cubas en Fermentación</span>
-            <span class="kpi-subcard-sub">Capacidad en proceso</span>
-          </div>
-          <div class="kpi-subcard-value">
-            <span>{{ stats.enFermentacion }} / {{ stats.total }}</span>
-            <span class="delta-tag positive">+2 cubas</span>
-          </div>
-        </div>
-
-        <!-- KPI 3: Desvíos y Advertencias -->
-        <div class="saas-card kpi-subcard">
-          <div class="kpi-subcard-header">
-            <span class="kpi-subcard-title">Alertas e Incidencias</span>
-            <span class="kpi-subcard-sub">Fuera de perfil</span>
-          </div>
-          <div class="kpi-subcard-value">
-            <span :class="{ 'text-danger': stats.criticos > 0 }">
-              {{ stats.advertencias + stats.criticos }} alertas
-            </span>
-            <span v-if="stats.criticos === 0" class="delta-tag positive">Normalizado</span>
-            <span v-else class="delta-tag negative">{{ stats.criticos }} críticas</span>
-          </div>
-        </div>
-
-        <!-- KPI 4: Índice Global de Calidad -->
-        <div class="saas-card kpi-subcard">
-          <div class="kpi-subcard-header">
-            <span class="kpi-subcard-title">Índice Enológico Global</span>
-            <span class="kpi-subcard-sub">Salud de cosecha</span>
-          </div>
-          <div class="kpi-subcard-value">
-            <span>{{ stats.healthScore }}%</span>
-            <span class="delta-tag positive">+1.8%</span>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- VISTA 2: HEALTH & DIAGNÓSTICO IA (Replica Imagen 2 Superior) -->
     <div v-show="activeTab === 'health' || activeTab === 'all'" class="tab-pane-content" style="margin-top: 1.5rem;">
-      <!-- Tarjeta Principal: Salud de Fermentación & Diagnóstico Predictivo -->
-      <article class="saas-card health-perception-card">
-        <header class="card-header-clean">
-          <div class="card-title-group">
-            <span class="card-category-label">
-              <ShieldCheck :size="15" />
-              <span>Diagnóstico Enológico Predictivo</span>
-            </span>
-            <span class="card-subtitle-sub">Análisis continuo de telemetría y reglas de fermentación</span>
-          </div>
-          <div class="saas-filter-select" style="font-size: 0.75rem;">
-            <span>Modelo Enológico GPT-IoT</span>
-            <ChevronDown :size="12" />
-          </div>
-        </header>
-
-        <div class="health-card-body">
-          <!-- Columna Izquierda: Medidor Circular (Score 90 / 100) -->
-          <div class="circular-score-column">
-            <div class="circular-ring-wrapper">
-              <svg class="circular-ring-svg" viewBox="0 0 120 120">
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="52"
-                  fill="none"
-                  stroke="#E2E8F0"
-                  stroke-width="9"
-                />
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="52"
-                  fill="none"
-                  stroke="#10B981"
-                  stroke-width="9"
-                  stroke-dasharray="326.7"
-                  :stroke-dashoffset="326.7 * (1 - stats.healthScore / 100)"
-                  stroke-linecap="round"
-                  transform="rotate(-90 60 60)"
-                />
-              </svg>
-              <div class="score-center-text">
-                <span class="score-big">{{ stats.healthScore }}</span>
-                <span class="score-max">/ 100</span>
-              </div>
-            </div>
-
-            <!-- Distribución de Porcentajes con viñetas de colores -->
-            <div class="score-bullets-row">
-              <span class="bullet-item green">● {{ stats.pctOptimo }}% óptimo</span>
-              <span class="bullet-item amber">● {{ stats.pctAtencion }}% atención</span>
-              <span class="bullet-item red">● {{ stats.pctCritico }}% riesgo</span>
-            </div>
-
-            <span class="score-subtext">Basado en {{ stats.total }} sensores IoT en línea</span>
-          </div>
-
-          <!-- Columna Derecha: Diagnóstico Asistido con Tags Resaltados -->
-          <div class="insights-narrative-column">
-            <div class="insight-item-box">
-              <div class="insight-icon-shield">
-                <CheckCircle2 :size="18" style="color: #10B981;" />
-              </div>
-              <div class="insight-text-content">
-                <p>
-                  El proceso de fermentación muestra un comportamiento altamente favorable para
-                  <span class="hl-tag green">estabilidad térmica</span>, con el sistema de refrigeración
-                  regulando eficientemente las cubas de
-                  <span class="hl-tag blue">Cabernet Sauvignon</span>,
-                  <span class="hl-tag blue">Carmenere</span> y
-                  <span class="hl-tag blue">Chardonnay</span>.
-                  La cinética de consumo de azúcares se encuentra dentro de las curvas previstas.
-                </p>
-                <p class="mt-2 text-secondary">
-                  Puntos de atención detectados:
-                  <span class="hl-tag amber">Cuba CB-04</span> registra un leve incremento térmico
-                  (+1.2 °C sobre umbral ideal), y se recomienda revisar la válvula solenoide para
-                  prevenir desvíos organolépticos.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+      <article class="saas-card metric-chart-card">
+        <h2 class="panel-heading">Estado térmico por cuba</h2>
+        <p v-if="!filteredCubas.length" class="empty-message">Sin cubas para los filtros seleccionados.</p>
+        <button v-for="c in filteredCubas" :key="c.id" class="status-row" @click="goToDetail(c.id)">
+          <strong>{{ c.codigo }}</strong>
+          <span>{{ c.alertaMsg || (c.estado === 'normal' ? 'Temperatura dentro del perfil' : 'Pendiente de lectura o perfil') }}</span>
+          <ChevronRight :size="15" />
+        </button>
       </article>
     </div>
 
-    <!-- VISTA 3: COMPARATIVA HEAD-TO-HEAD & CINÉTICA (Replica Imagen 2 Inferior) -->
-    <div v-show="activeTab === 'comparison' || activeTab === 'all'" class="tab-pane-content" style="margin-top: 1.5rem;">
-      <div class="comparison-grid-row">
-        <!-- Tarjeta Izquierda: Cinética de Azúcares (Sentiment Score style) -->
-        <article class="saas-card brix-dynamics-card">
-          <header class="card-header-clean">
-            <div class="card-title-group">
-              <span class="card-category-label">
-                <Droplets :size="14" />
-                <span>Dinámica de Azúcares (Brix)</span>
-              </span>
-              <span class="card-subtitle-sub">Tasa de consumo y curva de densidad en 7 días</span>
-            </div>
-          </header>
-
-          <div class="score-callout-row">
-            <div class="big-score-digits">94<small style="font-size: 1rem; color: #64748B;"> pts</small></div>
-            <div class="delta-tag positive">
-              <TrendingUp :size="14" />
-              <span>+4.0</span>
-            </div>
-          </div>
-
-          <div class="chart-canvas-container" style="height: 180px;">
-            <canvas ref="brixChartRef"></canvas>
-          </div>
-        </article>
-
-        <!-- Tarjeta Derecha: Comparativa Head-to-Head (Lote vs Lote) -->
-        <article class="saas-card head-to-head-card">
-          <header class="card-header-clean">
-            <div class="card-title-group">
-              <span class="card-category-label">
-                <Scale :size="14" />
-                <span>Comparativa Head-to-Head</span>
-              </span>
-              <span class="card-subtitle-sub">Desempeño relativo entre lotes activos</span>
-            </div>
-            <div class="saas-filter-select" style="font-size: 0.75rem;">
-              <span>CB-02 (Carmenere)</span>
-              <ChevronDown :size="12" />
-            </div>
-          </header>
-
-          <!-- Barra Dividida de Comparación -->
-          <div class="h2h-split-bar-section">
-            <div class="h2h-labels-row">
-              <span class="h2h-entity-name red">● CB-01 (Cabernet)</span>
-              <span class="h2h-entity-name dark">CB-02 (Carmenere) ●</span>
-            </div>
-
-            <div class="h2h-numbers-row">
-              <span class="h2h-big-percent red">52%</span>
-              <span class="h2h-big-percent dark">48%</span>
-            </div>
-
-            <div class="h2h-progress-split-bar">
-              <div class="h2h-bar-left" style="width: 52%;"></div>
-              <div class="h2h-bar-right" style="width: 48%;"></div>
-            </div>
-          </div>
-
-          <!-- Columnas de Checklist de Parámetros -->
-          <div class="h2h-features-columns">
-            <!-- Columna Lote 1 -->
-            <div class="h2h-col">
-              <span class="h2h-col-title">Parámetros CB-01</span>
-              <ul class="h2h-list">
-                <li class="h2h-item good"><Check :size="13" /> Control térmico estable</li>
-                <li class="h2h-item good"><Check :size="13" /> Cinética de azúcares óptima</li>
-                <li class="h2h-item good"><Check :size="13" /> Válvula de frío al 45%</li>
-                <li class="h2h-item warn"><X :size="13" /> Leve varianza nocturna</li>
-              </ul>
-            </div>
-
-            <!-- Columna Lote 2 -->
-            <div class="h2h-col">
-              <span class="h2h-col-title">Parámetros CB-02</span>
-              <ul class="h2h-list">
-                <li class="h2h-item good"><Check :size="13" /> Densímetro calibrado</li>
-                <li class="h2h-item good"><Check :size="13" /> Micro-oxigenación regulada</li>
-                <li class="h2h-item good"><Check :size="13" /> Respuesta de camisa rápida</li>
-                <li class="h2h-item warn"><X :size="13" /> Consumo Brix más lento</li>
-              </ul>
-            </div>
-          </div>
-        </article>
-      </div>
+    <div v-show="activeTab === 'comparison'" class="tab-pane-content">
+      <article class="saas-card metric-chart-card">
+        <header class="card-header-clean">
+          <h2 class="panel-heading">Brix aparente por lote</h2>
+          <span class="chart-unit">°Bx</span>
+        </header>
+        <p v-if="!filteredCubas.length" class="empty-message">Sin cubas para los filtros seleccionados.</p>
+        <button v-for="c in filteredCubas" :key="c.id" class="reading-row" @click="goToDetail(c.id)">
+          <span>{{ c.codigo }}</span>
+          <span class="reading-track brix-track"><span :style="{ width: barWidth(c.brix, brixScale) }"></span></span>
+          <strong>{{ c.brix?.toFixed(2) ?? '—' }}</strong>
+        </button>
+        <RouterLink class="history-link" to="/procesos">Comparar curvas históricas →</RouterLink>
+      </article>
     </div>
 
     <!-- VISTA 4: CUADRÍCULA DE CUBAS IOT (Tarjetas Interactivas en Vivo) -->
@@ -1037,9 +615,7 @@ onBeforeUnmount(() => {
       <div class="section-title-row">
         <div>
           <h2 class="section-main-title">Supervisión en Tiempo Real de Cubas</h2>
-          <p class="section-main-sub">
-            Telemetría de temperatura, grados Brix y volumen en tiempo real sincronizada cada 5 segundos.
-          </p>
+
         </div>
       </div>
 
@@ -1100,7 +676,7 @@ onBeforeUnmount(() => {
             <div class="cuba-metric-box">
               <div class="metric-top">
                 <span class="metric-lbl"><Thermometer :size="13" /> Temp</span>
-                <span class="metric-range">{{ cuba.tempMin }}°-{{ cuba.tempMax }}°C</span>
+                <span v-if="cuba.tempMin != null && cuba.tempMax != null" class="metric-range">{{ cuba.tempMin }}°-{{ cuba.tempMax }}°C</span>
               </div>
               <div class="metric-val-row">
                 <span class="metric-val-num">
@@ -1116,7 +692,7 @@ onBeforeUnmount(() => {
             <div class="cuba-metric-box">
               <div class="metric-top">
                 <span class="metric-lbl"><Droplets :size="13" /> Brix</span>
-                <span class="metric-range">{{ cuba.prediccion_ml?.estado_ia === 'NO_VALIDADO' ? 'Aparente' : `${getBrixProgress(cuba)}% conv.` }}</span>
+                <span class="metric-range">Aparente</span>
               </div>
               <div class="metric-val-row">
                 <span class="metric-val-num">
@@ -1168,13 +744,13 @@ onBeforeUnmount(() => {
 /* Fila de Gráficos Overview */
 .overview-grid-row {
   display: grid;
-  grid-template-columns: 1.35fr 1fr;
+  grid-template-columns: minmax(0, .85fr) minmax(0, 1.4fr);
   gap: 1.25rem;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1180px) {
   .overview-grid-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1207,64 +783,6 @@ onBeforeUnmount(() => {
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.01em;
-}
-
-.card-subtitle-sub {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
-.live-tag-pill {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: #10B981;
-  background-color: #ECFDF5;
-  border: 1px solid #A7F3D0;
-  padding: 0.15rem 0.5rem;
-  border-radius: var(--radius-full);
-}
-
-.score-callout-row {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-}
-
-.big-score-digits {
-  font-size: 2.25rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  color: var(--text-primary);
-  line-height: 1;
-}
-
-.big-score-digits small {
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.chart-canvas-container {
-  height: 210px;
-  position: relative;
-  width: 100%;
-}
-
-.card-footer-sub {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 0.85rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border-subtle);
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
-.positive-text {
-  color: #10B981;
-  font-weight: 600;
 }
 
 /* Tabla de Rankings */
@@ -1304,12 +822,12 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 1.25rem;
-  margin-top: 1.25rem;
+  margin-bottom: 1.25rem;
 }
 
 @media (max-width: 900px) {
   .kpi-metrics-row {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1346,242 +864,7 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
 }
 
-/* Tarjeta Health / Brand Perception (Imagen 2) */
-.health-perception-card {
-  padding: 1.25rem 1.5rem;
-}
-
-.health-card-body {
-  display: grid;
-  grid-template-columns: 240px 1fr;
-  gap: 2rem;
-  align-items: center;
-  margin-top: 0.75rem;
-}
-
-@media (max-width: 860px) {
-  .health-card-body {
-    grid-template-columns: 1fr;
-  }
-}
-
-.circular-score-column {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-
-.circular-ring-wrapper {
-  position: relative;
-  width: 120px;
-  height: 120px;
-}
-
-.circular-ring-svg {
-  width: 100%;
-  height: 100%;
-}
-
-.score-center-text {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  line-height: 1;
-}
-
-.score-big {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.03em;
-}
-
-.score-max {
-  font-size: 0.6875rem;
-  color: var(--text-muted);
-  font-weight: 500;
-  margin-top: 2px;
-}
-
-.score-bullets-row {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  margin-top: 0.75rem;
-}
-
-.bullet-item.green { color: #10B981; }
-.bullet-item.amber { color: #F59E0B; }
-.bullet-item.red { color: #EF4444; }
-
-.score-subtext {
-  font-size: 0.6875rem;
-  color: var(--text-muted);
-  margin-top: 0.35rem;
-}
-
-/* Columna Narrativa de Insights */
-.insights-narrative-column {
-  display: flex;
-  flex-direction: column;
-}
-
-.insight-item-box {
-  display: flex;
-  gap: 1rem;
-  background-color: var(--bg-canvas);
-  border: 1px solid var(--border-color);
-  padding: 1.15rem 1.25rem;
-  border-radius: var(--radius-md);
-}
-
-.insight-icon-shield {
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.insight-text-content p {
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  color: var(--text-secondary);
-}
-
-.hl-tag {
-  display: inline-block;
-  padding: 0.05rem 0.4rem;
-  border-radius: var(--radius-xs);
-  font-weight: 600;
-  font-size: 0.75rem;
-}
-
-.hl-tag.green {
-  background-color: #ECFDF5;
-  color: #065F46;
-}
-
-.hl-tag.blue {
-  background-color: #EFF6FF;
-  color: #1D4ED8;
-}
-
-.hl-tag.amber {
-  background-color: #FFFBEB;
-  color: #B45309;
-}
-
-.hl-tag.red {
-  background-color: #FEF2F2;
-  color: #B91C1C;
-}
-
-/* Comparativa y Gráfico Dinámico */
-.comparison-grid-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
-}
-
-@media (max-width: 900px) {
-  .comparison-grid-row {
-    grid-template-columns: 1fr;
-  }
-}
-
-.brix-dynamics-card,
-.head-to-head-card {
-  padding: 1.25rem 1.35rem;
-  display: flex;
-  flex-direction: column;
-}
-
-.h2h-split-bar-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin: 0.5rem 0 1rem;
-}
-
-.h2h-labels-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.h2h-entity-name.red { color: #E11D48; }
-.h2h-entity-name.dark { color: #0F172A; }
-
-.h2h-numbers-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 1.65rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.h2h-big-percent.red { color: #E11D48; }
-.h2h-big-percent.dark { color: #0F172A; }
-
-.h2h-progress-split-bar {
-  display: flex;
-  height: 12px;
-  border-radius: var(--radius-full);
-  overflow: hidden;
-  background-color: #E2E8F0;
-}
-
-.h2h-bar-left {
-  background-color: #E11D48;
-}
-
-.h2h-bar-right {
-  background-color: #0F172A;
-}
-
-.h2h-features-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.h2h-col-title {
-  font-size: 0.6875rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
-  display: block;
-  margin-bottom: 0.4rem;
-}
-
-.h2h-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.h2h-item {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
-.h2h-item.good { color: #059669; }
-.h2h-item.warn { color: #DC2626; }
-
-/* Cuadrícula de Cubas IoT */
+/* Cubas */
 .section-title-row {
   margin-bottom: 1rem;
 }
@@ -1862,4 +1145,18 @@ onBeforeUnmount(() => {
   color: #9ca3af;
   border: 1px solid rgba(107, 114, 128, 0.3);
 }
+
+.dashboard-title { font-size: clamp(1.45rem, 2vw, 1.85rem); letter-spacing: -.035em; margin-bottom: .8rem; }
+.panel-heading { font-size: 1rem; font-weight: 650; }
+.chart-unit, .empty-message { font-size: .82rem; color: var(--text-secondary); }
+.reading-row, .status-row { display: grid; align-items: center; gap: 1rem; text-align: left; min-height: 42px; font-size: .82rem; color: var(--text-primary); }
+.reading-row { grid-template-columns: auto 1fr 3.2rem; }
+.reading-row strong { text-align: right; font-variant-numeric: tabular-nums; }
+.reading-track { display: block; height: 7px; background: var(--bg-subtle); border-radius: 6px; overflow: hidden; }
+.reading-track > span { display: block; height: 100%; background: #93405b; border-radius: inherit; }
+.brix-track > span { background: #bb781e; }
+.status-row { grid-template-columns: auto 1fr auto; border-bottom: 1px solid var(--border-subtle); }
+.status-row:hover, .reading-row:hover { background: var(--bg-hover); }
+.history-link { align-self: flex-start; margin-top: 1rem; font-weight: 600; font-size: .82rem; text-decoration: underline; }
+@media (max-width: 500px) { .kpi-metrics-row { gap: .5rem; } .kpi-subcard { padding: .75rem; } }
 </style>

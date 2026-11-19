@@ -110,6 +110,36 @@ def evaluar_proceso_cinetica(db, proceso_id: int) -> Optional[Dict[str, Any]]:
                 mensaje='Estimación experimental sobre las últimas 24 horas de simulación.', **metrics)
 
 
+def ventana_modelo_legacy(db, proceso_id, limite):
+    """Sample the continuous stream at the legacy model's 0.25 h training cadence."""
+    from datetime import timedelta
+    from app.models import LecturaTelemetria as Lectura
+    from app.services.telemetry_v2 import utc_now
+
+    query = db.query(Lectura.timestamp, Lectura.brix, Lectura.temp_mosto, Lectura.origen_dato).filter(
+        Lectura.fermentacion_id == proceso_id, Lectura.lectura_valida.is_(True),
+        Lectura.timestamp <= utc_now(), Lectura.brix.isnot(None), Lectura.temp_mosto.isnot(None)
+    ).order_by(Lectura.timestamp.desc(), Lectura.id.desc())
+    latest = query.first()
+    if latest is None:
+        return []
+    source = query.filter(Lectura.origen_dato == latest.origen_dato)
+    if latest.origen_dato != "simulado_legacy":
+        return source.limit(limite).all()
+
+    # Each pair of ESP packets describes one observation. Counting packets as
+    # separate model steps makes ordinary fermentation look artificially flat.
+    samples = [latest]
+    for step in range(1, limite):
+        target = latest.timestamp - timedelta(minutes=15 * step)
+        sample = source.filter(Lectura.timestamp <= target,
+                               Lectura.timestamp > target - timedelta(minutes=15)).first()
+        if sample is None:
+            break
+        samples.append(sample)
+    return samples
+
+
 def evaluar_riesgo_parada_cuba(
     lecturas_brix: List[float],
     lecturas_temp: List[float]
@@ -187,7 +217,7 @@ def evaluar_riesgo_parada_cuba(
             "riesgo_pct": 0.0,
             "estado_ia": "FINALIZADA",
             "alerta_ia": False,
-            "mensaje": "Fermentación concluida normalmente (Brix <= 2.5)",
+            "mensaje": "El Brix medio de las últimas tres muestras está en el tramo final (≤ 2,5 °Bx). El modelo asigna 0 % de riesgo.",
             **metricas
         }
 

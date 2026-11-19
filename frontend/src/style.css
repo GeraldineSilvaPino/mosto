@@ -204,33 +204,6 @@ input, select, textarea {
 }
 
 /* Segmented Control / Pill Mode Switcher */
-.sidebar-mode-switcher {
-  margin: 0.65rem 1rem 0.25rem;
-  display: flex;
-  background-color: var(--bg-subtle);
-  border-radius: var(--radius-md);
-  padding: 3px;
-  border: 1px solid var(--border-subtle);
-}
-
-.mode-pill-btn {
-  flex: 1;
-  text-align: center;
-  padding: 0.4rem 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  border-radius: var(--radius-sm);
-  transition: all 0.15s ease;
-}
-
-.mode-pill-btn.active {
-  background-color: #FFFFFF;
-  color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
-/* Menú de Navegación */
 .sidebar-nav {
   flex: 1;
   overflow-y: auto;
@@ -273,7 +246,7 @@ input, select, textarea {
 }
 
 .nav-link.active,
-.nav-link.router-link-active {
+.nav-link.router-link-exact-active {
   background-color: var(--bg-active);
   color: var(--text-primary);
   font-weight: 600;
@@ -413,7 +386,7 @@ input, select, textarea {
   border-radius: var(--radius-md);
   padding: 0.4rem 0.75rem;
   gap: 0.5rem;
-  width: 320px;
+  width: min(100%, 380px);
   transition: all 0.15s ease;
 }
 
@@ -421,7 +394,6 @@ input, select, textarea {
   background-color: #FFFFFF;
   border-color: var(--border-strong);
   box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.05);
-  width: 380px;
 }
 
 .topbar-search-icon {
@@ -451,78 +423,6 @@ input, select, textarea {
   padding: 0.1rem 0.35rem;
   border-radius: var(--radius-xs);
   flex-shrink: 0;
-}
-
-/* Acciones en Topbar */
-.topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.btn-learn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.42rem 0.75rem;
-  border: 1px solid var(--border-color);
-  background-color: #FFFFFF;
-  border-radius: var(--radius-md);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  transition: all 0.15s ease;
-}
-
-.btn-learn:hover {
-  background-color: var(--bg-subtle);
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-}
-
-.btn-export {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.42rem 0.85rem;
-  background-color: #0F172A;
-  color: #FFFFFF;
-  border-radius: var(--radius-md);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  transition: all 0.15s ease;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1);
-}
-
-.btn-export:hover {
-  background-color: #1E293B;
-}
-
-.telemetry-status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.65rem;
-  background-color: var(--status-good-bg);
-  border: 1px solid var(--status-good-border);
-  border-radius: var(--radius-full);
-  color: var(--status-good-text);
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.telemetry-pulse-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background-color: var(--status-good);
-  animation: pulse-dot 1.8s infinite;
-}
-
-@keyframes pulse-dot {
-  0% { transform: scale(0.95); opacity: 0.8; }
-  50% { transform: scale(1.3); opacity: 1; }
-  100% { transform: scale(0.95); opacity: 0.8; }
 }
 
 /* Contenido Principal con Scroll */
@@ -891,3 +791,26 @@ input, select, textarea {
   font-size: 0.86rem;
   margin-top: 0.25rem;
 }
+
+.workspace-selector { cursor: default; }
+button:focus-visible, a:focus-visible, select:focus-visible {
+  outline: 2px solid #9d3554;
+  outline-offset: 3px;
+}
+.saas-tabs-nav { overflow-x: auto; }
+.saas-tab-item { white-space: nowrap; }
+.saas-filter-bar select, .saas-filter-bar button { min-height: 36px; }
+@media (max-width: 900px) {
+  .sidebar { width: 60px; }
+  .sidebar-header, .sidebar-footer { padding: .75rem .35rem; }
+  .sidebar-nav { padding-inline: .35rem; }
+  .workspace-selector, .nav-link, .user-profile { justify-content: center; }
+  .workspace-text, .nav-section-title, .nav-link > span, .user-info-group { display: none; }
+  .user-dropdown-menu { left: 0; right: auto; width: 210px; }
+  .nav-section + .nav-section { border-top: 1px solid var(--border-color); padding-top: .5rem; }
+  .content-wrapper { padding: 1rem; }
+  .topbar { padding: 0 1rem; }
+}
+
+.content-wrapper header .header-actions { flex-wrap: wrap; gap: .5rem; }
+.content-wrapper header .header-actions button { min-height: 38px; white-space: nowrap; }

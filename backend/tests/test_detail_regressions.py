@@ -16,7 +16,7 @@ def legacy_readings(end, hours=24):
     with SessionLocal() as db:
         process = db.get(m.ProcesoFermentacion, 1)
         process.fecha_inicio = end - timedelta(hours=hours + 1)
-        for step in range(hours * 12 + 1):
+        for step in range(int(hours * 12) + 1):
             stamp = end - timedelta(hours=hours) + timedelta(minutes=step * 5)
             db.add(m.LecturaTelemetria(dispositivo_id=1, fermentacion_id=1, timestamp=stamp,
                 brix=24 - step / 120, temp_mosto=22 + step / 1000, ph=3.4,
@@ -141,3 +141,22 @@ def test_simulator_temperature_and_brix_are_continuous_and_stable_per_tick():
         assert abs(temperature - previous_t) <= .081
         assert abs(brix - previous_b) < .15
         previous_t, previous_b = temperature, brix
+
+
+def test_dense_legacy_packets_do_not_imply_a_model_window(client):
+    legacy_readings(datetime.now(timezone.utc) - timedelta(minutes=1), hours=0.5)
+    assert client.get('/api/cubas/1/ml-prediction').json()['riesgo_pct'] is None
+
+
+def test_float_payload_never_reverses_healthy_brix():
+    from scripts.simulate_esp import parsear_args, SimuladorFermentacion
+    from app.services.telemetry_service import TelemetryService
+    sim = SimuladorFermentacion(parsear_args(['--horas-por-ciclo', '1']))
+    previous = sim.brix
+    for _ in range(350):
+        sim.avanzar()
+        payload = sim.paquete_esp8266('02:00:00:00:00:01')
+        _, measured, _ = TelemetryService.calcular_brix_y_densidad(payload['angulo_tilt'])
+        assert sim.brix_final <= measured <= previous
+        previous = measured
+    assert previous == sim.brix_final

@@ -8,10 +8,11 @@ Expone los endpoints HTTP consumidos por los microcontroladores:
 
 Delega toda la lógica de negocio al servicio: app.services.telemetry_service
 """
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models import LecturaTelemetria, ProcesoFermentacion
 from app.schemas import (
     TelemetriaESP32In,
     TelemetriaESP8266In,
@@ -20,6 +21,22 @@ from app.schemas import (
 from app.services.telemetry_service import telemetry_service
 
 router = APIRouter(prefix="/api/telemetria", tags=["Telemetría IoT (Hardware)"])
+
+
+@router.get("/simulador/{cuba_id}/estado")
+def estado_simulador(cuba_id: int, db: Session = Depends(get_db)):
+    proceso = db.query(ProcesoFermentacion).filter_by(cuba_id=cuba_id, estado="en_proceso").first()
+    if proceso is None:
+        raise HTTPException(404, "Sin fermentación activa")
+    ultima = db.query(LecturaTelemetria).filter_by(fermentacion_id=proceso.id, origen_dato="simulado_legacy").order_by(
+        LecturaTelemetria.timestamp.desc(), LecturaTelemetria.id.desc()).first()
+    return {
+        "proceso_id": proceso.id,
+        "brix_inicial": proceso.brix_inicial,
+        "brix_objetivo": proceso.brix_objetivo,
+        "brix": ultima.brix if ultima else None,
+        "temperatura": ultima.temp_mosto if ultima else None,
+    }
 
 
 @router.post(

@@ -217,7 +217,8 @@ class TelemetryService:
             db.refresh(dispositivo)
         return dispositivo
 
-    def _resolver_cuba_y_proceso(self, db: Session, dispositivo_id: int, cuba_id_payload: Optional[int]) -> Tuple[int, int]:
+    def _resolver_cuba_y_proceso(self, db: Session, dispositivo_id: int, cuba_id_payload: Optional[int],
+                                proceso_esperado: Optional[int] = None) -> Tuple[int, int]:
         """Resuelve a qué Cuba y Proceso de Fermentación activo corresponde la telemetría."""
         cuba_id = cuba_id_payload
 
@@ -272,6 +273,9 @@ class TelemetryService:
             ProcesoFermentacion.estado == "en_proceso"
         ).order_by(ProcesoFermentacion.id.desc()).first()
 
+        if proceso_esperado is not None and (proceso is None or proceso.id != proceso_esperado):
+            raise HTTPException(409, "Cambió el proceso activo de la cuba")
+
         if not proceso:
             perfil = self._obtener_o_crear_perfil(db, bodega_id=cuba.bodega_id)
             ahora = datetime.utcnow()
@@ -304,13 +308,14 @@ class TelemetryService:
         cuba_id, proceso_id = self._resolver_cuba_y_proceso(
             db=db,
             dispositivo_id=dispositivo.id,
-            cuba_id_payload=payload.cuba_id
+            cuba_id_payload=payload.cuba_id,
+            proceso_esperado=payload.proceso_id
         )
 
         # Obtener última lectura del proceso para complementar valores no nulos
         ultima_lectura = (
             db.query(LecturaTelemetria)
-            .filter(LecturaTelemetria.fermentacion_id == proceso_id)
+            .filter_by(fermentacion_id=proceso_id, origen_dato="simulado_legacy")
             .order_by(desc(LecturaTelemetria.id))
             .first()
         )
@@ -325,8 +330,10 @@ class TelemetryService:
             else (float(ultima_lectura.temp_ambiente) if ultima_lectura and ultima_lectura.temp_ambiente else 20.5)
         )
 
-        brix_final = float(ultima_lectura.brix) if ultima_lectura and ultima_lectura.brix else 23.5
-        densidad_final = float(ultima_lectura.densidad_sg) if ultima_lectura and ultima_lectura.densidad_sg else 1.0920
+        brix_anterior = ultima_lectura.brix if ultima_lectura else db.get(ProcesoFermentacion, proceso_id).brix_inicial
+        brix_final = float(brix_anterior) if brix_anterior is not None else None
+        densidad_final = (float(ultima_lectura.densidad_sg) if ultima_lectura and ultima_lectura.densidad_sg is not None
+                          else round(1 + brix_final * 0.0039, 4) if brix_final is not None else None)
 
         bateria_pct, bateria_volt = self.calcular_bateria(payload.bateria_voltaje)
         if bateria_pct is None:
@@ -402,7 +409,8 @@ class TelemetryService:
         cuba_id, proceso_id = self._resolver_cuba_y_proceso(
             db=db,
             dispositivo_id=dispositivo.id,
-            cuba_id_payload=payload.cuba_id
+            cuba_id_payload=payload.cuba_id,
+            proceso_esperado=payload.proceso_id
         )
 
         tilt_calc, brix_calc, sg_calc = self.calcular_brix_y_densidad(
@@ -417,7 +425,7 @@ class TelemetryService:
         # Obtener última lectura para complementar valores no nulos
         ultima_lectura = (
             db.query(LecturaTelemetria)
-            .filter(LecturaTelemetria.fermentacion_id == proceso_id)
+            .filter_by(fermentacion_id=proceso_id, origen_dato="simulado_legacy")
             .order_by(desc(LecturaTelemetria.id))
             .first()
         )

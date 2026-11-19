@@ -509,11 +509,7 @@ function exportToCSVClientFallback() {
     <p v-if="loadError" role="alert" class="audit-load-error">{{ loadError }}</p>
     <header class="audit-header">
       <div>
-        <div class="module-tag">Módulo 5 · Administración SaaS y Gestión de Empresa</div>
         <h1 class="view-title">Historial de Alertas y Auditoría</h1>
-        <p class="view-subtitle">
-          Archivo histórico consolidado de incidencias enológicas, cálculo oficial MTTR y trazabilidad de acciones correctivas de bodega.
-        </p>
       </div>
 
       <div class="header-actions">
@@ -972,34 +968,18 @@ function exportToCSVClientFallback() {
 .audit-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 1.5rem;
   flex-wrap: wrap;
 }
 
-.module-tag {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--wine-700);
-  margin-bottom: 0.25rem;
-}
-
 .view-title {
   font-family: var(--font-serif);
-  font-size: 2.1rem;
+  font-size: clamp(1.45rem, 2vw, 1.85rem);
   font-weight: 700;
   color: var(--wine-900);
   line-height: 1.15;
-  margin-bottom: 0.4rem;
-}
-
-.view-subtitle {
-  font-size: 0.88rem;
-  color: var(--text-secondary);
-  max-width: 720px;
-  line-height: 1.45;
+  margin-bottom: 0;
 }
 
 .header-actions {

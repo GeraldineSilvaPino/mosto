@@ -214,14 +214,7 @@ async function toggleActive(user) {
     <!-- Encabezado -->
     <header class="users-header">
       <div>
-        <div class="header-pretitle">
-          <Users :size="14" />
-          <span>Administración de Personal</span>
-        </div>
         <h1 class="header-title">Usuarios y Roles</h1>
-        <p class="header-description">
-          Gestión del equipo interno de la viña: enólogos, operarios y administradores.
-        </p>
       </div>
       <div class="header-actions">
         <label for="user-warehouse">Bodega</label>
@@ -479,36 +472,18 @@ async function toggleActive(user) {
    ========================================= */
 .users-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
 }
 
-.header-pretitle {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.73rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 0.3rem;
-}
-
 .header-title {
   font-family: var(--font-serif);
-  font-size: 2.1rem;
+  font-size: clamp(1.45rem, 2vw, 1.85rem);
   font-weight: 700;
   color: var(--wine-900);
   line-height: 1.15;
   letter-spacing: -0.01em;
-}
-
-.header-description {
-  font-size: 0.88rem;
-  color: var(--text-secondary);
-  margin-top: 0.35rem;
 }
 
 .header-actions {
