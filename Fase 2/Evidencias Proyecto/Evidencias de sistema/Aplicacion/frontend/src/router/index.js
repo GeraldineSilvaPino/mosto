@@ -63,6 +63,12 @@ const routes = [
 
       // Módulo 4: Hardware y Configuración Operativa
       {
+        path: 'hardware-real',
+        name: 'HardwareReal',
+        component: () => import('../views/HardwareRealView.vue'),
+        meta: { title: 'Hardware real', module: 'Módulo 4: Hardware' }
+      },
+      {
         path: 'dispositivos',
         name: 'Devices',
         component: () => import('../views/DevicesView.vue'),

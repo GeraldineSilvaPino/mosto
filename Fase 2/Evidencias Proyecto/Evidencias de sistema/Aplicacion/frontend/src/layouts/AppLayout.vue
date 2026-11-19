@@ -141,6 +141,7 @@ const navSections = [
   {
     title: 'Configuración',
     items: [
+      { id: 'USB', name: 'Hardware real', path: '/hardware-real', icon: RadioTower },
       { id: '06', name: 'Dispositivos IoT', path: '/dispositivos', icon: RadioTower },
       { id: '07', name: 'Perfil y Umbrales', path: '/perfiles-umbrales', icon: SlidersHorizontal }
     ]
