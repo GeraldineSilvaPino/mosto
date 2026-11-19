@@ -24,14 +24,23 @@ Thumbs.db
 .env
 .env.*
 *.env
-backend/.env*
+!.env.example
+!.env.*.example
 
 # Bases de datos locales
 *.db
 *.sqlite3
 *.db-journal
 
-# Local experiments and isolated demo configuration
-backend/artifacts/
-backend/.env.demo
-backend/.env.simulation
+*.sqlite
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+~$*
+AUDITORIA_CONGRUENCIA_DOCUMENTAL*
+**/backend/artifacts/
