@@ -5,7 +5,7 @@ on:
     branches: [develop, 'codex/**', 'feat/**']
 defaults:
   run:
-    working-directory: "Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicación"
+    working-directory: "Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicacion"
 permissions:
   contents: read
 jobs:
@@ -25,12 +25,12 @@ jobs:
         with:
           node-version: '26'
           cache: npm
-          cache-dependency-path: "Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicación/frontend/package-lock.json"
+          cache-dependency-path: "Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicacion/frontend/package-lock.json"
       - name: Install frontend
-        working-directory: "Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicación/frontend"
+        working-directory: "Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicacion/frontend"
         run: npm ci
       - name: Build frontend
-        working-directory: "Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicación/frontend"
+        working-directory: "Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicacion/frontend"
         run: npm run build
 
   postgresql-migrations-and-concurrency:
