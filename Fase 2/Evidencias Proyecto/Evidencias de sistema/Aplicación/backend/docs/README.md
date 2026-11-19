@@ -6,7 +6,7 @@ Bienvenido a la documentacion tecnica del backend de la plataforma MOSTO, desarr
 
 ## Indice de Documentacion
 
-Esta carpeta contiene guias tecnicas detalladas para que cualquier integrante del equipo de desarrollo o asistente automatizado comprenda de forma inmediata el funcionamiento, la arquitectura y las tareas pendientes:
+Esta carpeta contiene guias tecnicas detalladas sobre el funcionamiento, la arquitectura y las tareas pendientes del backend:
 
 | Documento | Descripcion |
 |---|---|

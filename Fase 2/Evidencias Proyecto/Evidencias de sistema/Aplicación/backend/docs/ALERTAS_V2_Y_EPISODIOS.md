@@ -59,7 +59,7 @@ La lista vacía ya no afirma que la fermentación esté sana. La auditoría no i
 
 `0004_alert_episodes` añade `ESTADO_REGLA` y `AUDITORIA_ALERTA`, campos de episodio/resolución y enlace de bitácora. Total: 23 tablas de dominio más `alembic_version`. Mantiene los datos y contratos legacy; no completa retrospectivamente tiempos o autores ausentes.
 
-Las pruebas cubren persistencia, histéresis, huecos, calidad parcial, mensajes atrasados/repetidos, perfil congelado, escalamiento, falta de perfil, rollback, cierre de proceso, acciones idempotentes, vínculos históricos, aislamiento, origen y MTTR. PostgreSQL añade confirmación/resolución concurrentes, unicidad e inmutabilidad de auditoría. La evidencia consolidada y el estado de la prueba de navegador figuran en [Estado del plan](ESTADO_PLAN_MAESTRO.md).
+Las pruebas cubren persistencia, histéresis, huecos, calidad parcial, mensajes atrasados/repetidos, perfil congelado, escalamiento, falta de perfil, rollback, cierre de proceso, acciones idempotentes, vínculos históricos, aislamiento, origen y MTTR. PostgreSQL añade confirmación/resolución concurrentes, unicidad e inmutabilidad de auditoría.
 
 ## Pendientes del bloque funcional más amplio
 

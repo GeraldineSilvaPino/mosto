@@ -14,7 +14,7 @@ instalación limpia ni ejecución CI remota.
 - Navegador previo: selector manual y exportación JSON comprobados con API simulada;
   persistencia/permisos del backend cubiertos por suites HTTP/base aislada.
 
-Comandos desde raíz:
+Comandos desde la carpeta de la aplicación:
 
 ```powershell
 .\backend\venv\Scripts\python.exe -m pytest -q --disable-warnings --tb=short
