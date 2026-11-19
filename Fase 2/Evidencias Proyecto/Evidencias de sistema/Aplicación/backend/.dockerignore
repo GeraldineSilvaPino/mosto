@@ -11,4 +11,10 @@ __pycache__/
 .env
 Dockerfile
 .dockerignore
-
+.env
+.env.*
+*.env
+*.log
+.pytest_cache/
+artifacts/
+*.db-*

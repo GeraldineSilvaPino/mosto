@@ -1,3 +1,4 @@
+name: mosto
 # Isolated demo only. Never loads backend/.env or a remote DATABASE_URL.
 services:
   mosto-demo-db:
