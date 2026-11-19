@@ -107,12 +107,19 @@ const prediccionML = computed(() => {
 })
 
 const sinModeloValidado = computed(() => prediccionML.value.estado_ia === 'NO_VALIDADO')
+const riesgoVisible = computed(() => {
+  const value = prediccionML.value.riesgo_pct
+  if (value == null) return '—'
+  if (value > 0 && value < 0.1) return '<0,1'
+  if (value > 99.9 && value < 100) return '>99,9'
+  return Number(value).toFixed(1).replace('.', ',')
+})
 
 const estadoLabel = computed(() => {
   const map = {
     CRITICO: 'ALTO RIESGO DE PARADA',
     ADVERTENCIA: 'DESVIACIÓN CINÉTICA',
-    NORMAL: 'CINÉTICA SALUDABLE',
+    NORMAL: 'RIESGO ESTIMADO BAJO',
     FINALIZADA: 'BRIX EN TRAMO FINAL',
     RECOLECTANDO_DATOS: 'REUNIENDO LECTURAS',
     NO_VALIDADO: 'MODELO EXPERIMENTAL',
@@ -1446,8 +1453,9 @@ onBeforeUnmount(() => {
     <section v-if="tieneProcesoActivo" class="ml-summary" aria-label="Estimación experimental de riesgo">
       <div class="ml-copy">
         <span class="ml-eyebrow">SIMULACIÓN · MACHINE LEARNING</span>
-        <h2>Riesgo de parada <span class="ml-state">{{ estadoLabel }}</span></h2>
+        <h2>Riesgo estimado de parada <span class="ml-state">{{ estadoLabel }}</span></h2>
         <p>{{ prediccionML.mensaje }}</p>
+        <p v-if="prediccionML.metodo === 'temporal_experimental'">Historial de 24 h · Temperatura y Brix aparente · Horizonte predictivo de 2 a 12 h.</p>
         <details v-if="prediccionML.metodo === 'legacy_experimental'" class="ml-demo">
           <summary>Escenarios de demostración</summary>
           <div class="ml-actions">
@@ -1458,12 +1466,30 @@ onBeforeUnmount(() => {
         <p v-if="iaToastMessage" role="status">{{ iaToastMessage }}</p>
       </div>
       <div v-if="prediccionML.riesgo_pct != null" class="ml-value" :style="{ color: iaGaugeColor }">
-        <strong>{{ prediccionML.riesgo_pct.toFixed(1) }}<small>%</small></strong>
-        <span>Estimación experimental</span>
+        <strong>{{ riesgoVisible }}<small>%</small></strong>
+        <span>Modelo evaluado con datos sintéticos</span>
+        <span>Un riesgo bajo no garantiza ausencia de una parada.</span>
         <span v-if="prediccionML.riesgo_instantaneo_pct != null">Instantánea: {{ prediccionML.riesgo_instantaneo_pct.toFixed(1) }} %</span>
       </div>
       <span v-else class="ml-wait">{{ sinModeloValidado ? 'Sin modelo aplicable' : 'Esperando evaluación' }}</span>
     </section>
+
+    <details v-if="tieneProcesoActivo && prediccionML.metodo === 'temporal_experimental'" class="process-tools">
+      <summary>Cómo responde el modelo <span>Comparación de demostración</span></summary>
+      <div style="padding: 1rem; line-height: 1.6">
+        <p>Resultados calculados con el mismo modelo, la misma semilla y 66 horas de evolución. Cada estimación utiliza las 24 horas anteriores. Son ejemplos sintéticos reproducibles, no lecturas de esta cuba ni una validación en vino real.</p>
+        <table style="width:100%; text-align:left; margin:1rem 0">
+          <thead><tr><th>Escenario simulado</th><th>Riesgo estimado</th></tr></thead>
+          <tbody>
+            <tr><td>Evolución normal</td><td>14,6 %</td></tr>
+            <tr><td>Enfriamiento</td><td>38,4 %</td></tr>
+            <tr><td>Estrés térmico</td><td>95,5 %</td></tr>
+          </tbody>
+        </table>
+        <p>El modelo resume el nivel, la velocidad de descenso y la variación del Brix, junto con la evolución térmica. Estima un evento futuro: no confirma que una fermentación ya esté detenida ni identifica su causa.</p>
+        <p>La estimación puede bajar después del evento: una probabilidad futura baja no significa que el proceso se haya recuperado. Para interpretar la situación actual, revisa también las curvas y las mediciones.</p>
+      </div>
+    </details>
 
     <details v-if="cuba?.proceso_activo_id" class="process-tools" @toggle="processToolsOpen = $event.target.open">
       <summary>Mediciones e intervenciones <span>Registro del proceso</span></summary>

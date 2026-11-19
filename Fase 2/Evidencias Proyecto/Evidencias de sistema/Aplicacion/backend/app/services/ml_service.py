@@ -135,7 +135,7 @@ def evaluar_proceso_cinetica(db, proceso_id: int) -> Optional[Dict[str, Any]]:
         return {**pending, 'estado_ia': 'ERROR', 'mensaje': 'No se pudo evaluar el modelo temporal.'}
     threshold = model.get('threshold', .2189)
     state = 'CRITICO' if prob >= .4 else 'ADVERTENCIA' if prob >= threshold else 'NORMAL'
-    return dict(riesgo_pct=round(prob * 100, 1), estado_ia=state, alerta_ia=state == 'CRITICO',
+    return dict(riesgo_pct=prob * 100, estado_ia=state, alerta_ia=state == 'CRITICO',
                 mensaje='Estimación experimental sobre las últimas 24 horas de simulación.', **metrics)
 
 
