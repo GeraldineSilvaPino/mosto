@@ -31,6 +31,7 @@ class TelemetryV2(BaseModel):
     observed_at: AwareDatetime
     temperature_c: ChannelReading
     brix_apparent: ChannelReading
+    ph: FiniteFloat | None = Field(default=None, ge=0, le=14)
     calibration_id: int | None = Field(default=None, gt=0)
     tilt_degrees: FiniteFloat | None = Field(default=None, ge=0, le=180)
 
@@ -103,6 +104,7 @@ class TelemetryAccepted(BaseModel):
     received_at: datetime
     temperature_c: ChannelReading
     brix_apparent: ChannelReading
+    ph: float | None = None
     out_of_order: bool
     delayed: bool
     diagnostics: list[str]

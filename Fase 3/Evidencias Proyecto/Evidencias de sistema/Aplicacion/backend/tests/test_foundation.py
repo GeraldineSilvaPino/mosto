@@ -33,9 +33,10 @@ def test_no_implicit_jwt_secret(secret):
         Settings.from_env({"MOSTO_ENV": "test", "DATABASE_URL": "sqlite:///:memory:", "JWT_SECRET_KEY": secret})
 
 
-def test_production_is_not_advertised_before_postgresql_validation():
-    with pytest.raises(ValueError, match="production"):
-        Settings.from_env({"MOSTO_ENV": "production"})
+@pytest.mark.parametrize("url", ["sqlite:///:memory:", "postgresql://postgres.tenant@host/postgres"])
+def test_production_requires_postgres_application_role(url):
+    with pytest.raises(ValueError, match="dedicated application role"):
+        Settings.from_env({"MOSTO_ENV": "production", "DATABASE_URL": url, "JWT_SECRET_KEY": "x"*32})
 
 
 def test_demo_catalog_upgrade_is_idempotent_and_preserves_credentials():

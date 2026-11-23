@@ -1,4 +1,4 @@
-> **Arranque actualizado:** consulta [Base segura y reproducible](docs/BASE_SEGURA_Y_REPRODUCIBLE.md). Ya no se crean tablas/datos al arrancar; se requiere JWT_SECRET_KEY y la ingesta legacy es solo demo.
+> El [README de la aplicación](../README.md) describe el arranque con Docker, la conexión con Supabase y la demo local.
 
 > **Canal IoT actual:** [Telemetría v2](docs/TELEMETRIA_V2.md) documenta credenciales individuales, calibración, idempotencia, pruebas y límites. Aplicar las [migraciones locales](docs/MIGRACIONES_Y_POSTGRESQL.md) antes de arrancar una demo nueva.
 
@@ -6,14 +6,14 @@
 
 # MOSTO - Backend API (FastAPI)
 
-Backend en Python con **FastAPI**, **SQLAlchemy** y **SQLite** para la plataforma de monitoreo vitivinícola e ingesta de telemetría IoT.
+Backend en Python con FastAPI y SQLAlchemy. La instalación con Supabase usa PostgreSQL. Las pruebas locales también admiten SQLite.
 
 ---
 
 ## 🚀 Requisitos e Instalación
 
 ### 1. Crear y activar el entorno virtual de Python
-Desde la carpeta raíz del proyecto (`c:\mosto\backend`):
+Desde `C:\mosto\Fase 3\Evidencias Proyecto\Evidencias de sistema\Aplicacion`:
 
 ```bash
 cd backend
@@ -46,22 +46,9 @@ uvicorn app.main:app --reload --port 8000
 
 ---
 
-## 🐳 Ejecución con Docker (Recomendado para Producción y Entrega)
+## Docker y Supabase
 
-Si tienes **Docker Desktop** instalado:
-
-1. Asegúrate de tener configurado tu archivo `.env` en la carpeta `backend/` con las credenciales de Supabase.
-2. Desde la raíz del proyecto (`c:\mosto`), ejecuta:
-   ```bash
-   docker compose up --build
-   ```
-3. El contenedor compilará la imagen de FastAPI, inyectará las variables de entorno y expondrá la API automáticamente en:
-   * **API:** [http://localhost:8000](http://localhost:8000)
-   * **Swagger:** [http://localhost:8000/docs](http://localhost:8000/docs)
-4. Para detener los contenedores:
-   ```bash
-   docker compose down
-   ```
+El Compose se ejecuta desde la carpeta `Aplicacion`. La [guía de arranque](../README.md) incluye la configuración de la cuenta SQL, el certificado TLS, el monitor y los comandos de demo. La instalación principal publica la aplicación y su API bajo el mismo origen en el puerto 8080.
 
 ---
 

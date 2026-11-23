@@ -37,8 +37,8 @@ class Settings:
     @classmethod
     def from_env(cls, env: Mapping[str, str]):
         mode = env.get("MOSTO_ENV", "development")
-        if mode not in {"development", "demo", "test"}:
-            raise ValueError("MOSTO_ENV must be development, demo or test; production rollout remains disabled pending existing-data migration and deployment validation")
+        if mode not in {"development", "demo", "test", "production"}:
+            raise ValueError("MOSTO_ENV must be development, demo, test or production")
         url = env.get("DATABASE_URL", "")
         if not url:
             raise ValueError("DATABASE_URL is required; no implicit database fallback")
@@ -51,6 +51,12 @@ class Settings:
             raise ValueError("Invalid DATABASE_URL (expected SQLite or PostgreSQL)") from None
         if mode in {"demo", "test"}:
             validate_isolated_database(url, mode)
+        if mode == "production":
+            role = (parsed.username or "").split(".", 1)[0]
+            if (parsed.drivername not in {"postgresql", "postgresql+psycopg2"}
+                    or not parsed.host or not role
+                    or role in {"postgres", "supabase_admin", "service_role"}):
+                raise ValueError("Production requires PostgreSQL and a dedicated application role")
         secret = env.get("JWT_SECRET_KEY", "")
         if len(secret.encode()) < 32 or secret.startswith("mosto_enologia_"):
             raise ValueError("JWT_SECRET_KEY must contain at least 32 bytes and cannot use the former default")

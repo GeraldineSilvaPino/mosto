@@ -1,6 +1,6 @@
 # Migraciones y validación PostgreSQL
 
-Estado del bloque, 15-11-2026: migraciones locales versionadas y probadas, sin modificar Supabase. Se conserva `MOSTO_ENV=production` deshabilitado. Esta entrega no constituye una migración aplicada sobre los datos existentes.
+Actualización del 23-11-2026. El código y el proyecto Supabase consultado registran la revisión `0010_clock_projection`. Se restauró y comparó una copia de los esquemas `public` y `auth`. La [auditoría de adopción](evidencias/adopcion-supabase-2026-11-23.md) detalla las diferencias actuales, el ensayo de Docker y los permisos pendientes. Las siguientes notas de migraciones y resultados conservan el historial del desarrollo local.
 
 ## Revisiones
 
@@ -11,7 +11,10 @@ Estado del bloque, 15-11-2026: migraciones locales versionadas y probadas, sin m
 - `0005_profile_versions`: historial de perfiles y snapshot de parámetros al iniciar procesos nuevos. No reconstruye configuraciones iniciales históricas. Detalles: [Perfiles versionados](PERFILES_VERSIONADOS.md).
 - `0006_interventions`: intervenciones estructuradas y eventos vinculados a bitácora, solicitudes/revisiones únicas y auditoría inmutable en PostgreSQL. Esta revisión llega a 26 tablas de dominio. Detalles: [Intervenciones](INTERVENCIONES_ESTRUCTURADAS.md).
 - `0007_manual_measurements`: mediciones manuales y anulaciones con autoría, evidencia, unicidad, vínculo a bitácora y triggers de inmutabilidad PostgreSQL. Esta revisión llega a 28 tablas de dominio. Detalles: [Mediciones manuales](MEDICIONES_MANUALES.md).
-- `0008_process_profile_overrides`: ajustes térmicos inmutables por proceso, revisión/UUID únicos, autor, vigencia, configuración y bitácora; añade la revisión aplicada a la persistencia de reglas sin cambiar su configuración base. Head actual: 29 tablas de dominio + Alembic. [Contrato](AJUSTES_PERFIL_PROCESO.md). Validación SQLite: 289 aprobadas/16 omitidas; PostgreSQL pendiente para los bloques nuevos.
+- `0008_process_profile_overrides`: ajustes térmicos inmutables por proceso, revisión/UUID únicos, autor, vigencia, configuración y bitácora; añade la revisión aplicada a la persistencia de reglas sin cambiar su configuración base. Esta revisión llega a 29 tablas de dominio más Alembic. [Contrato](AJUSTES_PERFIL_PROCESO.md). Validación SQLite: 289 aprobadas/16 omitidas; PostgreSQL pendiente para los bloques nuevos.
+
+- `0009_process_clock_registry` registra el reloj de cada proceso.
+- `0010_clock_projection` valida la proyección temporal de las lecturas simuladas. La revisión tiene 30 tablas de dominio más Alembic.
 
 Las pruebas y la inicialización demo utilizan Alembic. El arranque del servidor no ejecuta DDL. `/api/ready` exige que la revisión aplicada coincida con la del código; una base antigua o sin versionar devuelve 503, sin modificarla.
 
@@ -40,7 +43,7 @@ Las migraciones PostgreSQL utilizan un advisory lock transaccional y límites de
 
 ## Cómo reproducir las pruebas
 
-Desde `C:/mosto`, con las dependencias instaladas en el entorno virtual:
+Desde `C:\mosto\Fase 3\Evidencias Proyecto\Evidencias de sistema\Aplicacion`, con las dependencias instaladas en el entorno virtual:
 
 ```powershell
 backend/venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
@@ -53,7 +56,7 @@ También se puede proporcionar `MOSTO_TEST_DATABASE_URL` a pytest para un Postgr
 
 ## Preparar una demo nueva
 
-Desde `C:/mosto/backend`, configurar `MOSTO_ENV=demo`, `DATABASE_URL` apuntando a una base local **vacía**, `JWT_SECRET_KEY`, `MOSTO_SIMULATOR_KEY` y `MOSTO_DEMO_PASSWORD`; ejecutar:
+Desde la subcarpeta `backend` de `Aplicacion`, configurar `MOSTO_ENV=demo`, `DATABASE_URL` apuntando a una base local **vacía**, `JWT_SECRET_KEY`, `MOSTO_SIMULATOR_KEY` y `MOSTO_DEMO_PASSWORD`; ejecutar:
 
 ```powershell
 python -m scripts.init_demo

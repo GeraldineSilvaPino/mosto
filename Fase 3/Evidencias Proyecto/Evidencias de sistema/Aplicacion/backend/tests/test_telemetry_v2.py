@@ -49,6 +49,16 @@ def send(client, packet, body=None):
                        headers={"X-Mosto-Device-Key": credential["token"]})
 
 
+def test_ph_persisted_and_covered_by_duplicate_check(client, packet):
+    body = dict(packet[0], ph=3.47)
+    response = send(client, packet, body)
+    assert response.status_code == 201 and response.json()["ph"] == 3.47
+    assert send(client, packet, body).status_code == 200
+    assert send(client, packet, dict(body, ph=3.48)).status_code == 409
+    with SessionLocal() as db:
+        assert float(db.query(m.LecturaTelemetria).one().ph) == 3.47
+
+
 def test_physical_ingestion_is_visible_in_history_and_has_no_fake_channels(client, packet):
     response = send(client, packet)
     assert response.status_code == 201, response.text

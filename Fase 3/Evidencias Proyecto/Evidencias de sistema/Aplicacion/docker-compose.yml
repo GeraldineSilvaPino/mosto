@@ -1,87 +1,58 @@
-name: mosto
-# Isolated demo only. Never loads backend/.env or a remote DATABASE_URL.
+name: mosto-operacion
+
+x-api: &api
+  build: ./backend
+  env_file:
+    - ${MOSTO_CONFIG_FILE:-./.env.operacion}
+  environment:
+    MOSTO_ENV: production
+    PGSSLROOTCERT: /run/mosto/ca.crt
+  volumes:
+    - type: bind
+      source: ${MOSTO_CA_FILE:-./supabase-ca.crt}
+      target: /run/mosto/ca.crt
+      read_only: true
+      bind:
+        create_host_path: false
+  restart: unless-stopped
+
 services:
-  mosto-demo-db:
-    image: postgres:16
-    profiles: [demo]
-    environment:
-      POSTGRES_DB: mosto_demo
-      POSTGRES_USER: mosto_demo
-      POSTGRES_PASSWORD: local-demo-only
-    volumes:
-      - mosto_demo_data:/var/lib/postgresql/data
-    healthcheck:
-      test: [CMD-SHELL, pg_isready -U mosto_demo -d mosto_demo]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  init-demo:
-    build: ./backend
-    profiles: [demo]
-    environment: &demo-env
-      MOSTO_ENV: demo
-      DATABASE_URL: postgresql+psycopg2://mosto_demo:local-demo-only@mosto-demo-db:5432/mosto_demo
-      JWT_SECRET_KEY: ${MOSTO_DEMO_JWT_KEY:-e2d583507a248cd3be29557ace1d9edbad565c4e8b2b4db96c9a0ac01cea8aea}
-      MOSTO_SIMULATOR_KEY: ${MOSTO_SIMULATOR_KEY:-8f923f8b2add20b4e1b18510e31889044bf63c20d1835b81b59cbde86c0d6938}
-      MOSTO_DEMO_PASSWORD: ${MOSTO_DEMO_PASSWORD:-DemoPassword123!}
-    depends_on:
-      mosto-demo-db:
-        condition: service_healthy
-    command: python -m scripts.init_demo
-
-  backend:
-    build: ./backend
-    profiles: [demo]
-    ports: [127.0.0.1:8000:8000]
-    environment: *demo-env
-    depends_on:
-      init-demo:
-        condition: service_completed_successfully
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-    healthcheck:
-      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/ready', timeout=3)"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  frontend:
-    build: ./frontend
-    profiles: [demo]
-    ports: [127.0.0.1:5173:5173]
-    environment:
-      VITE_BACKEND_URL: http://backend:8000
-    depends_on:
-      backend:
-        condition: service_healthy
-
   simulator:
     build: ./backend
-    profiles: [simulator, demo]
-    restart: unless-stopped
-    environment:
-      MOSTO_SIMULATOR_KEY: ${MOSTO_SIMULATOR_KEY:-8f923f8b2add20b4e1b18510e31889044bf63c20d1835b81b59cbde86c0d6938}
+    command: python -u -m scripts.simulate_v2 --manifest /fleet/fleet.json --env-file /fleet/device-keys.env --state /state/emitter.sqlite --batch 1
+    restart: on-failure:5
+    volumes:
+      - type: bind
+        source: ./backend/artifacts/flota-operacion
+        target: /fleet
+        read_only: true
+        bind:
+          create_host_path: false
+      - simulator_state:/state
     depends_on:
       backend:
         condition: service_healthy
-    command: python scripts/simulate_esp.py --base-url http://backend:8000 --cuba 1,2,3,4,5 --interval 20 --horas-por-ciclo 0.04 --reanudar --timeout 15
-
-  mosto-test-db:
-    image: postgres:16
-    profiles: [test]
-    environment:
-      POSTGRES_DB: postgres
-      POSTGRES_USER: mosto_test_bootstrap
-      POSTGRES_PASSWORD: local-test-bootstrap-only
-    ports: [127.0.0.1:55433:5432]
-    tmpfs: [/var/lib/postgresql/data]
-    volumes:
-      - ./backend/tests/postgres-init.sql:/docker-entrypoint-initdb.d/010-mosto-test.sql:ro
+  backend:
+    <<: *api
     healthcheck:
-      test: [CMD-SHELL, pg_isready -U mosto_test_bootstrap -d mosto_test]
-      interval: 5s
-      timeout: 3s
-      retries: 20
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 6
+  watchdog:
+    <<: *api
+    command: python -u -m scripts.watchdog --interval-seconds 60
+    depends_on:
+      backend:
+        condition: service_healthy
+  frontend:
+    build: ./frontend
+    ports:
+      - "${MOSTO_BIND_ADDRESS:-127.0.0.1}:${MOSTO_HTTP_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
-  mosto_demo_data:
+  simulator_state:
