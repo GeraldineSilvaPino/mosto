@@ -1,0 +1,30 @@
+{
+  "1": {
+    "version": "emitter-faults-v1",
+    "events": [
+      {"kind": "communication_outage", "start_sequence": 98, "end_sequence": 104},
+      {"kind": "brix_missing", "start_sequence": 98, "end_sequence": 102}
+    ]
+  },
+  "2": {
+    "events": [
+      {"kind": "temperature_missing", "start_sequence": 602, "end_sequence": 608}
+    ]
+  },
+  "3": {
+    "events": [
+      {"kind": "brix_frozen_unflagged", "start_sequence": 1022, "end_sequence": 1046}
+    ]
+  },
+  "4": {
+    "events": [
+      {"kind": "brix_drift_unflagged", "start_sequence": 1442, "end_sequence": 1490, "drift_brix_per_hour": 0.12}
+    ]
+  },
+  "5": {
+    "events": [
+      {"kind": "delivery_delay", "start_sequence": 2102, "end_sequence": 2108, "delay_seconds": 1200},
+      {"kind": "message_loss", "start_sequence": 2108, "end_sequence": 2110}
+    ]
+  }
+}

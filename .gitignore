@@ -3,6 +3,13 @@ node_modules/
 dist/
 dist-ssr/
 *.local
+/.agents/
+/.codex/
+/.impeccable/
+/DESIGN.md
+/PRODUCT.md
+/design.md
+/product.md
 
 # Python y entornos virtuales
 __pycache__/

@@ -1,0 +1,1761 @@
+{
+  "provenance": "Read-only audit snapshot, 2026-11-14; schema only, no rows or credentials",
+  "source_sha256": "5a1947471f17a3f3043b290655a9130408c8430d7233fd5e487712564c30f8b3",
+  "columns": [
+    {
+      "table_name": "ASIGNACION_DISPOSITIVO",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "ASIGNACION_DISPOSITIVO",
+      "column_name": "activo",
+      "data_type": "boolean",
+      "is_nullable": "NO",
+      "column_default": "true"
+    },
+    {
+      "table_name": "ASIGNACION_DISPOSITIVO",
+      "column_name": "dispositivo_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "ASIGNACION_DISPOSITIVO",
+      "column_name": "cuba_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "ASIGNACION_DISPOSITIVO",
+      "column_name": "asignado_en",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "ASIGNACION_DISPOSITIVO",
+      "column_name": "desasignado_en",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "BITACORA_INTERVENCION",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "BITACORA_INTERVENCION",
+      "column_name": "fecha_registro",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "BITACORA_INTERVENCION",
+      "column_name": "tipo_intervencion",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "BITACORA_INTERVENCION",
+      "column_name": "descripcion",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "BITACORA_INTERVENCION",
+      "column_name": "dosis_aplicada",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "BITACORA_INTERVENCION",
+      "column_name": "usuario_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "BITACORA_INTERVENCION",
+      "column_name": "fermentacion_id",
+      "data_type": "bigint",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "BITACORA_INTERVENCION",
+      "column_name": "cuba_id",
+      "data_type": "bigint",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "BODEGA",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "BODEGA",
+      "column_name": "nombre",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "BODEGA",
+      "column_name": "direccion",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "BODEGA",
+      "column_name": "empresa_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "BODEGA",
+      "column_name": "valle_vitivinicola",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "BODEGA",
+      "column_name": "creado_en",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "BODEGA",
+      "column_name": "comuna",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "BODEGA",
+      "column_name": "region",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "CEPA",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "CEPA",
+      "column_name": "tipo_uva",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "CEPA",
+      "column_name": "nombre_variedad",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "'Sin especificar'::character varying"
+    },
+    {
+      "table_name": "CUBA",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "CUBA",
+      "column_name": "codigo",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "CUBA",
+      "column_name": "cap_litros",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "CUBA",
+      "column_name": "sector_cuba",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "CUBA",
+      "column_name": "estado_operativo",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "CUBA",
+      "column_name": "fecha_cuba",
+      "data_type": "date",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "CUBA",
+      "column_name": "bodega_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "CUBA",
+      "column_name": "material_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "DISPOSITIVO",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "DISPOSITIVO",
+      "column_name": "mac_address",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "DISPOSITIVO",
+      "column_name": "tipo_dispositivo",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "DISPOSITIVO",
+      "column_name": "firmware_version",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "DISPOSITIVO",
+      "column_name": "estado",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "DISPOSITIVO",
+      "column_name": "creado_en",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "DISPOSITIVO",
+      "column_name": "empresa_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "DISPOSITIVO",
+      "column_name": "modelo_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "nomb_emp",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "email_emp",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "direccion_emp",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "activo",
+      "data_type": "boolean",
+      "is_nullable": "NO",
+      "column_default": "true"
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "creado_en",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "rut",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": "'76.432.891-K'::character varying"
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "razon_social",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": "'Agrícola y Vitivinícola Santa Emiliana S.A.'::character varying"
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "giro",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": "'Elaboración y Envasado de Vinos y Mostos'::character varying"
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "telefono",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": "'+56 73 245 8890'::character varying"
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "logo_url",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "reporte_diario",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "true"
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "alertas_sms",
+      "data_type": "boolean",
+      "is_nullable": "YES",
+      "column_default": "true"
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "max_cubas",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "column_default": "24"
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "max_usuarios",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "column_default": "15"
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "plan_nombre",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": "'Plan Bodega Industrial'::character varying"
+    },
+    {
+      "table_name": "EMPRESA_CLIENTE",
+      "column_name": "ciclo_facturacion",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": "'Anual (Renovación: Nov 2027)'::character varying"
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "timestamp",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "tipo_alerta",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "severidad",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "met_dispar",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "valor_registrado",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "valor_limite",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "mensaje",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "estado",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "fecha_atencion",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "resolucion_nota",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "dispositivo_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "atendida_por",
+      "data_type": "bigint",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "fermentacion_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "fecha_resolucion",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "nota_atencion",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "EVENTO_ALERTA",
+      "column_name": "nota_resolucion",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "LECTURA_TELEMETRIA",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "LECTURA_TELEMETRIA",
+      "column_name": "timestamp",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "LECTURA_TELEMETRIA",
+      "column_name": "temp_mosto",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "LECTURA_TELEMETRIA",
+      "column_name": "temp_ambiente",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "LECTURA_TELEMETRIA",
+      "column_name": "densidad_sg",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "LECTURA_TELEMETRIA",
+      "column_name": "brix",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "LECTURA_TELEMETRIA",
+      "column_name": "ph",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "LECTURA_TELEMETRIA",
+      "column_name": "origen_dato",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "LECTURA_TELEMETRIA",
+      "column_name": "dispositivo_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "LECTURA_TELEMETRIA",
+      "column_name": "lectura_valida",
+      "data_type": "boolean",
+      "is_nullable": "NO",
+      "column_default": "true"
+    },
+    {
+      "table_name": "LECTURA_TELEMETRIA",
+      "column_name": "fermentacion_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "MODELO_DISPOSITIVO",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "MODELO_DISPOSITIVO",
+      "column_name": "marca",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "MODELO_DISPOSITIVO",
+      "column_name": "modelo",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "MODELO_DISPOSITIVO",
+      "column_name": "arquitectura",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "'ESP32'::character varying"
+    },
+    {
+      "table_name": "MODELO_DISPOSITIVO",
+      "column_name": "version_hardware",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PERFIL_FERMENTACION",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PERFIL_FERMENTACION",
+      "column_name": "nomb_perfil",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PERFIL_FERMENTACION",
+      "column_name": "temp_min",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PERFIL_FERMENTACION",
+      "column_name": "temp_max",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PERFIL_FERMENTACION",
+      "column_name": "brix_caida_min_dia",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PERFIL_FERMENTACION",
+      "column_name": "ph_min",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PERFIL_FERMENTACION",
+      "column_name": "ph_max",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PERFIL_FERMENTACION",
+      "column_name": "activo",
+      "data_type": "boolean",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PERFIL_FERMENTACION",
+      "column_name": "bodega_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PERFIL_FERMENTACION",
+      "column_name": "cepa_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PROCESO_FERMENTACION",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PROCESO_FERMENTACION",
+      "column_name": "cuba_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PROCESO_FERMENTACION",
+      "column_name": "volumen_litros",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PROCESO_FERMENTACION",
+      "column_name": "brix_inicial",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PROCESO_FERMENTACION",
+      "column_name": "brix_objetivo",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PROCESO_FERMENTACION",
+      "column_name": "densidad_inicial_sg",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PROCESO_FERMENTACION",
+      "column_name": "estado",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": "'en_proceso'::character varying"
+    },
+    {
+      "table_name": "PROCESO_FERMENTACION",
+      "column_name": "fecha_inicio",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "PROCESO_FERMENTACION",
+      "column_name": "fecha_estimada_fin",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "PROCESO_FERMENTACION",
+      "column_name": "fecha_real_fin",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "PROCESO_FERMENTACION",
+      "column_name": "creado_en",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "PROCESO_FERMENTACION",
+      "column_name": "perfil_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "ROL",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "ROL",
+      "column_name": "descripcion",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "ROL",
+      "column_name": "codigo",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "TELEMETRIA_ESTADO_NODO",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "TELEMETRIA_ESTADO_NODO",
+      "column_name": "timestamp",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "TELEMETRIA_ESTADO_NODO",
+      "column_name": "bateria_pct",
+      "data_type": "smallint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "TELEMETRIA_ESTADO_NODO",
+      "column_name": "bateria_volt",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "TELEMETRIA_ESTADO_NODO",
+      "column_name": "rssi_dbm",
+      "data_type": "smallint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "TELEMETRIA_ESTADO_NODO",
+      "column_name": "estado_red",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "TELEMETRIA_ESTADO_NODO",
+      "column_name": "dispositivo_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "TIPO_MATERIAL_CUBA",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "TIPO_MATERIAL_CUBA",
+      "column_name": "nombre",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "UMBRAL_FERMENTACION",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "UMBRAL_FERMENTACION",
+      "column_name": "temp_min",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "UMBRAL_FERMENTACION",
+      "column_name": "temp_max",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "UMBRAL_FERMENTACION",
+      "column_name": "brix_caida_min_dia",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "UMBRAL_FERMENTACION",
+      "column_name": "ph_min",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "UMBRAL_FERMENTACION",
+      "column_name": "ph_max",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "UMBRAL_FERMENTACION",
+      "column_name": "actualizado_en",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "UMBRAL_FERMENTACION",
+      "column_name": "establecido_por",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "UMBRAL_FERMENTACION",
+      "column_name": "fermentacion_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "USUARIO",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "USUARIO",
+      "column_name": "nomb_compl",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "USUARIO",
+      "column_name": "correo_elec",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "USUARIO",
+      "column_name": "telefono",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "USUARIO",
+      "column_name": "activo",
+      "data_type": "boolean",
+      "is_nullable": "NO",
+      "column_default": "true"
+    },
+    {
+      "table_name": "USUARIO",
+      "column_name": "creado_en",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "USUARIO",
+      "column_name": "auth_uid",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "USUARIO",
+      "column_name": "empresa_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "USUARIO",
+      "column_name": "password_hash",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "USUARIO",
+      "column_name": "rol",
+      "data_type": "character varying",
+      "is_nullable": "YES",
+      "column_default": "'operador'::character varying"
+    },
+    {
+      "table_name": "USUARIO_BODEGA",
+      "column_name": "usuario_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "USUARIO_BODEGA",
+      "column_name": "asignado_en",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "table_name": "USUARIO_BODEGA",
+      "column_name": "bodega_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "USUARIO_BODEGA",
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "USUARIO_BODEGA",
+      "column_name": "rol_id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "table_name": "v_umbral_efectivo",
+      "column_name": "fermentacion_id",
+      "data_type": "bigint",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "v_umbral_efectivo",
+      "column_name": "temp_min",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "v_umbral_efectivo",
+      "column_name": "temp_max",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "v_umbral_efectivo",
+      "column_name": "brix_caida_min_dia",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "v_umbral_efectivo",
+      "column_name": "ph_min",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "v_umbral_efectivo",
+      "column_name": "ph_max",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "table_name": "v_umbral_efectivo",
+      "column_name": "origen",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null
+    }
+  ],
+  "constraints": [
+    {
+      "tabla": "\"ASIGNACION_DISPOSITIVO\"",
+      "conname": "ASIGNACION_DISPOSITIVO_cuba_id_fkey",
+      "definition": "FOREIGN KEY (cuba_id) REFERENCES \"CUBA\"(id)"
+    },
+    {
+      "tabla": "\"ASIGNACION_DISPOSITIVO\"",
+      "conname": "ASIGNACION_DISPOSITIVO_dispositivo_id_fkey",
+      "definition": "FOREIGN KEY (dispositivo_id) REFERENCES \"DISPOSITIVO\"(id)"
+    },
+    {
+      "tabla": "\"ASIGNACION_DISPOSITIVO\"",
+      "conname": "ASIGNACION_DISPOSITIVO_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"BITACORA_INTERVENCION\"",
+      "conname": "BITACORA_INTERVENCION_fermentacion_id_fkey",
+      "definition": "FOREIGN KEY (fermentacion_id) REFERENCES \"PROCESO_FERMENTACION\"(id) ON DELETE RESTRICT"
+    },
+    {
+      "tabla": "\"BITACORA_INTERVENCION\"",
+      "conname": "BITACORA_INTERVENCION_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"BITACORA_INTERVENCION\"",
+      "conname": "BITACORA_INTERVENCION_usuario_id_fkey",
+      "definition": "FOREIGN KEY (usuario_id) REFERENCES \"USUARIO\"(id)"
+    },
+    {
+      "tabla": "\"BODEGA\"",
+      "conname": "BODEGA_empresa_id_fkey",
+      "definition": "FOREIGN KEY (empresa_id) REFERENCES \"EMPRESA_CLIENTE\"(id)"
+    },
+    {
+      "tabla": "\"BODEGA\"",
+      "conname": "BODEGA_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"CEPA\"",
+      "conname": "CEPA_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"CUBA\"",
+      "conname": "CUBA_bodega_id_fkey",
+      "definition": "FOREIGN KEY (bodega_id) REFERENCES \"BODEGA\"(id)"
+    },
+    {
+      "tabla": "\"CUBA\"",
+      "conname": "CUBA_material_id_fkey",
+      "definition": "FOREIGN KEY (material_id) REFERENCES \"TIPO_MATERIAL_CUBA\"(id)"
+    },
+    {
+      "tabla": "\"CUBA\"",
+      "conname": "CUBA_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"DISPOSITIVO\"",
+      "conname": "DISPOSITIVO_empresa_id_fkey",
+      "definition": "FOREIGN KEY (empresa_id) REFERENCES \"EMPRESA_CLIENTE\"(id)"
+    },
+    {
+      "tabla": "\"DISPOSITIVO\"",
+      "conname": "DISPOSITIVO_modelo_id_fkey",
+      "definition": "FOREIGN KEY (modelo_id) REFERENCES \"MODELO_DISPOSITIVO\"(id)"
+    },
+    {
+      "tabla": "\"DISPOSITIVO\"",
+      "conname": "DISPOSITIVO_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"EMPRESA_CLIENTE\"",
+      "conname": "EMPRESA_CLIENTE_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"EVENTO_ALERTA\"",
+      "conname": "EVENTO_ALERTA_atendida_por_fkey",
+      "definition": "FOREIGN KEY (atendida_por) REFERENCES \"USUARIO\"(id)"
+    },
+    {
+      "tabla": "\"EVENTO_ALERTA\"",
+      "conname": "EVENTO_ALERTA_dispositivo_id_fkey",
+      "definition": "FOREIGN KEY (dispositivo_id) REFERENCES \"DISPOSITIVO\"(id)"
+    },
+    {
+      "tabla": "\"EVENTO_ALERTA\"",
+      "conname": "EVENTO_ALERTA_fermentacion_id_fkey",
+      "definition": "FOREIGN KEY (fermentacion_id) REFERENCES \"PROCESO_FERMENTACION\"(id) ON DELETE RESTRICT"
+    },
+    {
+      "tabla": "\"EVENTO_ALERTA\"",
+      "conname": "EVENTO_ALERTA_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"LECTURA_TELEMETRIA\"",
+      "conname": "LECTURA_TELEMETRIA_dispositivo_id_fkey",
+      "definition": "FOREIGN KEY (dispositivo_id) REFERENCES \"DISPOSITIVO\"(id)"
+    },
+    {
+      "tabla": "\"LECTURA_TELEMETRIA\"",
+      "conname": "LECTURA_TELEMETRIA_fermentacion_id_fkey",
+      "definition": "FOREIGN KEY (fermentacion_id) REFERENCES \"PROCESO_FERMENTACION\"(id) ON DELETE RESTRICT"
+    },
+    {
+      "tabla": "\"LECTURA_TELEMETRIA\"",
+      "conname": "LECTURA_TELEMETRIA_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"MODELO_DISPOSITIVO\"",
+      "conname": "MODELO_DISPOSITIVO_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"PERFIL_FERMENTACION\"",
+      "conname": "PERFIL_FERMENTACION_bodega_id_fkey",
+      "definition": "FOREIGN KEY (bodega_id) REFERENCES \"BODEGA\"(id)"
+    },
+    {
+      "tabla": "\"PERFIL_FERMENTACION\"",
+      "conname": "PERFIL_FERMENTACION_cepa_id_fkey",
+      "definition": "FOREIGN KEY (cepa_id) REFERENCES \"CEPA\"(id)"
+    },
+    {
+      "tabla": "\"PERFIL_FERMENTACION\"",
+      "conname": "PERFIL_FERMENTACION_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"PROCESO_FERMENTACION\"",
+      "conname": "PROCESO_FERMENTACION_cuba_id_fkey",
+      "definition": "FOREIGN KEY (cuba_id) REFERENCES \"CUBA\"(id) ON DELETE RESTRICT"
+    },
+    {
+      "tabla": "\"PROCESO_FERMENTACION\"",
+      "conname": "PROCESO_FERMENTACION_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"ROL\"",
+      "conname": "ROL_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"TELEMETRIA_ESTADO_NODO\"",
+      "conname": "TELEMETRIA_ESTADO_NODO_dispositivo_id_fkey",
+      "definition": "FOREIGN KEY (dispositivo_id) REFERENCES \"DISPOSITIVO\"(id)"
+    },
+    {
+      "tabla": "\"TELEMETRIA_ESTADO_NODO\"",
+      "conname": "TELEMETRIA_ESTADO_NODO_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"TIPO_MATERIAL_CUBA\"",
+      "conname": "TIPO_MATERIAL_CUBA_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"UMBRAL_FERMENTACION\"",
+      "conname": "UMBRAL_FERMENTACION_establecido_por_fkey",
+      "definition": "FOREIGN KEY (establecido_por) REFERENCES \"USUARIO\"(id) ON DELETE RESTRICT"
+    },
+    {
+      "tabla": "\"UMBRAL_FERMENTACION\"",
+      "conname": "UMBRAL_FERMENTACION_fermentacion_id_fkey",
+      "definition": "FOREIGN KEY (fermentacion_id) REFERENCES \"PROCESO_FERMENTACION\"(id) ON DELETE RESTRICT"
+    },
+    {
+      "tabla": "\"UMBRAL_FERMENTACION\"",
+      "conname": "UMBRAL_FERMENTACION_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"USUARIO_BODEGA\"",
+      "conname": "USUARIO_BODEGA_bodega_id_fkey",
+      "definition": "FOREIGN KEY (bodega_id) REFERENCES \"BODEGA\"(id) ON DELETE CASCADE"
+    },
+    {
+      "tabla": "\"USUARIO_BODEGA\"",
+      "conname": "USUARIO_BODEGA_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"USUARIO_BODEGA\"",
+      "conname": "USUARIO_BODEGA_rol_id_fkey",
+      "definition": "FOREIGN KEY (rol_id) REFERENCES \"ROL\"(id)"
+    },
+    {
+      "tabla": "\"USUARIO_BODEGA\"",
+      "conname": "USUARIO_BODEGA_usuario_id_fkey",
+      "definition": "FOREIGN KEY (usuario_id) REFERENCES \"USUARIO\"(id) ON DELETE CASCADE"
+    },
+    {
+      "tabla": "\"USUARIO\"",
+      "conname": "USUARIO_auth_uid_fkey",
+      "definition": "FOREIGN KEY (auth_uid) REFERENCES auth.users(id) ON DELETE CASCADE"
+    },
+    {
+      "tabla": "\"USUARIO\"",
+      "conname": "USUARIO_auth_uid_key",
+      "definition": "UNIQUE (auth_uid)"
+    },
+    {
+      "tabla": "\"USUARIO\"",
+      "conname": "USUARIO_empresa_id_fkey",
+      "definition": "FOREIGN KEY (empresa_id) REFERENCES \"EMPRESA_CLIENTE\"(id)"
+    },
+    {
+      "tabla": "\"USUARIO\"",
+      "conname": "USUARIO_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "tabla": "\"EVENTO_ALERTA\"",
+      "conname": "ck_alerta_atencion",
+      "definition": "CHECK (((atendida_por IS NULL) = (fecha_atencion IS NULL)))"
+    },
+    {
+      "tabla": "\"EVENTO_ALERTA\"",
+      "conname": "ck_alerta_estado",
+      "definition": "CHECK (((estado)::text = ANY ((ARRAY['pendiente'::character varying, 'atendida'::character varying, 'resuelta'::character varying])::text[])))"
+    },
+    {
+      "tabla": "\"EVENTO_ALERTA\"",
+      "conname": "ck_alerta_severidad",
+      "definition": "CHECK (((severidad)::text = ANY ((ARRAY['baja'::character varying, 'media'::character varying, 'alta'::character varying, 'critica'::character varying])::text[])))"
+    },
+    {
+      "tabla": "\"ASIGNACION_DISPOSITIVO\"",
+      "conname": "ck_asignacion_activo",
+      "definition": "CHECK ((activo = (desasignado_en IS NULL)))"
+    },
+    {
+      "tabla": "\"ASIGNACION_DISPOSITIVO\"",
+      "conname": "ck_asignacion_fechas",
+      "definition": "CHECK (((desasignado_en IS NULL) OR (desasignado_en > asignado_en)))"
+    },
+    {
+      "tabla": "\"CUBA\"",
+      "conname": "ck_cuba_estado",
+      "definition": "CHECK (((estado_operativo)::text = ANY ((ARRAY['disponible'::character varying, 'en_uso'::character varying, 'mantencion'::character varying, 'fuera_servicio'::character varying])::text[])))"
+    },
+    {
+      "tabla": "\"DISPOSITIVO\"",
+      "conname": "ck_dispositivo_estado",
+      "definition": "CHECK (((estado)::text = ANY ((ARRAY['activo'::character varying, 'inactivo'::character varying, 'mantencion'::character varying])::text[])))"
+    },
+    {
+      "tabla": "\"LECTURA_TELEMETRIA\"",
+      "conname": "ck_lectura_brix",
+      "definition": "CHECK ((brix >= (0)::numeric))"
+    },
+    {
+      "tabla": "\"LECTURA_TELEMETRIA\"",
+      "conname": "ck_lectura_ph",
+      "definition": "CHECK (((ph >= (0)::numeric) AND (ph <= (14)::numeric)))"
+    },
+    {
+      "tabla": "\"TELEMETRIA_ESTADO_NODO\"",
+      "conname": "ck_nodo_bateria",
+      "definition": "CHECK (((bateria_pct >= 0) AND (bateria_pct <= 100)))"
+    },
+    {
+      "tabla": "\"TELEMETRIA_ESTADO_NODO\"",
+      "conname": "ck_nodo_rssi",
+      "definition": "CHECK ((rssi_dbm <= 0))"
+    },
+    {
+      "tabla": "\"PERFIL_FERMENTACION\"",
+      "conname": "ck_perfil_ph",
+      "definition": "CHECK (((ph_min IS NULL) OR (ph_max IS NULL) OR (ph_min <= ph_max)))"
+    },
+    {
+      "tabla": "\"PERFIL_FERMENTACION\"",
+      "conname": "ck_perfil_ph_rango",
+      "definition": "CHECK ((((ph_min IS NULL) OR ((ph_min >= (0)::numeric) AND (ph_min <= (14)::numeric))) AND ((ph_max IS NULL) OR ((ph_max >= (0)::numeric) AND (ph_max <= (14)::numeric)))))"
+    },
+    {
+      "tabla": "\"PERFIL_FERMENTACION\"",
+      "conname": "ck_perfil_temp",
+      "definition": "CHECK (((temp_min IS NULL) OR (temp_max IS NULL) OR (temp_min <= temp_max)))"
+    },
+    {
+      "tabla": "\"PROCESO_FERMENTACION\"",
+      "conname": "ck_proceso_estado",
+      "definition": "CHECK (((estado)::text = ANY ((ARRAY['en_proceso'::character varying, 'finalizada'::character varying, 'detenida'::character varying, 'cancelada'::character varying])::text[])))"
+    },
+    {
+      "tabla": "\"PROCESO_FERMENTACION\"",
+      "conname": "ck_proceso_fechas",
+      "definition": "CHECK (((fecha_real_fin IS NULL) OR (fecha_real_fin > fecha_inicio)))"
+    },
+    {
+      "tabla": "\"UMBRAL_FERMENTACION\"",
+      "conname": "ck_umbral_ph",
+      "definition": "CHECK (((ph_min IS NULL) OR (ph_max IS NULL) OR (ph_min <= ph_max)))"
+    },
+    {
+      "tabla": "\"UMBRAL_FERMENTACION\"",
+      "conname": "ck_umbral_ph_rango",
+      "definition": "CHECK ((((ph_min >= (0)::numeric) AND (ph_min <= (14)::numeric)) AND ((ph_max >= (0)::numeric) AND (ph_max <= (14)::numeric))))"
+    },
+    {
+      "tabla": "\"UMBRAL_FERMENTACION\"",
+      "conname": "ck_umbral_temp",
+      "definition": "CHECK (((temp_min IS NULL) OR (temp_max IS NULL) OR (temp_min <= temp_max)))"
+    },
+    {
+      "tabla": "\"PROCESO_FERMENTACION\"",
+      "conname": "fk_proceso_perfil",
+      "definition": "FOREIGN KEY (perfil_id) REFERENCES \"PERFIL_FERMENTACION\"(id)"
+    },
+    {
+      "tabla": "\"BODEGA\"",
+      "conname": "uq_bodega_empresa_nombre",
+      "definition": "UNIQUE (empresa_id, nombre)"
+    },
+    {
+      "tabla": "\"CEPA\"",
+      "conname": "uq_cepa_variedad",
+      "definition": "UNIQUE (nombre_variedad)"
+    },
+    {
+      "tabla": "\"DISPOSITIVO\"",
+      "conname": "uq_dispositivo_mac",
+      "definition": "UNIQUE (mac_address)"
+    },
+    {
+      "tabla": "\"EMPRESA_CLIENTE\"",
+      "conname": "uq_empresa_nombre",
+      "definition": "UNIQUE (nomb_emp)"
+    },
+    {
+      "tabla": "\"TELEMETRIA_ESTADO_NODO\"",
+      "conname": "uq_estado_nodo_instante",
+      "definition": "UNIQUE (dispositivo_id, \"timestamp\")"
+    },
+    {
+      "tabla": "\"LECTURA_TELEMETRIA\"",
+      "conname": "uq_lectura_dispositivo_instante",
+      "definition": "UNIQUE (dispositivo_id, \"timestamp\")"
+    },
+    {
+      "tabla": "\"MODELO_DISPOSITIVO\"",
+      "conname": "uq_modelo_dispositivo",
+      "definition": "UNIQUE (marca, modelo, version_hardware)"
+    },
+    {
+      "tabla": "\"PERFIL_FERMENTACION\"",
+      "conname": "uq_perfil_bodega_cepa_nombre",
+      "definition": "UNIQUE (bodega_id, cepa_id, nomb_perfil)"
+    },
+    {
+      "tabla": "\"ROL\"",
+      "conname": "uq_rol_codigo",
+      "definition": "UNIQUE (codigo)"
+    },
+    {
+      "tabla": "\"TIPO_MATERIAL_CUBA\"",
+      "conname": "uq_tipo_material_nombre",
+      "definition": "UNIQUE (nombre)"
+    },
+    {
+      "tabla": "\"UMBRAL_FERMENTACION\"",
+      "conname": "uq_umbral_fermentacion",
+      "definition": "UNIQUE (fermentacion_id)"
+    },
+    {
+      "tabla": "\"USUARIO_BODEGA\"",
+      "conname": "uq_usuario_bodega",
+      "definition": "UNIQUE (usuario_id, bodega_id)"
+    }
+  ],
+  "indexes": [
+    {
+      "tablename": "PERFIL_FERMENTACION",
+      "indexname": "PERFIL_FERMENTACION_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"PERFIL_FERMENTACION_pkey\" ON public.\"PERFIL_FERMENTACION\" USING btree (id)"
+    },
+    {
+      "tablename": "PERFIL_FERMENTACION",
+      "indexname": "ix_perfil_fermentacion_cepa_id",
+      "indexdef": "CREATE INDEX ix_perfil_fermentacion_cepa_id ON public.\"PERFIL_FERMENTACION\" USING btree (cepa_id)"
+    },
+    {
+      "tablename": "PERFIL_FERMENTACION",
+      "indexname": "uq_perfil_bodega_cepa_nombre",
+      "indexdef": "CREATE UNIQUE INDEX uq_perfil_bodega_cepa_nombre ON public.\"PERFIL_FERMENTACION\" USING btree (bodega_id, cepa_id, nomb_perfil)"
+    },
+    {
+      "tablename": "ASIGNACION_DISPOSITIVO",
+      "indexname": "ix_asignacion_dispositivo_dispositivo_id",
+      "indexdef": "CREATE INDEX ix_asignacion_dispositivo_dispositivo_id ON public.\"ASIGNACION_DISPOSITIVO\" USING btree (dispositivo_id)"
+    },
+    {
+      "tablename": "ASIGNACION_DISPOSITIVO",
+      "indexname": "ASIGNACION_DISPOSITIVO_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"ASIGNACION_DISPOSITIVO_pkey\" ON public.\"ASIGNACION_DISPOSITIVO\" USING btree (id)"
+    },
+    {
+      "tablename": "ASIGNACION_DISPOSITIVO",
+      "indexname": "idx_dispositivo_activo_unico",
+      "indexdef": "CREATE UNIQUE INDEX idx_dispositivo_activo_unico ON public.\"ASIGNACION_DISPOSITIVO\" USING btree (dispositivo_id) WHERE (activo = true)"
+    },
+    {
+      "tablename": "ASIGNACION_DISPOSITIVO",
+      "indexname": "ix_asignacion_dispositivo_cuba_id",
+      "indexdef": "CREATE INDEX ix_asignacion_dispositivo_cuba_id ON public.\"ASIGNACION_DISPOSITIVO\" USING btree (cuba_id)"
+    },
+    {
+      "tablename": "EMPRESA_CLIENTE",
+      "indexname": "EMPRESA_CLIENTE_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"EMPRESA_CLIENTE_pkey\" ON public.\"EMPRESA_CLIENTE\" USING btree (id)"
+    },
+    {
+      "tablename": "EMPRESA_CLIENTE",
+      "indexname": "uq_empresa_nombre",
+      "indexdef": "CREATE UNIQUE INDEX uq_empresa_nombre ON public.\"EMPRESA_CLIENTE\" USING btree (nomb_emp)"
+    },
+    {
+      "tablename": "BITACORA_INTERVENCION",
+      "indexname": "ix_bitacora_intervencion_fermentacion_id",
+      "indexdef": "CREATE INDEX ix_bitacora_intervencion_fermentacion_id ON public.\"BITACORA_INTERVENCION\" USING btree (fermentacion_id)"
+    },
+    {
+      "tablename": "BITACORA_INTERVENCION",
+      "indexname": "ix_bitacora_intervencion_usuario_id",
+      "indexdef": "CREATE INDEX ix_bitacora_intervencion_usuario_id ON public.\"BITACORA_INTERVENCION\" USING btree (usuario_id)"
+    },
+    {
+      "tablename": "BITACORA_INTERVENCION",
+      "indexname": "BITACORA_INTERVENCION_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"BITACORA_INTERVENCION_pkey\" ON public.\"BITACORA_INTERVENCION\" USING btree (id)"
+    },
+    {
+      "tablename": "EVENTO_ALERTA",
+      "indexname": "EVENTO_ALERTA_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"EVENTO_ALERTA_pkey\" ON public.\"EVENTO_ALERTA\" USING btree (id)"
+    },
+    {
+      "tablename": "EVENTO_ALERTA",
+      "indexname": "ix_evento_alerta_atendida_por",
+      "indexdef": "CREATE INDEX ix_evento_alerta_atendida_por ON public.\"EVENTO_ALERTA\" USING btree (atendida_por)"
+    },
+    {
+      "tablename": "EVENTO_ALERTA",
+      "indexname": "ix_evento_alerta_dispositivo_id",
+      "indexdef": "CREATE INDEX ix_evento_alerta_dispositivo_id ON public.\"EVENTO_ALERTA\" USING btree (dispositivo_id)"
+    },
+    {
+      "tablename": "EVENTO_ALERTA",
+      "indexname": "ix_evento_alerta_fermentacion_id",
+      "indexdef": "CREATE INDEX ix_evento_alerta_fermentacion_id ON public.\"EVENTO_ALERTA\" USING btree (fermentacion_id)"
+    },
+    {
+      "tablename": "MODELO_DISPOSITIVO",
+      "indexname": "MODELO_DISPOSITIVO_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"MODELO_DISPOSITIVO_pkey\" ON public.\"MODELO_DISPOSITIVO\" USING btree (id)"
+    },
+    {
+      "tablename": "MODELO_DISPOSITIVO",
+      "indexname": "uq_modelo_dispositivo",
+      "indexdef": "CREATE UNIQUE INDEX uq_modelo_dispositivo ON public.\"MODELO_DISPOSITIVO\" USING btree (marca, modelo, version_hardware)"
+    },
+    {
+      "tablename": "TIPO_MATERIAL_CUBA",
+      "indexname": "TIPO_MATERIAL_CUBA_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"TIPO_MATERIAL_CUBA_pkey\" ON public.\"TIPO_MATERIAL_CUBA\" USING btree (id)"
+    },
+    {
+      "tablename": "TIPO_MATERIAL_CUBA",
+      "indexname": "uq_tipo_material_nombre",
+      "indexdef": "CREATE UNIQUE INDEX uq_tipo_material_nombre ON public.\"TIPO_MATERIAL_CUBA\" USING btree (nombre)"
+    },
+    {
+      "tablename": "DISPOSITIVO",
+      "indexname": "DISPOSITIVO_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"DISPOSITIVO_pkey\" ON public.\"DISPOSITIVO\" USING btree (id)"
+    },
+    {
+      "tablename": "DISPOSITIVO",
+      "indexname": "ix_dispositivo_empresa_id",
+      "indexdef": "CREATE INDEX ix_dispositivo_empresa_id ON public.\"DISPOSITIVO\" USING btree (empresa_id)"
+    },
+    {
+      "tablename": "DISPOSITIVO",
+      "indexname": "ix_dispositivo_modelo_id",
+      "indexdef": "CREATE INDEX ix_dispositivo_modelo_id ON public.\"DISPOSITIVO\" USING btree (modelo_id)"
+    },
+    {
+      "tablename": "DISPOSITIVO",
+      "indexname": "uq_dispositivo_mac",
+      "indexdef": "CREATE UNIQUE INDEX uq_dispositivo_mac ON public.\"DISPOSITIVO\" USING btree (mac_address)"
+    },
+    {
+      "tablename": "USUARIO_BODEGA",
+      "indexname": "USUARIO_BODEGA_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"USUARIO_BODEGA_pkey\" ON public.\"USUARIO_BODEGA\" USING btree (id)"
+    },
+    {
+      "tablename": "USUARIO_BODEGA",
+      "indexname": "uq_usuario_bodega",
+      "indexdef": "CREATE UNIQUE INDEX uq_usuario_bodega ON public.\"USUARIO_BODEGA\" USING btree (usuario_id, bodega_id)"
+    },
+    {
+      "tablename": "USUARIO_BODEGA",
+      "indexname": "ix_usuario_bodega_bodega_id",
+      "indexdef": "CREATE INDEX ix_usuario_bodega_bodega_id ON public.\"USUARIO_BODEGA\" USING btree (bodega_id)"
+    },
+    {
+      "tablename": "USUARIO_BODEGA",
+      "indexname": "ix_usuario_bodega_rol_id",
+      "indexdef": "CREATE INDEX ix_usuario_bodega_rol_id ON public.\"USUARIO_BODEGA\" USING btree (rol_id)"
+    },
+    {
+      "tablename": "TELEMETRIA_ESTADO_NODO",
+      "indexname": "TELEMETRIA_ESTADO_NODO_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"TELEMETRIA_ESTADO_NODO_pkey\" ON public.\"TELEMETRIA_ESTADO_NODO\" USING btree (id)"
+    },
+    {
+      "tablename": "TELEMETRIA_ESTADO_NODO",
+      "indexname": "uq_estado_nodo_instante",
+      "indexdef": "CREATE UNIQUE INDEX uq_estado_nodo_instante ON public.\"TELEMETRIA_ESTADO_NODO\" USING btree (dispositivo_id, \"timestamp\")"
+    },
+    {
+      "tablename": "ROL",
+      "indexname": "ROL_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"ROL_pkey\" ON public.\"ROL\" USING btree (id)"
+    },
+    {
+      "tablename": "ROL",
+      "indexname": "uq_rol_codigo",
+      "indexdef": "CREATE UNIQUE INDEX uq_rol_codigo ON public.\"ROL\" USING btree (codigo)"
+    },
+    {
+      "tablename": "CEPA",
+      "indexname": "CEPA_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"CEPA_pkey\" ON public.\"CEPA\" USING btree (id)"
+    },
+    {
+      "tablename": "CEPA",
+      "indexname": "uq_cepa_variedad",
+      "indexdef": "CREATE UNIQUE INDEX uq_cepa_variedad ON public.\"CEPA\" USING btree (nombre_variedad)"
+    },
+    {
+      "tablename": "PROCESO_FERMENTACION",
+      "indexname": "PROCESO_FERMENTACION_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"PROCESO_FERMENTACION_pkey\" ON public.\"PROCESO_FERMENTACION\" USING btree (id)"
+    },
+    {
+      "tablename": "PROCESO_FERMENTACION",
+      "indexname": "idx_cuba_proceso_activo_unico",
+      "indexdef": "CREATE UNIQUE INDEX idx_cuba_proceso_activo_unico ON public.\"PROCESO_FERMENTACION\" USING btree (cuba_id) WHERE ((estado)::text = 'en_proceso'::text)"
+    },
+    {
+      "tablename": "PROCESO_FERMENTACION",
+      "indexname": "ix_proceso_fermentacion_cuba_id",
+      "indexdef": "CREATE INDEX ix_proceso_fermentacion_cuba_id ON public.\"PROCESO_FERMENTACION\" USING btree (cuba_id)"
+    },
+    {
+      "tablename": "PROCESO_FERMENTACION",
+      "indexname": "ix_proceso_fermentacion_perfil_id",
+      "indexdef": "CREATE INDEX ix_proceso_fermentacion_perfil_id ON public.\"PROCESO_FERMENTACION\" USING btree (perfil_id)"
+    },
+    {
+      "tablename": "CUBA",
+      "indexname": "uq_cuba_bodega_codigo",
+      "indexdef": "CREATE UNIQUE INDEX uq_cuba_bodega_codigo ON public.\"CUBA\" USING btree (bodega_id, codigo)"
+    },
+    {
+      "tablename": "CUBA",
+      "indexname": "CUBA_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"CUBA_pkey\" ON public.\"CUBA\" USING btree (id)"
+    },
+    {
+      "tablename": "CUBA",
+      "indexname": "ix_cuba_material_id",
+      "indexdef": "CREATE INDEX ix_cuba_material_id ON public.\"CUBA\" USING btree (material_id)"
+    },
+    {
+      "tablename": "UMBRAL_FERMENTACION",
+      "indexname": "UMBRAL_FERMENTACION_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"UMBRAL_FERMENTACION_pkey\" ON public.\"UMBRAL_FERMENTACION\" USING btree (id)"
+    },
+    {
+      "tablename": "UMBRAL_FERMENTACION",
+      "indexname": "ix_umbral_fermentacion_establecido_por",
+      "indexdef": "CREATE INDEX ix_umbral_fermentacion_establecido_por ON public.\"UMBRAL_FERMENTACION\" USING btree (establecido_por)"
+    },
+    {
+      "tablename": "UMBRAL_FERMENTACION",
+      "indexname": "uq_umbral_fermentacion",
+      "indexdef": "CREATE UNIQUE INDEX uq_umbral_fermentacion ON public.\"UMBRAL_FERMENTACION\" USING btree (fermentacion_id)"
+    },
+    {
+      "tablename": "USUARIO",
+      "indexname": "USUARIO_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"USUARIO_pkey\" ON public.\"USUARIO\" USING btree (id)"
+    },
+    {
+      "tablename": "USUARIO",
+      "indexname": "uq_usuario_correo",
+      "indexdef": "CREATE UNIQUE INDEX uq_usuario_correo ON public.\"USUARIO\" USING btree (lower((correo_elec)::text))"
+    },
+    {
+      "tablename": "USUARIO",
+      "indexname": "USUARIO_auth_uid_key",
+      "indexdef": "CREATE UNIQUE INDEX \"USUARIO_auth_uid_key\" ON public.\"USUARIO\" USING btree (auth_uid)"
+    },
+    {
+      "tablename": "USUARIO",
+      "indexname": "ix_usuario_empresa_id",
+      "indexdef": "CREATE INDEX ix_usuario_empresa_id ON public.\"USUARIO\" USING btree (empresa_id)"
+    },
+    {
+      "tablename": "LECTURA_TELEMETRIA",
+      "indexname": "LECTURA_TELEMETRIA_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"LECTURA_TELEMETRIA_pkey\" ON public.\"LECTURA_TELEMETRIA\" USING btree (id)"
+    },
+    {
+      "tablename": "LECTURA_TELEMETRIA",
+      "indexname": "uq_lectura_dispositivo_instante",
+      "indexdef": "CREATE UNIQUE INDEX uq_lectura_dispositivo_instante ON public.\"LECTURA_TELEMETRIA\" USING btree (dispositivo_id, \"timestamp\")"
+    },
+    {
+      "tablename": "LECTURA_TELEMETRIA",
+      "indexname": "ix_lectura_fermentacion_tiempo",
+      "indexdef": "CREATE INDEX ix_lectura_fermentacion_tiempo ON public.\"LECTURA_TELEMETRIA\" USING btree (fermentacion_id, \"timestamp\")"
+    },
+    {
+      "tablename": "BODEGA",
+      "indexname": "BODEGA_pkey",
+      "indexdef": "CREATE UNIQUE INDEX \"BODEGA_pkey\" ON public.\"BODEGA\" USING btree (id)"
+    },
+    {
+      "tablename": "BODEGA",
+      "indexname": "uq_bodega_empresa_nombre",
+      "indexdef": "CREATE UNIQUE INDEX uq_bodega_empresa_nombre ON public.\"BODEGA\" USING btree (empresa_id, nombre)"
+    }
+  ],
+  "functions": [
+    {
+      "proname": "fn_validar_asignacion_empresa",
+      "pg_get_functiondef": "CREATE OR REPLACE FUNCTION public.fn_validar_asignacion_empresa()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\ndeclare \r\n  v_emp_cuba bigint; \r\n  v_emp_disp bigint;\r\nbegin\r\n  select b.empresa_id into v_emp_cuba\r\n  from public.\"CUBA\" c \r\n  join public.\"BODEGA\" b on b.id = c.bodega_id\r\n  where c.id = new.cuba_id;\r\n\r\n  select d.empresa_id into v_emp_disp \r\n  from public.\"DISPOSITIVO\" d \r\n  where d.id = new.dispositivo_id;\r\n\r\n  if v_emp_cuba is distinct from v_emp_disp then\r\n    raise exception 'El dispositivo % (empresa %) no puede asignarse a la cuba % (empresa %)',\r\n      new.dispositivo_id, v_emp_disp, new.cuba_id, v_emp_cuba;\r\n  end if;\r\n  return new;\r\nend $function$\n"
+    },
+    {
+      "proname": "fn_validar_lectura",
+      "pg_get_functiondef": "CREATE OR REPLACE FUNCTION public.fn_validar_lectura()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\r\nbegin\r\n  if not exists (\r\n    select 1\r\n    from public.\"PROCESO_FERMENTACION\" p\r\n    join public.\"ASIGNACION_DISPOSITIVO\" a on a.cuba_id = p.cuba_id\r\n    where p.id = new.fermentacion_id\r\n      and a.dispositivo_id = new.dispositivo_id\r\n  ) then\r\n    raise exception 'El dispositivo % no esta asignado a la cuba de la fermentacion %',\r\n      new.dispositivo_id, new.fermentacion_id;\r\n  end if;\r\n  return new;\r\nend $function$\n"
+    },
+    {
+      "proname": "fn_validar_proceso",
+      "pg_get_functiondef": "CREATE OR REPLACE FUNCTION public.fn_validar_proceso()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\ndeclare \r\n  v_bod_cuba bigint; \r\n  v_cap numeric; \r\n  v_bod_perfil bigint;\r\nbegin\r\n  select bodega_id, cap_litros into v_bod_cuba, v_cap\r\n  from public.\"CUBA\" \r\n  where id = new.cuba_id;\r\n\r\n  select bodega_id into v_bod_perfil\r\n  from public.\"PERFIL_FERMENTACION\" \r\n  where id = new.perfil_id;\r\n\r\n  if v_bod_cuba is distinct from v_bod_perfil then\r\n    raise exception 'El perfil % pertenece a otra bodega que la cuba %', new.perfil_id, new.cuba_id;\r\n  end if;\r\n\r\n  if new.volumen_litros > v_cap then\r\n    raise exception 'El volumen (%) supera la capacidad de la cuba % (%)',\r\n      new.volumen_litros, new.cuba_id, v_cap;\r\n  end if;\r\n  return new;\r\nend $function$\n"
+    }
+  ]
+}
