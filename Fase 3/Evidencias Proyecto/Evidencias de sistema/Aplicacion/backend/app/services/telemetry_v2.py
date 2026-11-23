@@ -61,6 +61,7 @@ def accepted(message, duplicate=False):
         observed_at=aware(message.observado_en), received_at=aware(message.recibido_en),
         temperature_c={"value": message.temperatura, "quality": message.calidad_temperatura},
         brix_apparent={"value": message.brix, "quality": message.calidad_brix},
+        ph=message.payload.get("ph"),
         out_of_order=message.fuera_de_orden, delayed=message.retrasado,
         diagnostics=message.diagnosticos)
 
@@ -123,6 +124,8 @@ def ingest(db, payload, token):
     received_at = utc_now()
     device, credential = authenticate_device(db, token, payload.device_id, received_at)
     raw = payload.model_dump(mode="json")
+    if payload.ph is None:
+        raw.pop("ph")  # Preserve hashes and retries of packets created before pH support.
     digest = hashlib.sha256(json.dumps(raw, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
     previous = _existing(db, payload, digest)
     if previous is not None:
@@ -202,7 +205,7 @@ def ingest(db, payload, token):
     reading = m.LecturaTelemetria(
         dispositivo_id=device.id, fermentacion_id=process.id, timestamp=effective_at,
         reloj_calibracion_id=calibration.id if clock else None,
-        temp_mosto=temperature, brix=brix, temp_ambiente=None, ph=None, densidad_sg=None,
+        temp_mosto=temperature, brix=brix, temp_ambiente=None, ph=payload.ph, densidad_sg=None,
         origen_dato="v2_" + device.origen, lectura_valida=tq == "good" and bq == "good")
     try:
         db.add(reading)

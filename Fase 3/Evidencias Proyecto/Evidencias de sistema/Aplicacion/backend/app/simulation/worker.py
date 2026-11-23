@@ -23,11 +23,15 @@ class EmitterConfig(BaseModel):
     calibration_id: int = Field(gt=0)
     key_env: str = Field(pattern=r"^MOSTO_SIM_DEVICE_[A-Z0-9_]+$")
     simulation: SimulationSpec
+    initial_ph: float | None = Field(default=None, ge=3.1, le=3.9)
+    first_sequence: int = Field(default=0, ge=0)
     emitter_faults: FaultPlan | None = None
     simulation_clock: SimulationClock | None = None
 
     @model_validator(mode="after")
     def validate_faults(self):
+        if self.first_sequence > self.simulation.duration_hours * 12:
+            raise ValueError("First observation exceeds the fermentation horizon")
         if self.simulation_clock and self.simulation_clock.simulated_anchor != self.simulation.process_start:
             raise ValueError("Clock anchor must match simulation start")
         if self.emitter_faults:
@@ -59,6 +63,10 @@ def canonical_json(value):
 def run_id(config):
     # Key rotation does not change identity; only calibration and frozen recipe do.
     value = config.model_dump(mode="json", exclude={"key_env"})
+    if config.initial_ph is None:
+        value.pop("initial_ph")
+    if not config.first_sequence:
+        value.pop("first_sequence")
     if value.get("simulation_clock") is None:
         value.pop("simulation_clock", None)  # Preserve existing outbox identities.
     if value.get("emitter_faults") is None:
@@ -105,7 +113,7 @@ class LocalHTTP:
     def __init__(self, base_url):
         self.base_url = base_url.rstrip("/")
         parsed = urlsplit(self.base_url)
-        self.connection = HTTPConnection(parsed.hostname, parsed.port or 80, timeout=10)
+        self.connection = HTTPConnection(parsed.hostname, parsed.port or 80, timeout=45)
 
     def close(self):
         self.connection.close()
@@ -171,8 +179,10 @@ class Worker:
                 existing = self.db.execute("SELECT run_id FROM runs WHERE device_id=?", (config.device_id,)).fetchone()
                 if existing and existing[0] != ident:
                     raise ValueError("State recipe changed; use a new explicit state file for a new run")
-                self.db.execute("INSERT OR IGNORE INTO runs(run_id,device_id,manifest) VALUES (?,?,?)",
-                                (ident, config.device_id, canonical_json(config.model_dump(mode="json"))))
+                self.db.execute("""INSERT OR IGNORE INTO runs
+                    (run_id,device_id,manifest,next_sequence,generated_sequence) VALUES (?,?,?,?,?)""",
+                    (ident, config.device_id, canonical_json(config.model_dump(mode="json")),
+                     config.first_sequence, config.first_sequence))
                 if retry_blocked:
                     self.db.execute("UPDATE runs SET status='running', retry_after=NULL, failures=0, last_error=NULL WHERE run_id=? AND status='blocked'", (ident,))
             self.db.commit()
@@ -229,6 +239,8 @@ class Worker:
             body = dict(schema_version=2, device_id=config.device_id, boot_id=ident,
                         sequence=index, observed_at=observed.isoformat(), calibration_id=config.calibration_id,
                         temperature_c=temperature, brix_apparent=brix)
+            if config.initial_ph is not None:
+                body["ph"] = self.trajectories[config.device_id].ph(index, config.initial_ph)
             with self.db:
                 self.db.execute("""INSERT INTO outbox(run_id,sequence,payload,truth,available_at,disposition)
                                    VALUES (?,?,?,?,?,?)""", (ident, index, canonical_json(body),
@@ -329,6 +341,7 @@ class Worker:
                     and parsed.device_id == body["device_id"] and parsed.process_id == process_id
                     and parsed.source == "simulado"
                     and parsed.observed_at == datetime.fromisoformat(body["observed_at"])
+                    and parsed.ph == body.get("ph")
                     and parsed.temperature_c.model_dump() == body["temperature_c"]
                     and parsed.brix_apparent.model_dump() == body["brix_apparent"])
         except (ValueError, TypeError, KeyError):

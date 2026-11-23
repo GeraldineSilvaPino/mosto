@@ -15,11 +15,11 @@ const isLoading = ref(false)
 const errorMessage = ref('')
 const demoMessage = ref('')
 
-const demoProfiles = [
+const demoProfiles = import.meta.env.DEV ? [
   { label: 'Enólogo', email: 'enologo@mosto.cl', password: 'vinacura2024' },
   { label: 'Admin', email: 'admin@mosto.cl', password: 'bodega2024' },
   { label: 'Operador', email: 'operador@mosto.cl', password: 'operador2024' }
-]
+] : []
 const emailError = computed(() => {
   if (!touched.email) return ''
   if (!form.email.trim()) return 'Ingresa tu correo electrónico.'
@@ -107,7 +107,7 @@ async function handleLogin() {
           </button>
         </form>
 
-        <section class="demo" aria-labelledby="demo-title">
+        <section v-if="demoProfiles.length" class="demo" aria-labelledby="demo-title">
           <h2 id="demo-title">Perfiles de demostración</h2>
           <div class="roles"><button v-for="profile in demoProfiles" :key="profile.email" type="button" :disabled="isLoading" @click="selectDemo(profile)">{{ profile.label }}</button></div>
           <p class="sr-only" role="status">{{ demoMessage }}</p>

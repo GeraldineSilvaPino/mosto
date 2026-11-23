@@ -93,6 +93,13 @@ class Trajectory:
         next_temp = target + (temp - target) * math.exp(-STEP_HOURS / self.thermal_tau) + 1.5 * consumed
         self.states.append((next_brix, next_temp, viability))
 
+    def ph(self, sequence, initial_ph):
+        """Synthetic trend tied to attenuation, with small reproducible sensor noise."""
+        latent = self.sample(sequence)["latent_brix"]
+        progress = (self.spec.initial_brix - latent) / (self.spec.initial_brix - self.spec.asymptote_brix)
+        rng = random.Random(f"ph-1:{self.spec.seed}:{sequence}")
+        return round(initial_ph - 0.17 * progress + 0.04 * progress**2 + rng.gauss(0, 0.007), 2)
+
     def sample(self, sequence):
         if isinstance(sequence, bool) or not isinstance(sequence, int) or not 0 <= sequence <= self.spec.duration_hours * 12:
             raise ValueError("Sequence outside simulation horizon")

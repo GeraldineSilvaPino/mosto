@@ -92,5 +92,5 @@ def test_mismatch_blocks_before_generation_and_legacy_identity_stable(tmp_path):
     finally:
         w.close()
     legacy=c.model_copy(update={'simulation_clock':None})
-    data=legacy.model_dump(mode='json',exclude={'key_env','simulation_clock','emitter_faults'})
+    data=legacy.model_dump(mode='json',include={'device_id','calibration_id','simulation'})
     assert run_id(legacy)==str(uuid5(NAMESPACE_URL,'mosto/simulation/'+canonical_json(data)))

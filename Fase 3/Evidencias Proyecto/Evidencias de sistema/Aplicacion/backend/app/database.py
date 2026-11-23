@@ -17,7 +17,9 @@ elif SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
 
 # SQLite requiere check_same_thread=False; PostgreSQL no lo acepta
 connect_args = {}
-if "sqlite" in SQLALCHEMY_DATABASE_URL:
+if settings.environment == "production":
+    connect_args = {"sslmode": "verify-full", "connect_timeout": 8}
+elif settings.database_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
 engine = create_engine(

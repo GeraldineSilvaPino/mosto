@@ -24,8 +24,12 @@ def legacy_readings(end, hours=24):
         db.commit()
 
 
+@pytest.mark.empty_db
 def test_detail_metrics_include_legacy_without_claiming_v2_eligibility(client):
     end = datetime.now(timezone.utc) - timedelta(minutes=1)
+    from app.demo_seed import seed_demo
+    with SessionLocal() as db:
+        seed_demo(db, "test-only-password-2026", process_starts={1: end - timedelta(hours=25)})
     legacy_readings(end)
     result = client.get('/api/procesos/1/cinetica', params={'as_of': end.isoformat()})
     assert result.status_code == 200, result.text

@@ -43,7 +43,8 @@ def isolated_schema(request, migrated_schema):
                 connection.execute(table.delete())
     if not request.node.get_closest_marker("empty_db"):
         with SessionLocal() as db:
-            seed_demo(db, "test-only-password-2026")
+            # Authorization cases start with a single administrator and three tanks.
+            seed_demo(db, "test-only-password-2026", tank_count=3, quick_logins=False)
     yield
 
 

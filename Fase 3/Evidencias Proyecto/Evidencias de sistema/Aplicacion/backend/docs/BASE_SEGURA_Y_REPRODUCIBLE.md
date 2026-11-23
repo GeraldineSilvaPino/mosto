@@ -7,7 +7,7 @@ Esta entrega conserva el clasificador existente como experimento. No convierte s
 - La API no crea tablas ni siembra registros durante importación, startup o consultas de bitácora/catálogos/empresa.
 - `DATABASE_URL` y `JWT_SECRET_KEY` son obligatorias. Se eliminó la clave JWT pública de respaldo. El secreto debe tener al menos 32 bytes; generarlo aleatoriamente.
 - Todas las rutas de negocio requieren Bearer. La autorización por rol/bodega/empresa se implementó en el bloque siguiente: [política, pruebas y límites](AUTORIZACION_EMPRESA_BODEGA.md). PostgreSQL y concurrencia ya se validaron en las entregas posteriores.
-- `MOSTO_ENV` admite development, demo y test. Production se rechaza explícitamente hasta completar la validación de aislamiento y migraciones.
+- `MOSTO_ENV` admite development, demo y test. La configuración actual de producción se describe en la [guía de arranque](../../README.md).
 - Los endpoints de telemetría antiguos son exclusivamente demo/test y requieren `X-Mosto-Simulator-Key`. Los botones de inyectar/restaurar también están restringidos a esos entornos. No son el canal futuro del ESP32 real.
 - Las lecturas del simulador antiguo se marcan `simulado_legacy`. Ese simulador todavía completa campos y usa cinética simplificada: solo se admite sobre la base demo aislada.
 - `/api/health` indica que el proceso responde. `/api/ready` verifica acceso al esquema y la revisión Alembic actual; devuelve 503 sin detalles sensibles si falla. No acredita el estado del modelo.
@@ -34,9 +34,9 @@ Para arrancar el simulador desde otra terminal, cargar `MOSTO_SIMULATOR_KEY` del
 Compose ya no lee `backend/.env`. La demo usa exclusivamente `mosto_demo` en su servicio PostgreSQL local y un volumen nuevo. Definir `MOSTO_DEMO_JWT_KEY`, `MOSTO_SIMULATOR_KEY` y `MOSTO_DEMO_PASSWORD` en el entorno de Compose.
 
 ```powershell
-docker compose --profile demo up --build
+docker compose -f compose.demo.yml --profile demo up --build
 # Simulador opcional, en otra terminal:
-docker compose --profile demo --profile simulator up --build simulator
+docker compose -f compose.demo.yml --profile demo --profile simulator up --build simulator
 ```
 
 La dependencia DB → inicialización → backend → simulador espera health/readiness. No se publica el puerto PostgreSQL demo; la API solo publica en loopback. Las contraseñas de PostgreSQL incluidas son exclusivamente del entorno local demo/test y no sirven para despliegue externo.
@@ -44,7 +44,7 @@ La dependencia DB → inicialización → backend → simulador espera health/re
 Para una base de pruebas PostgreSQL desechable:
 
 ```powershell
-docker compose --profile test up -d mosto-test-db
+docker compose -f compose.demo.yml --profile test up -d mosto-test-db
 $env:MOSTO_TEST_DATABASE_URL='postgresql+psycopg2://mosto_test:local-test-only@127.0.0.1:55433/mosto_test'
 ```
 

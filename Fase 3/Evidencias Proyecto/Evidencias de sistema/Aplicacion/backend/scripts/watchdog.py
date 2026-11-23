@@ -1,4 +1,4 @@
-"""Local demo/test silence watchdog. Explicit process, no startup background jobs.
+"""Silence watchdog for the configured installation. Runs as a separate process.
 
 From backend, supply MOSTO_ENV=demo and a validated local DATABASE_URL, then:
 python -m scripts.watchdog --once (or --interval-seconds 60).
@@ -16,7 +16,8 @@ def main(argv=None):
         parser.error("interval-seconds must be between 10 and 300")
     from app.config import load_settings, validate_isolated_database
     settings = load_settings()
-    validate_isolated_database(settings.database_url, settings.environment)
+    if settings.environment != "production":
+        validate_isolated_database(settings.database_url, settings.environment)
     from app.database import SessionLocal
     from app.services.monitoring import sweep_silence
     from app.services.telemetry_v2 import utc_now
