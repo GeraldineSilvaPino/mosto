@@ -1,0 +1,25 @@
+h1 { margin: 0 0 33px; font: 400 clamp(2.7rem, 4.2vw, 3.9rem)/1.06 var(--display); letter-spacing: -.027em; text-wrap: balance; }
+form, .field { display: grid; }
+form { gap: 20px; }
+.field { gap: 7px; }
+.field label { font-size: .89rem; font-weight: 600; }
+.field input {
+  width: 100%; min-width: 0; height: 47px; padding: 9px 13px;
+  border: 1px solid #b3a49f; border-radius: 7px; background: #fffdf9;
+  color: var(--ink); caret-color: var(--wine); font: inherit;
+}
+.field input[aria-invalid=true] { border-color: #963e4c; }
+.submit { display: flex; justify-content: space-between; align-items: center; min-height: 46px; padding: 10px 16px; border: 0; border-radius: 7px; color: #fffaf5; background: var(--wine); font: 600 .94rem/1.4 var(--font-sans); }
+.submit:hover { background: #623146; }
+button { cursor: pointer; }
+button:disabled { cursor: wait; opacity: .65; }
+:where(input, button, a):focus-visible { outline: 2px solid var(--wine); outline-offset: 3px; }
+.error, .server-error { font-size: .83rem; color: #8a3444; }
+.server-error { padding: 10px 12px; background: #f4e4e5; border-radius: 6px; }
+@media (prefers-reduced-motion: no-preference) {
+  .spinner { animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+}
+@media (max-width: 760px) {
+  h1 { margin-bottom: 27px; }
+}
