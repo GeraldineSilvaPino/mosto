@@ -38,7 +38,7 @@ async function load() {
   if (loading.value) return
   loading.value = true
   const results = await Promise.allSettled([
-    profileService.listarPerfiles({ activo: true }), cubaService.listarCubas(),
+    profileService.listarPerfiles({ activo: true }), cubaService.listarCubas({ incluirPrediccion: false }),
     masterService.listarCepas(), masterService.listarBodegas()
   ])
   const nextErrors = {}

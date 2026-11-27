@@ -18,11 +18,11 @@ from typing import List, Optional, Tuple
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_, desc, func, extract
 
 from app.services.access import business_db, actor_id
-from app.models import EventoAlerta, ProcesoFermentacion, Cuba, Usuario, Dispositivo, AuditoriaAlerta, BitacoraIntervencion
+from app.models import PerfilFermentacion, EventoAlerta, ProcesoFermentacion, AuditoriaAlerta, BitacoraIntervencion
 from app.services.telemetry_v2 import aware, utc_now
 from app.services.episodes import record_action
 from app.schemas import AlertaOut, AlertaAtenderIn, AlertaResolverIn, AlertasMetricasOut
@@ -90,7 +90,16 @@ def _construir_titulo_descripcion(alerta: EventoAlerta) -> Tuple[str, str]:
     )
 
 
-def _mapear_alerta_out(alerta: EventoAlerta, db: Optional[Session] = None) -> AlertaOut:
+def _alertas_con_detalle(db):
+    proceso = joinedload(EventoAlerta.fermentacion)
+    return db.query(EventoAlerta).options(
+        proceso.joinedload(ProcesoFermentacion.cuba),
+        proceso.joinedload(ProcesoFermentacion.perfil).joinedload(PerfilFermentacion.cepa),
+        joinedload(EventoAlerta.dispositivo), joinedload(EventoAlerta.operador),
+        joinedload(EventoAlerta.resolvedor))
+
+
+def _mapear_alerta_out(alerta: EventoAlerta) -> AlertaOut:
     """Helper para transformar la entidad EventoAlerta al DTO enriquecido AlertaOut."""
     cuba_id = None
     cuba_codigo = None
@@ -126,17 +135,11 @@ def _mapear_alerta_out(alerta: EventoAlerta, db: Optional[Session] = None) -> Al
         sensor_tipo = "Sensor IoT"
 
     # Determinar nombre del operador que atendió la alerta
-    if alerta.atendida_por and db:
-        usuario = db.query(Usuario).filter(Usuario.id == alerta.atendida_por).first()
-        if usuario:
-            operador_nombre = usuario.nombre
-        else:
-            operador_nombre = f"Operador #{alerta.atendida_por}"
-    elif alerta.atendida_por:
-        operador_nombre = f"Operador #{alerta.atendida_por}"
+    if alerta.atendida_por:
+        operador_nombre = alerta.operador.nombre if alerta.operador else f"Operador #{alerta.atendida_por}"
 
     titulo, descripcion = _construir_titulo_descripcion(alerta)
-    resolvedor = db.query(Usuario).filter_by(id=alerta.resuelta_por).first() if db and alerta.resuelta_por else None
+    resolvedor = alerta.resolvedor
 
     return AlertaOut(
         id=alerta.id,
@@ -185,7 +188,7 @@ def listar_alertas(
     Retorna la lista de alertas generadas en la bodega para consumo en `AlertsView.vue`.
     Permite filtrar dinámicamente por estado, severidad o cuba y cuenta con paginación parametrizable.
     """
-    query = _extra_filters(db.query(EventoAlerta), origen=origen)
+    query = _extra_filters(_alertas_con_detalle(db), origen=origen)
 
     # 1. Filtro por estado ('pendiente', 'atendida', 'resuelta')
     if isinstance(estado, str) and estado.strip():
@@ -215,7 +218,7 @@ def listar_alertas(
 
     alertas = query.offset(off).limit(lim).all()
 
-    return [_mapear_alerta_out(a, db) for a in alertas]
+    return [_mapear_alerta_out(a) for a in alertas]
 
 
 @router.get("/metricas", response_model=AlertasMetricasOut, summary="Obtener KPIs de auditoría y cálculo MTTR")
@@ -235,39 +238,25 @@ def obtener_metricas_alertas(
         MTTR = sum(fecha_resolucion - fecha_generacion) / Total Resueltas (en minutos)
     - Tasa de resolución porcentual.
     """
-    query = _extra_filters(db.query(EventoAlerta), estado, severidad, tipo_alerta, origen)
+    activa = EventoAlerta.estado.in_(("pendiente", "atendida"))
+    resuelta = EventoAlerta.estado == "resuelta"
+    tiempo_valido = and_(resuelta, EventoAlerta.fecha_resolucion >= EventoAlerta.timestamp)
+    if db.get_bind().dialect.name == "sqlite":
+        minutos = (func.julianday(EventoAlerta.fecha_resolucion) - func.julianday(EventoAlerta.timestamp)) * 1440
+    else:
+        minutos = extract("epoch", EventoAlerta.fecha_resolucion - EventoAlerta.timestamp) / 60
+    sin_recuperacion = and_(EventoAlerta.version_regla != "", EventoAlerta.fin_condicion.is_(None))
+    contar = func.count(EventoAlerta.id)
+    query = db.query(contar, contar.filter(activa), contar.filter(activa, EventoAlerta.severidad == "critica"),
+                     contar.filter(resuelta), contar.filter(tiempo_valido), func.avg(minutos).filter(tiempo_valido),
+                     contar.filter(sin_recuperacion))
+    query = _extra_filters(query, estado, severidad, tipo_alerta, origen)
     if isinstance(cuba_id, int):
-        query = (
-            query.join(ProcesoFermentacion, EventoAlerta.fermentacion_id == ProcesoFermentacion.id)
-            .filter(ProcesoFermentacion.cuba_id == cuba_id)
-        )
+        query = query.join(ProcesoFermentacion, EventoAlerta.fermentacion_id == ProcesoFermentacion.id).filter(
+            ProcesoFermentacion.cuba_id == cuba_id)
 
-    todas_alertas = query.all()
-    total_alertas = len(todas_alertas)
-
-    alertas_activas_list = [a for a in todas_alertas if a.estado in ("pendiente", "atendida")]
-    total_activas = len(alertas_activas_list)
-    total_criticas = len([a for a in alertas_activas_list if a.severidad == "critica"])
-
-    alertas_resueltas = [a for a in todas_alertas if a.estado == "resuelta"]
-    total_resueltas = len(alertas_resueltas)
-
-    # ==========================================
-    # CÁLCULO MTTR (Mean Time To Resolution)
-    # MTTR = sum(fecha_resolucion - fecha_generacion) / Total Resueltas
-    # ==========================================
-    suma_minutos = 0.0
-    muestras_mttr = 0
-    for a in alertas_resueltas:
-        f_generacion = a.timestamp
-        f_resolucion = a.fecha_resolucion
-        if f_generacion and f_resolucion:
-            segundos = (aware(f_resolucion) - aware(f_generacion)).total_seconds()
-            if segundos >= 0:
-                suma_minutos += segundos / 60.0
-                muestras_mttr += 1
-
-    mttr_promedio = round(suma_minutos / muestras_mttr, 2) if muestras_mttr else None
+    total_alertas, total_activas, total_criticas, total_resueltas, muestras_mttr, promedio, abiertas = query.one()
+    mttr_promedio = round(float(promedio), 2) if muestras_mttr else None
     tasa_resolucion = round((total_resueltas / total_alertas) * 100.0, 1) if total_alertas > 0 else 0.0
 
     return AlertasMetricasOut(
@@ -278,7 +267,7 @@ def obtener_metricas_alertas(
         mttr_promedio_minutos=mttr_promedio,
         muestras_mttr=muestras_mttr,
         resueltas_sin_tiempos_validos=total_resueltas - muestras_mttr,
-        condiciones_sin_recuperacion=sum(1 for a in todas_alertas if a.version_regla and a.fin_condicion is None),
+        condiciones_sin_recuperacion=abiertas,
         tasa_resolucion_pct=tasa_resolucion
     )
 
@@ -295,7 +284,7 @@ def exportar_bitacora_alertas_csv(
     Retorna la bitácora histórica completa en formato `text/csv` con descarga directa en el navegador.
     Cumple con el criterio de cabecera `Content-Type: text/csv` y `Content-Disposition: attachment`.
     """
-    query = _extra_filters(db.query(EventoAlerta), tipo_alerta=tipo_alerta, origen=origen)
+    query = _extra_filters(_alertas_con_detalle(db), tipo_alerta=tipo_alerta, origen=origen)
 
     if isinstance(estado, str) and estado.strip():
         query = query.filter(EventoAlerta.estado == estado.strip().lower())
@@ -335,7 +324,7 @@ def exportar_bitacora_alertas_csv(
     ])
 
     for a in alertas:
-        dto = _mapear_alerta_out(a, db)
+        dto = _mapear_alerta_out(a)
 
         # Cálculo de tiempo de resolución si está disponible
         tiempo_res_str = ""
@@ -376,13 +365,13 @@ def exportar_bitacora_alertas_csv(
 @router.get("/{id}", response_model=AlertaOut, summary="Obtener detalle de una alerta")
 def obtener_alerta(id: int, db: Session = Depends(business_db("operations"))):
     """Retorna el detalle completo de una alerta individual por su identificador primario."""
-    alerta = db.query(EventoAlerta).filter(EventoAlerta.id == id).first()
+    alerta = _alertas_con_detalle(db).filter(EventoAlerta.id == id).first()
     if not alerta:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Alerta con ID {id} no encontrada."
         )
-    return _mapear_alerta_out(alerta, db)
+    return _mapear_alerta_out(alerta)
 
 
 @router.patch("/{id}/atender", response_model=AlertaOut, summary="Atender alerta y registrar operador")
@@ -414,7 +403,7 @@ def atender_alerta(
     if alerta.estado == "atendida":
         if payload and payload.nota and payload.nota.strip() != (alerta.nota_atencion or ""):
             raise HTTPException(409, "La atención ya fue registrada; añada una intervención a la bitácora")
-        return _mapear_alerta_out(alerta, db)
+        return _mapear_alerta_out(alerta)
 
     # Actor from authenticated membership, never a client-provided ID.
     operador_id = actor_id(db)
@@ -431,7 +420,7 @@ def atender_alerta(
     db.commit()
     db.refresh(alerta)
 
-    return _mapear_alerta_out(alerta, db)
+    return _mapear_alerta_out(alerta)
 
 
 @router.patch("/{id}/resolver", response_model=AlertaOut, summary="Resolver alerta y registrar acción correctiva")
@@ -457,7 +446,7 @@ def resolver_alerta(
     if alerta.estado == "resuelta":
         if payload and payload.nota_resolucion and payload.nota_resolucion.strip() != (alerta.nota_resolucion or ""):
             raise HTTPException(409, "La resolución ya fue registrada; añada una intervención a la bitácora")
-        return _mapear_alerta_out(alerta, db)
+        return _mapear_alerta_out(alerta)
     note = payload.nota_resolucion.strip() if payload and payload.nota_resolucion else ""
     if alerta.version_regla and len(note) < 10:
         raise HTTPException(422, "Describa la revisión o intervención en al menos 10 caracteres")
@@ -486,7 +475,7 @@ def resolver_alerta(
     db.commit()
     db.refresh(alerta)
 
-    return _mapear_alerta_out(alerta, db)
+    return _mapear_alerta_out(alerta)
 
 
 @router.get("/{id}/eventos")

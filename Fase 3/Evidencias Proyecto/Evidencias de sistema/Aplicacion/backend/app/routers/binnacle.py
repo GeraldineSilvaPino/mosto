@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 import re
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, func
 
 from app.services.access import business_db, actor_id
@@ -17,11 +17,10 @@ from app.schemas import BitacoraOut, BitacoraCreateIn
 router = APIRouter(prefix="/api/bitacora", tags=["Bitácora Enológica"])
 
 
-def _resolver_cuba_label(cuba_id: Optional[int], db: Session) -> str:
+def _resolver_cuba_label(cuba_id: Optional[int], cuba: Optional[Cuba]) -> str:
     """Convierte un ID de cuba a slug de frontend ej: 'cuba-01' o 'general'."""
     if not cuba_id:
         return "general"
-    cuba = db.query(Cuba).filter(Cuba.id == cuba_id).first()
     if cuba and cuba.codigo:
         # Formato 'CB-01' -> 'cuba-01'
         codigo = cuba.codigo.lower().replace("cb-", "cuba-").replace("cb", "cuba-")
@@ -47,9 +46,9 @@ def _resolver_cuba_id(cuba_slug: Optional[str], db: Session) -> Optional[int]:
     raise HTTPException(404, "Cuba inexistente o fuera del ámbito autorizado")
 
 
-def _mapear_bitacora_out(b: BitacoraIntervencion, db: Session) -> BitacoraOut:
+def _mapear_bitacora_out(b: BitacoraIntervencion) -> BitacoraOut:
     autor_nombre = b.usuario.nomb_compl if b.usuario else "Sistema IoT"
-    cuba_slug = _resolver_cuba_label(b.cuba_id, db)
+    cuba_slug = _resolver_cuba_label(b.cuba_id, b.cuba)
 
     return BitacoraOut(
         id=b.id,
@@ -73,7 +72,8 @@ def listar_entradas_bitacora(
     db: Session = Depends(business_db("operations"))
 ):
     """Retorna la lista cronológica de entradas de la bitácora enológica."""
-    query = db.query(BitacoraIntervencion)
+    query = db.query(BitacoraIntervencion).options(joinedload(BitacoraIntervencion.usuario),
+                                                 joinedload(BitacoraIntervencion.cuba))
     if isinstance(alerta_id, int):
         query = query.filter(BitacoraIntervencion.alerta_id == alerta_id)
     if isinstance(fermentacion_id, int):
@@ -94,7 +94,7 @@ def listar_entradas_bitacora(
         query = query.filter(func.lower(BitacoraIntervencion.descripcion).like(q_clean))
 
     entradas = query.order_by(desc(BitacoraIntervencion.fecha_registro)).all()
-    return [_mapear_bitacora_out(e, db) for e in entradas]
+    return [_mapear_bitacora_out(e) for e in entradas]
 
 
 @router.post("", response_model=BitacoraOut, status_code=status.HTTP_201_CREATED)
@@ -143,5 +143,5 @@ def crear_entrada_bitacora(payload: BitacoraCreateIn, db: Session = Depends(busi
     db.commit()
     db.refresh(nueva_entrada)
 
-    return _mapear_bitacora_out(nueva_entrada, db)
+    return _mapear_bitacora_out(nueva_entrada)
 

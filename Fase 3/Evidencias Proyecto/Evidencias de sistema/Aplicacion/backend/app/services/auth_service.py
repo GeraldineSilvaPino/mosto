@@ -12,10 +12,8 @@ from typing import Optional, Dict, Any
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
 
-from app.database import get_db, settings
-from app.models import Usuario
+from app.database import settings
 
 JWT_SECRET_KEY = settings.jwt_secret
 JWT_ALGORITHM = "HS256"
@@ -72,11 +70,7 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def get_current_user(
-    auth: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    db: Session = Depends(get_db)
-) -> Usuario:
-    """Dependencia para requerir un usuario autenticado con Bearer token."""
+def token_user_id(auth: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> int:
     if not auth or not auth.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -95,11 +89,4 @@ def get_current_user(
     except (ValueError, TypeError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Identificador de usuario inválido en token.")
 
-    usuario = db.query(Usuario).filter(Usuario.id == user_id, Usuario.activo == True).first()
-    if not usuario:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuario inactivo o no encontrado en el sistema.",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    return usuario
+    return user_id

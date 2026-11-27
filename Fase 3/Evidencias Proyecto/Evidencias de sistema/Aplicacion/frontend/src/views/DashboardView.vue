@@ -65,7 +65,7 @@ async function sincronizar() {
   if (busy.value) return
   busy.value = true
   try {
-    const rows = await cubaService.listarCubas()
+    const rows = await cubaService.listarCubas({ incluirPrediccion: lastSync.value !== null })
     const anteriores = new Map(cubas.value.map(c => [c.id, c]))
     cubas.value = rows.map(item => mapearCuba(item, anteriores.get(item.id))).sort((a, b) => a.id - b.id)
     lastSync.value = new Date()

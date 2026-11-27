@@ -39,7 +39,7 @@ def monitoring_status(db, process, now):
     else:
         status = "datos_recientes"
     states = {s.codigo: s for s in db.query(m.EstadoRegla).filter_by(fermentacion_id=process.id)}
-    profile = db.get(m.PerfilFermentacion, process.perfil_id) if process.perfil_id else None
+    profile = process.perfil if process.perfil_id and process.perfil_snapshot is None else None
     from app.services.profile_overrides import applied_profile
     applied = applied_profile(db, process, profile, now)
     thermal = {}

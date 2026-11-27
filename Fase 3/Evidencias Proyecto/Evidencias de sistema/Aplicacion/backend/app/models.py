@@ -328,6 +328,8 @@ class EventoAlerta(Base):
     estado_condicion = Column(String(32), nullable=True)
     evidencia = Column(JSON, nullable=True)
 
+    operador = relationship("Usuario", foreign_keys=[atendida_por], viewonly=True)
+    resolvedor = relationship("Usuario", foreign_keys=[resuelta_por], viewonly=True)
     fermentacion = relationship("ProcesoFermentacion", back_populates="alertas")
     dispositivo = relationship("Dispositivo")
 

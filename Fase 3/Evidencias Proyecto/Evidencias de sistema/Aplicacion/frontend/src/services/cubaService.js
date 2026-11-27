@@ -5,10 +5,10 @@ export const cubaService = {
    * Obtiene la lista de todas las cubas con telemetría en tiempo real.
    * Se incluye query param `_t` para evitar almacenamiento en caché HTTP del navegador.
    */
-  listarCubas() {
+  listarCubas({ incluirPrediccion = true } = {}) {
     return apiClient
       .get('/api/cubas', {
-        params: { _t: Date.now() }
+        params: { incluir_prediccion: incluirPrediccion, _t: Date.now() }
       })
       .then((res) => res.data)
   },

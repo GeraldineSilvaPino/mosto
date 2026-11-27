@@ -67,7 +67,7 @@ let timer
 async function load() {
   const current = ++generation
   loading.value = true
-  const [inventory, catalog] = await Promise.allSettled([deviceService.listarDispositivos(), cubaService.listarCubas()])
+  const [inventory, catalog] = await Promise.allSettled([deviceService.listarDispositivos(), cubaService.listarCubas({ incluirPrediccion: false })])
   if (current !== generation) return
   loadError.value = inventory.status === 'rejected' ? 'No se pudo actualizar el inventario.' : ''
   tankError.value = catalog.status === 'rejected' ? 'No se pudo actualizar la lista de cubas.' : ''

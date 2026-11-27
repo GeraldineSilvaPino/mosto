@@ -3,6 +3,7 @@ Router de Configuración de Empresa, Viña y Cuotas SaaS (Módulo 5).
 Gestiona la ficha de identidad, datos fiscales, opciones operativas y capacidades contratadas.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.services.access import business_db
@@ -17,7 +18,7 @@ def _obtener_empresa_y_bodega(db: Session) -> tuple[EmpresaCliente, Bodega]:
     empresa = db.query(EmpresaCliente).first()
     if not empresa:
         raise HTTPException(404, "Empresa no configurada; requiere aprovisionamiento explícito")
-    bodega = db.query(Bodega).filter(Bodega.empresa_id == empresa.id).first()
+    bodega = db.query(Bodega).filter(Bodega.empresa_id == empresa.id).order_by(Bodega.id).first()
     if not bodega:
         raise HTTPException(404, "Bodega no configurada")
 
@@ -27,11 +28,16 @@ def _obtener_empresa_y_bodega(db: Session) -> tuple[EmpresaCliente, Bodega]:
 @router.get("", response_model=EmpresaOut)
 def obtener_configuracion_empresa(db: Session = Depends(business_db("admin"))):
     """Retorna la ficha de la empresa, bodega y las cuotas de consumo SaaS en tiempo real."""
-    empresa, bodega = _obtener_empresa_y_bodega(db)
-
-    # Calcular cuotas reales basadas en los registros actuales de la base de datos
-    total_cubas = db.query(Cuba).count()
-    total_usuarios_activos = db.query(Usuario).filter(Usuario.activo == True).count()
+    cubas = select(func.count(Cuba.id)).scalar_subquery()
+    usuarios = select(func.count(Usuario.id)).where(Usuario.activo.is_(True)).scalar_subquery()
+    fila = (db.query(EmpresaCliente, Bodega, cubas, usuarios)
+            .outerjoin(Bodega, Bodega.empresa_id == EmpresaCliente.id)
+            .order_by(Bodega.id).first())
+    if fila is None:
+        raise HTTPException(404, "Empresa no configurada; requiere aprovisionamiento explícito")
+    empresa, bodega, total_cubas, total_usuarios_activos = fila
+    if bodega is None:
+        raise HTTPException(404, "Bodega no configurada")
 
     cuota_dto = SaasQuotaDTO(
         planName=empresa.plan_nombre or "Plan Bodega Industrial",

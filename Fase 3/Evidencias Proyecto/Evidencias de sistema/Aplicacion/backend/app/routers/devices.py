@@ -5,8 +5,8 @@ Gestiona el estado en vivo de microcontroladores (ESP32/ESP8266), registro y vin
 from typing import List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, func
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.services.access import business_db
@@ -55,37 +55,25 @@ def _evaluar_calidad_senal(rssi: Optional[int]) -> str:
         return "none"
 
 
-def _mapear_dispositivo_out(d: Dispositivo, db: Session) -> DispositivoOut:
-    """Helper que mapea la entidad Dispositivo y su telemetría reciente al DTO DispositivoOut."""
-    # 1. Buscar asignación activa respetando ck_asignacion_activo (activo = True y desasignado_en es None)
-    asignacion_activa = (
-        db.query(AsignacionDispositivo)
-        .filter(
-            AsignacionDispositivo.dispositivo_id == d.id,
-            AsignacionDispositivo.activo == True,
-            AsignacionDispositivo.desasignado_en == None
-        )
-        .order_by(desc(AsignacionDispositivo.id))
-        .first()
-    )
+def _inventario(db):
+    estado = (select(TelemetriaEstadoNodo.id).where(TelemetriaEstadoNodo.dispositivo_id == Dispositivo.id)
+        .order_by(TelemetriaEstadoNodo.timestamp.desc(), TelemetriaEstadoNodo.id.desc())
+        .limit(1).correlate(Dispositivo).scalar_subquery())
+    lectura = (select(LecturaTelemetria.id).where(LecturaTelemetria.dispositivo_id == Dispositivo.id)
+        .order_by(LecturaTelemetria.timestamp.desc(), LecturaTelemetria.id.desc())
+        .limit(1).correlate(Dispositivo).scalar_subquery())
+    return (db.query(Dispositivo, AsignacionDispositivo, TelemetriaEstadoNodo, LecturaTelemetria)
+        .select_from(Dispositivo)
+        .outerjoin(AsignacionDispositivo, and_(AsignacionDispositivo.dispositivo_id == Dispositivo.id,
+                                               AsignacionDispositivo.activo.is_(True),
+                                               AsignacionDispositivo.desasignado_en.is_(None)))
+        .outerjoin(TelemetriaEstadoNodo, TelemetriaEstadoNodo.id == estado)
+        .outerjoin(LecturaTelemetria, LecturaTelemetria.id == lectura)
+        .options(joinedload(Dispositivo.modelo), joinedload(AsignacionDispositivo.cuba)))
 
+
+def _mapear_dispositivo_out(d, asignacion_activa, ultimo_estado_nodo, ultima_lectura) -> DispositivoOut:
     cuba_asignada = asignacion_activa.cuba if asignacion_activa else None
-
-    # 2. Obtener última telemetría del nodo (batería y RSSI)
-    ultimo_estado_nodo = (
-        db.query(TelemetriaEstadoNodo)
-        .filter(TelemetriaEstadoNodo.dispositivo_id == d.id)
-        .order_by(desc(TelemetriaEstadoNodo.timestamp))
-        .first()
-    )
-
-    # 3. Obtener última lectura de sensores
-    ultima_lectura = (
-        db.query(LecturaTelemetria)
-        .filter(LecturaTelemetria.dispositivo_id == d.id)
-        .order_by(desc(LecturaTelemetria.timestamp))
-        .first()
-    )
 
     # Determinar la marca temporal más reciente de conexión
     timestamps_conexion = [d.ultima_recepcion] if d.ultima_recepcion else []
@@ -190,11 +178,10 @@ def listar_dispositivos(
     Lista todos los dispositivos microcontroladores registrados con su estado telemétrico
     dinámico (online si transmitió en los últimos 120s, de lo contrario offline).
     """
-    dispositivos = db.query(Dispositivo).order_by(Dispositivo.id.asc()).all()
-    resultado = [_mapear_dispositivo_out(d, db) for d in dispositivos]
-
+    query = _inventario(db)
     if cuba_id is not None:
-        resultado = [r for r in resultado if r.assignedCubaId == cuba_id]
+        query = query.filter(AsignacionDispositivo.cuba_id == cuba_id)
+    resultado = [_mapear_dispositivo_out(*fila) for fila in query.order_by(Dispositivo.id)]
 
     if status is not None:
         resultado = [r for r in resultado if r.status == status]
@@ -245,16 +232,16 @@ def crear_dispositivo(payload: DispositivoCreateIn, db: Session = Depends(busine
         db.rollback()
         raise HTTPException(409, "No se pudo registrar el dispositivo con los datos proporcionados")
     db.refresh(nuevo_dispositivo)
-    return _mapear_dispositivo_out(nuevo_dispositivo, db)
+    return obtener_dispositivo(nuevo_dispositivo.id, db)
 
 
 @router.get("/{dispositivo_id}", response_model=DispositivoOut, summary="Obtener detalle de un dispositivo")
 def obtener_dispositivo(dispositivo_id: int, db: Session = Depends(business_db("devices"))):
     """Retorna el estado detallado y última telemetría de un dispositivo IoT."""
-    d = db.query(Dispositivo).filter(Dispositivo.id == dispositivo_id).first()
-    if not d:
+    fila = _inventario(db).filter(Dispositivo.id == dispositivo_id).first()
+    if not fila:
         raise HTTPException(status_code=404, detail=f"Dispositivo con ID {dispositivo_id} no encontrado")
-    return _mapear_dispositivo_out(d, db)
+    return _mapear_dispositivo_out(*fila)
 
 
 @router.post("/vincular", response_model=DispositivoOut, summary="Vincular dispositivo a una cuba")
@@ -301,7 +288,7 @@ def vincular_dispositivo(payload: DispositivoVincularIn, db: Session = Depends(b
     db.commit()
     db.refresh(d)
 
-    return _mapear_dispositivo_out(d, db)
+    return obtener_dispositivo(d.id, db)
 
 
 @router.post("/desvincular", response_model=DispositivoOut, summary="Desvincular dispositivo de su cuba actual")
@@ -329,4 +316,4 @@ def desvincular_dispositivo(payload: DispositivoDesvincularIn, db: Session = Dep
     db.commit()
     db.refresh(d)
 
-    return _mapear_dispositivo_out(d, db)
+    return obtener_dispositivo(d.id, db)

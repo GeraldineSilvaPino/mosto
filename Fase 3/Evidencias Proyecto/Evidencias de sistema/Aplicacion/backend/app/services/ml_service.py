@@ -59,20 +59,16 @@ def get_calibrated_model():
     return _calibrated_model_instance
 
 
-def evaluar_proceso_cinetica(db, proceso_id: int) -> Optional[Dict[str, Any]]:
+def evaluar_proceso_cinetica(db, process) -> Optional[Dict[str, Any]]:
     """
     Evalúa la cinética y riesgo predictivo de parada sobre la telemetría v2 auditada.
     Utiliza el clasificador logístico calibrado y proyector Ridge (contrato kinetics-v1).
     """
-    from app.models import ProcesoFermentacion
     from app.services.kinetics import FEATURES
     from app.services.kinetics_query import process_kinetics
     from app.services.simulation_time import process_clock_at, observation_end
     from app.services.telemetry_v2 import utc_now
 
-    process = db.query(ProcesoFermentacion).filter_by(id=proceso_id).first()
-    if process is None:
-        return None
     cutoff = utc_now()
     end = observation_end(process, cutoff, process_clock_at(db, process.id, cutoff))
     result = process_kinetics(db, process, end, received_as_of=cutoff)

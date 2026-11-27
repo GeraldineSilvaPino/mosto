@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, FiniteFloat, model_validator
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy import or_
 
 from app import models as m
@@ -57,19 +57,32 @@ class Annulment(BaseModel):
     motivo: str = Field(min_length=5, max_length=2000)
 
 
-def output(db, row):
+def measurement_details(query):
+    annuller = aliased(m.Usuario)
+    return (query.add_columns(m.Usuario.nomb_compl, m.AnulacionMedicion, annuller.nomb_compl)
+            .outerjoin(m.Usuario, m.Usuario.id == m.MedicionManual.usuario_id)
+            .outerjoin(m.AnulacionMedicion, m.AnulacionMedicion.medicion_id == m.MedicionManual.id)
+            .outerjoin(annuller, annuller.id == m.AnulacionMedicion.usuario_id))
+
+
+def output(row, author, annulment, annulled_by):
+    if author is None or (annulment is not None and annulled_by is None):
+        raise HTTPException(404, "Registro inexistente o fuera del ámbito autorizado")
     result = {field: getattr(row, field) for field in (
         "id", "fermentacion_id", "alerta_id", "intervencion_id", "bitacora_id", "usuario_id",
         "variable", "valor", "unidad", "metodo", "instrumento", "evidencia")}
     result.update(origen="manual", observado_en=aware(row.observado_en), registrado_en=aware(row.registrado_en))
-    user = require(db, m.Usuario, row.usuario_id)
-    result['autor'] = user.nomb_compl
-    annulment = db.query(m.AnulacionMedicion).filter_by(medicion_id=row.id).first()
+    result['autor'] = author
     result['anulacion'] = None if annulment is None else dict(
         id=annulment.id, motivo=annulment.motivo, usuario_id=annulment.usuario_id,
-        autor=require(db, m.Usuario, annulment.usuario_id).nomb_compl,
+        autor=annulled_by,
         registrado_en=aware(annulment.registrado_en), bitacora_id=annulment.bitacora_id)
     return result
+
+
+def measurement_out(db, row):
+    query = db.query(m.MedicionManual).filter_by(id=row.id)
+    return output(*measurement_details(query).one())
 
 
 @router.get("/contexto/{process_id}")
@@ -111,8 +124,8 @@ def list_measurements(fermentacion_id: int = Query(..., gt=0), alerta_id: int | 
         if alert.fermentacion_id != fermentacion_id:
             raise HTTPException(409, "La alerta debe pertenecer al mismo proceso")
         query = query.filter_by(alerta_id=alerta_id)
-    return dict(total=query.count(), items=[output(db, row) for row in query.order_by(
-        m.MedicionManual.observado_en.desc(), m.MedicionManual.id.desc()).offset(offset).limit(limit)])
+    page = measurement_details(query).order_by(m.MedicionManual.observado_en.desc(), m.MedicionManual.id.desc())
+    return dict(total=query.count(), items=[output(*row) for row in page.offset(offset).limit(limit)])
 
 
 def note(db, process, alert_id, description, now):
@@ -131,7 +144,7 @@ def record(payload: Measurement, db: Session = Depends(db_scope)):
         fermentacion_id=process.id, request_id=str(payload.request_id)).first()
     if previous:
         check_retry(previous, request)
-        return output(db, previous)
+        return measurement_out(db, previous)
     now = datetime.now(timezone.utc)
     if payload.observado_en > now or payload.observado_en < aware(process.fecha_inicio):
         raise HTTPException(409, "La observación debe estar entre el inicio del proceso y la hora actual")
@@ -154,7 +167,7 @@ def record(payload: Measurement, db: Session = Depends(db_scope)):
     row = m.MedicionManual(**payload.model_dump(exclude={'request_id'}), request_id=str(payload.request_id),
         solicitud=request, usuario_id=actor_id(db), bitacora_id=entry.id, registrado_en=now)
     db.add(row); db.flush(); db.commit()
-    return output(db, row)
+    return measurement_out(db, row)
 
 
 @router.post("/{ident}/anular")
@@ -164,10 +177,10 @@ def annul(ident: int, payload: Annulment, db: Session = Depends(db_scope)):
     previous = db.query(m.AnulacionMedicion).filter_by(medicion_id=ident).first()
     if previous:
         check_retry(previous, request_data(payload, db))
-        return output(db, row)
+        return measurement_out(db, row)
     now = datetime.now(timezone.utc)
     entry = note(db, process, row.alerta_id, f"Anulación de medición manual #{ident}\n{payload.motivo}", now)
     db.add(m.AnulacionMedicion(medicion_id=ident, bitacora_id=entry.id, usuario_id=actor_id(db),
         motivo=payload.motivo, registrado_en=now, request_id=str(payload.request_id), solicitud=request_data(payload, db)))
     db.flush(); db.commit()
-    return output(db, row)
+    return measurement_out(db, row)

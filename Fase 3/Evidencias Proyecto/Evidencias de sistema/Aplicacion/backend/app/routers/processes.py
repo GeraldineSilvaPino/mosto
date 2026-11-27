@@ -6,8 +6,8 @@ from typing import List, Optional, Literal
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import AwareDatetime
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import desc, select
 
 from app.services.access import business_db, actor_id
 from app.services.telemetry_v2 import aware
@@ -22,21 +22,22 @@ router = APIRouter(prefix="/api/procesos", tags=["Procesos de Fermentación"])
 def obtener_cinetica(proceso_id: int, response: Response,
                      as_of: Optional[AwareDatetime] = None,
                      db: Session = Depends(business_db("operations"))):
-    from app.services.kinetics_query import process_kinetics
+    from app.services.kinetics_query import kinetic_window, summarize_kinetics
     from app.services.telemetry_v2 import aware, utc_now
 
     process = db.query(ProcesoFermentacion).filter_by(id=proceso_id).first()
     if process is None:
         raise HTTPException(404, "Proceso no encontrado")
     now = utc_now()
-    cutoff = as_of or now
+    cutoff = aware(as_of) if as_of else now
     if cutoff > now or cutoff < aware(process.fecha_inicio):
         raise HTTPException(422, "Instante fuera del historial disponible del proceso")
     response.headers["Cache-Control"] = "no-store"
     from app.services.simulation_time import process_clock_at, observation_end
     clock = process_clock_at(db, process.id, cutoff)
     observation = observation_end(process, cutoff, clock)
-    result = process_kinetics(db, process, observation, received_as_of=cutoff)
+    rows = kinetic_window(db, process, observation, cutoff)
+    result = summarize_kinetics(process, rows, observation, cutoff)
     result.update(as_of=result["received_as_of"], observation_as_of=observation.isoformat(),
                   simulation_clock=clock.model_dump(mode="json") if clock else None)
     # Configuration/lifecycle is current, explicitly separate from the historical snapshot.
@@ -44,7 +45,7 @@ def obtener_cinetica(proceso_id: int, response: Response,
     from app.services.monitoring import monitoring_status
     result["current_monitoring"] = monitoring_status(db, process, now)
     from app.services.process_series import descriptive_metrics
-    result["display"] = descriptive_metrics(db, process, observation, cutoff)
+    result["display"] = descriptive_metrics(db, process, observation, cutoff, rows)
     return result
 
 
@@ -89,7 +90,17 @@ def configurar_regla_cinetica(proceso_id: int, payload: KineticRuleConfig, respo
     return rule_status(db, process.id)
 
 
-def _mapear_proceso_out(p: ProcesoFermentacion) -> ProcesoOut:
+def _procesos_con_detalle(query):
+    densidad = (select(LecturaTelemetria.densidad_sg)
+        .where(LecturaTelemetria.fermentacion_id == ProcesoFermentacion.id)
+        .order_by(LecturaTelemetria.timestamp.desc().nullslast(), LecturaTelemetria.id.desc())
+        .limit(1).correlate(ProcesoFermentacion).scalar_subquery())
+    return query.add_columns(densidad).options(
+        joinedload(ProcesoFermentacion.cuba),
+        joinedload(ProcesoFermentacion.perfil).joinedload(PerfilFermentacion.cepa))
+
+
+def _mapear_proceso_out(p: ProcesoFermentacion, ultima_densidad) -> ProcesoOut:
     """Helper para transformar la entidad ProcesoFermentacion al DTO ProcesoOut."""
     dia_ferm = None
     if p.fecha_inicio:
@@ -103,12 +114,7 @@ def _mapear_proceso_out(p: ProcesoFermentacion) -> ProcesoOut:
         if p.perfil.cepa:
             cepa_nombre = p.perfil.cepa.nombre_variedad
 
-    # Obtener última densidad registrada en telemetría si existe
-    densidad_final = float(p.densidad_inicial_sg) if p.densidad_inicial_sg is not None else None
-    if p.lecturas:
-        ultima_lectura = sorted(p.lecturas, key=lambda l: l.timestamp or datetime.min, reverse=True)[0]
-        if ultima_lectura.densidad_sg is not None:
-            densidad_final = float(ultima_lectura.densidad_sg)
+    densidad_final = p.densidad_inicial_sg if ultima_densidad is None else ultima_densidad
 
     return ProcesoOut(
         id=p.id,
@@ -144,8 +150,8 @@ def listar_procesos(
     if estado:
         query = query.filter(ProcesoFermentacion.estado == estado)
 
-    procesos = query.order_by(desc(ProcesoFermentacion.id)).all()
-    return [_mapear_proceso_out(p) for p in procesos]
+    procesos = _procesos_con_detalle(query).order_by(desc(ProcesoFermentacion.id)).all()
+    return [_mapear_proceso_out(*fila) for fila in procesos]
 
 
 @router.get("/pagina", summary="Procesos autorizados, paginados sin alterar el listado legacy")
@@ -164,7 +170,8 @@ def pagina_procesos(response: Response, cuba_id: int | None = Query(None, gt=0),
     elif grupo == 'cerrados':
         query = query.filter(~active)
     total = query.count()
-    items = [_mapear_proceso_out(row) for row in query.order_by(desc(ProcesoFermentacion.id)).offset(offset).limit(limit)]
+    pagina = _procesos_con_detalle(query).order_by(desc(ProcesoFermentacion.id)).offset(offset).limit(limit)
+    items = [_mapear_proceso_out(*fila) for fila in pagina]
     response.headers['Cache-Control'] = 'no-store'
     return dict(items=items, total=total, limit=limit, offset=offset,
                 has_more=offset + len(items) < total)
@@ -173,10 +180,10 @@ def pagina_procesos(response: Response, cuba_id: int | None = Query(None, gt=0),
 @router.get("/{proceso_id}", response_model=ProcesoOut, summary="Obtener detalle de un proceso")
 def obtener_proceso(proceso_id: int, db: Session = Depends(business_db("operations"))):
     """Retorna el detalle completo de un proceso de fermentación por ID."""
-    p = db.query(ProcesoFermentacion).filter(ProcesoFermentacion.id == proceso_id).first()
-    if not p:
+    fila = _procesos_con_detalle(db.query(ProcesoFermentacion)).filter(ProcesoFermentacion.id == proceso_id).first()
+    if not fila:
         raise HTTPException(status_code=404, detail=f"Proceso con ID {proceso_id} no encontrado")
-    return _mapear_proceso_out(p)
+    return _mapear_proceso_out(*fila)
 
 
 @router.post("/iniciar", response_model=ProcesoOut, status_code=201, summary="Iniciar nuevo proceso de vendimia")
@@ -262,7 +269,7 @@ def iniciar_proceso(payload: ProcesoIniciarIn, db: Session = Depends(business_db
     db.commit()
     db.refresh(nuevo_proceso)
 
-    return _mapear_proceso_out(nuevo_proceso)
+    return obtener_proceso(nuevo_proceso.id, db)
 
 
 @router.patch("/{proceso_id}/finalizar", response_model=ProcesoOut, summary="Finalizar proceso y liberar cuba")
@@ -303,4 +310,4 @@ def finalizar_proceso(
     db.commit()
     db.refresh(proceso)
 
-    return _mapear_proceso_out(proceso)
+    return obtener_proceso(proceso.id, db)

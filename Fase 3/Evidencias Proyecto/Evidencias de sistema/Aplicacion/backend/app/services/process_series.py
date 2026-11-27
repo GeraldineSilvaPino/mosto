@@ -37,18 +37,16 @@ def legacy_series(db, process, left, right, variable, limit=10000):
     return points, count
 
 
-def descriptive_metrics(db, process, end, cutoff):
+def descriptive_metrics(db, process, end, cutoff, window):
     """Display each adequately covered window without requiring a full 24 h.
 
     These metrics do not change predictive eligibility or incident rules.
     """
     left = max(aware(process.fecha_inicio), end - timedelta(hours=24))
-    v2 = db.query(m.MensajeTelemetria).filter(
-        m.MensajeTelemetria.fermentacion_id == process.id,
-        m.MensajeTelemetria.recibido_en <= cutoff)
-    has_v2 = v2.first() is not None
-    rows = v2.filter(m.MensajeTelemetria.observado_en >= left,
-                     m.MensajeTelemetria.observado_en <= end).order_by(m.MensajeTelemetria.observado_en).all()
+    has_v2 = bool(window) or db.query(m.MensajeTelemetria.id).filter(
+        m.MensajeTelemetria.fermentacion_id == process.id, m.MensajeTelemetria.recibido_en <= cutoff
+    ).first() is not None
+    rows = [r for r in window if aware(r.observado_en) >= left]
     duplicates = Counter(aware(r.observado_en) for r in rows)
     metrics, sources = {}, set()
     latest = None

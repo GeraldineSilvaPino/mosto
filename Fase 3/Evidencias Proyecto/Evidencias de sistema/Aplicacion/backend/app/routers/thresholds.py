@@ -4,7 +4,7 @@ Controlador REST para configuración de umbrales enológicos (ThresholdsView.vue
 """
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc
 
 from app.services.access import business_db, actor_id
@@ -51,7 +51,8 @@ def listar_perfiles(
     Lista todos los perfiles de fermentación registrados, permitiendo filtrar por cepa o bodega.
     Entrega bandas óptimas y críticas para visualización gráfica en el frontend.
     """
-    query = db.query(PerfilFermentacion)
+    query = db.query(PerfilFermentacion).options(joinedload(PerfilFermentacion.bodega),
+                                                joinedload(PerfilFermentacion.cepa))
 
     if isinstance(cepa_id, int):
         query = query.filter(PerfilFermentacion.cepa_id == cepa_id)

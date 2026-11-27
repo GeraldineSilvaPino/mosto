@@ -2,12 +2,12 @@
 from datetime import datetime
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.orm import aliased
 from fastapi import HTTPException
 
 from app import models as m
-from app.database import SessionLocal
+from app.database import SessionLocal, engine
 from app.services.access import AccessContext, install_scope
 from app.services.auth_service import create_access_token
 
@@ -62,6 +62,30 @@ def tenants():
 def as_user(client, user):
     # A forged role claim in a legitimately signed token must not grant access.
     client.headers["Authorization"] = "Bearer " + create_access_token({"sub": user, "role": "admin"})
+
+
+@pytest.mark.parametrize("route", [
+    "bodegas", "usuarios", "empresa", "perfiles", "procesos", "dispositivos",
+    "bitacora", "alertas", "alertas/metricas",
+])
+def test_list_reads_permissions_and_data_in_two_statements(client, tenants, route):
+    statements = []
+    def count(*args):
+        statements.append(args[2])
+
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        response = client.get(f"/api/{route}")
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+    assert response.status_code == 200, response.text
+    assert len(statements) == 2
+
+
+def test_company_quota_counts_exclude_foreign_users_and_tanks(client, tenants):
+    as_user(client, tenants["stranger"])
+    quota = client.get("/api/empresa").json()["saasQuota"]
+    assert quota["usedCubas"] == quota["usedUsers"] == 1
 
 
 def test_company_lists_details_metrics_export_and_cache_isolation(client, tenants):

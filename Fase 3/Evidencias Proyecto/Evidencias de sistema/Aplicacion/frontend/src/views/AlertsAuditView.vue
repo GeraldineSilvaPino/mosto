@@ -289,7 +289,7 @@ async function loadData(showToastFeedback = false) {
 
     // 3. Cargar lista de cubas disponibles para el filtro
     try {
-      const cubasData = await cubaService.listarCubas()
+      const cubasData = await cubaService.listarCubas({ incluirPrediccion: false })
       if (Array.isArray(cubasData)) {
         cubasList.value = cubasData
       }

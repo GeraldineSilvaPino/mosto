@@ -6,14 +6,16 @@ from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 import random
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, func, or_
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_, desc, func, or_, select
 from pydantic import AwareDatetime
 
 from app.services.demo_access import require_demo_mode, require_legacy_tank
 from app.services.access import business_db
 from app.models import (
     Cuba,
+    AjustePerfilProceso,
+    PerfilFermentacion,
     ProcesoFermentacion,
     LecturaTelemetria,
     EventoAlerta,
@@ -26,6 +28,7 @@ from app.models import MensajeTelemetria
 from app.schemas import CubaOut, LecturaOut, HistoricoCubaOut, MLPredictionOut, SimulacionAnomaliaOut
 from app.services.ml_service import evaluar_riesgo_parada_cuba, evaluar_proceso_cinetica, ventana_modelo_legacy
 from app.services.rules_engine import rules_engine
+from app.services.profile_versions import effective_profile
 from app.services.telemetry_v2 import aware, utc_now
 
 router = APIRouter(prefix="/api/cubas", tags=["Cubas y Monitoreo"])
@@ -73,16 +76,18 @@ def _resolver_dispositivo_cuba(db: Session, cuba_id: int) -> int:
     return disp.id
 
 
-def _calcular_prediccion_ml(db: Session, proceso_id: Optional[int]) -> Optional[MLPredictionOut]:
+def _calcular_prediccion_ml(db: Session, proceso: ProcesoFermentacion, tiene_mensajes=None) -> Optional[MLPredictionOut]:
     """Calcula la predicción cinético-enológica sobre la telemetría del proceso."""
-    if not proceso_id:
+    if not proceso:
         return None
-    if db.query(MensajeTelemetria.id).filter_by(fermentacion_id=proceso_id).first():
-        pred_cinetica = evaluar_proceso_cinetica(db, proceso_id)
+    if tiene_mensajes is None:
+        tiene_mensajes = db.query(MensajeTelemetria.id).filter_by(fermentacion_id=proceso.id).first()
+    if tiene_mensajes:
+        pred_cinetica = evaluar_proceso_cinetica(db, proceso)
         if pred_cinetica:
             return MLPredictionOut(**pred_cinetica)
 
-    lecturas = ventana_modelo_legacy(db, proceso_id, 17)
+    lecturas = ventana_modelo_legacy(db, proceso.id, 17)
 
     if not lecturas:
         return MLPredictionOut(
@@ -137,7 +142,7 @@ def _mapear_cuba_out(
     proceso_activo: Optional[ProcesoFermentacion],
     ultima_lectura: Optional[LecturaTelemetria],
     prediccion_ml: Optional[MLPredictionOut] = None,
-    db: Session = None
+    ajuste: Optional[AjustePerfilProceso] = None
 ) -> CubaOut:
     """Helper para transformar la entidad Cuba y sus relaciones al DTO CubaOut."""
     variedad = None
@@ -147,9 +152,7 @@ def _mapear_cuba_out(
 
     if proceso_activo:
         if proceso_activo.perfil:
-            from app.services.profile_overrides import applied_profile
-            from app.services.telemetry_v2 import utc_now
-            applied = applied_profile(db, proceso_activo, proceso_activo.perfil, utc_now())
+            applied = ajuste.configuracion if ajuste else effective_profile(proceso_activo, proceso_activo.perfil)
             temp_min = applied.get("temp_min")
             temp_max = applied.get("temp_max")
             if proceso_activo.perfil.cepa:
@@ -194,74 +197,59 @@ def _mapear_cuba_out(
     )
 
 
+def _consultar_cubas(db: Session, *, incluir_prediccion: bool, cuba_id: Optional[int] = None):
+    corte = utc_now()
+    ultima_id = (select(LecturaTelemetria.id)
+        .where(LecturaTelemetria.fermentacion_id == ProcesoFermentacion.id,
+               LecturaTelemetria.timestamp <= corte)
+        .order_by(LecturaTelemetria.timestamp.desc(), LecturaTelemetria.id.desc())
+        .limit(1).correlate(ProcesoFermentacion).scalar_subquery())
+    ajuste_id = (select(AjustePerfilProceso.id)
+        .where(AjustePerfilProceso.fermentacion_id == ProcesoFermentacion.id,
+               AjustePerfilProceso.vigente_desde <= corte)
+        .order_by(AjustePerfilProceso.revision.desc())
+        .limit(1).correlate(ProcesoFermentacion).scalar_subquery())
+
+    consulta = (db.query(Cuba, ProcesoFermentacion, LecturaTelemetria, AjustePerfilProceso)
+        .select_from(Cuba)
+        .outerjoin(ProcesoFermentacion, and_(ProcesoFermentacion.cuba_id == Cuba.id,
+                                             ProcesoFermentacion.estado == "en_proceso"))
+        .outerjoin(LecturaTelemetria, LecturaTelemetria.id == ultima_id)
+        .outerjoin(AjustePerfilProceso, AjustePerfilProceso.id == ajuste_id)
+        .options(joinedload(ProcesoFermentacion.perfil).joinedload(PerfilFermentacion.cepa))
+        .order_by(Cuba.id))
+    if cuba_id is not None:
+        consulta = consulta.filter(Cuba.id == cuba_id)
+    if incluir_prediccion:
+        mensajes = select(MensajeTelemetria.id).where(
+            MensajeTelemetria.fermentacion_id == ProcesoFermentacion.id).exists()
+        consulta = consulta.add_columns(mensajes.label("tiene_mensajes"))
+
+    resultado = []
+    for fila in consulta.all():
+        cuba, proceso, lectura, ajuste = fila[:4]
+        pred = _calcular_prediccion_ml(db, proceso, fila.tiene_mensajes) if incluir_prediccion and proceso else None
+        resultado.append(_mapear_cuba_out(cuba, proceso, lectura, pred, ajuste))
+    return resultado
+
+
 @router.get("", response_model=List[CubaOut], summary="Listar todas las cubas con telemetría en tiempo real")
-def listar_cubas(response: Response, db: Session = Depends(business_db("demo"))):
-    """Lista todas las cubas de la bodega con su última lectura de sensores registrada e inferencia IA."""
-    # Cabeceras explícitas para evitar que los navegadores almacenen en caché el polling
+def listar_cubas(response: Response, incluir_prediccion: bool = True, db: Session = Depends(business_db("demo"))):
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
-
-    cubas = db.query(Cuba).order_by(Cuba.id.asc()).all()
-    resultado = []
-    
-    for c in cubas:
-        # Buscar proceso de fermentación activo en la cuba (estado: 'en_proceso')
-        proceso_activo = (
-            db.query(ProcesoFermentacion)
-            .filter(ProcesoFermentacion.cuba_id == c.id, ProcesoFermentacion.estado == "en_proceso")
-            .order_by(desc(ProcesoFermentacion.id))
-            .first()
-        )
-
-        ultima_lectura = None
-        pred_ml = None
-        if proceso_activo:
-            ultima_lectura = (
-                db.query(LecturaTelemetria)
-                .filter(LecturaTelemetria.fermentacion_id == proceso_activo.id,
-                        LecturaTelemetria.timestamp <= utc_now())
-                .order_by(desc(LecturaTelemetria.timestamp), desc(LecturaTelemetria.id))
-                .first()
-            )
-            pred_ml = _calcular_prediccion_ml(db, proceso_activo.id)
-
-        resultado.append(_mapear_cuba_out(c, proceso_activo, ultima_lectura, pred_ml, db))
-        
-    return resultado
+    return _consultar_cubas(db, incluir_prediccion=incluir_prediccion)
 
 
 @router.get("/{cuba_id}", response_model=CubaOut, summary="Obtener detalle de una cuba por ID")
 def obtener_cuba(cuba_id: int, response: Response, db: Session = Depends(business_db("demo"))):
-    """Obtiene el estado detallado de una cuba, sus sensores y predicción de IA."""
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
-
-    c = db.query(Cuba).filter(Cuba.id == cuba_id).first()
-    if not c:
+    cubas = _consultar_cubas(db, incluir_prediccion=True, cuba_id=cuba_id)
+    if not cubas:
         raise HTTPException(status_code=404, detail=f"Cuba con ID {cuba_id} no encontrada")
-
-    proceso_activo = (
-        db.query(ProcesoFermentacion)
-        .filter(ProcesoFermentacion.cuba_id == c.id, ProcesoFermentacion.estado == "en_proceso")
-        .order_by(desc(ProcesoFermentacion.id))
-        .first()
-    )
-
-    ultima_lectura = None
-    pred_ml = None
-    if proceso_activo:
-        ultima_lectura = (
-            db.query(LecturaTelemetria)
-            .filter(LecturaTelemetria.fermentacion_id == proceso_activo.id,
-                        LecturaTelemetria.timestamp <= utc_now())
-            .order_by(desc(LecturaTelemetria.timestamp), desc(LecturaTelemetria.id))
-            .first()
-        )
-        pred_ml = _calcular_prediccion_ml(db, proceso_activo.id)
-
-    return _mapear_cuba_out(c, proceso_activo, ultima_lectura, pred_ml, db)
+    return cubas[0]
 
 
 @router.get("/{cuba_id}/historico", response_model=HistoricoCubaOut, summary="Curvas históricas de telemetría (para Chart.js)")
@@ -386,7 +374,7 @@ def obtener_prediccion_ml(cuba_id: int, response: Response, db: Session = Depend
             mensaje="Cuba sin proceso de fermentación activo"
         )
 
-    pred = _calcular_prediccion_ml(db, proceso_activo.id)
+    pred = _calcular_prediccion_ml(db, proceso_activo)
     return pred or MLPredictionOut(
         riesgo_pct=None,
         estado_ia="RECOLECTANDO_DATOS",
@@ -465,7 +453,7 @@ def simular_anomalia_parada(cuba_id: int, db: Session = Depends(business_db("dem
     )
     lecturas_count = len(lecturas_creadas)
 
-    prediccion = _calcular_prediccion_ml(db, proceso_activo.id)
+    prediccion = _calcular_prediccion_ml(db, proceso_activo)
 
     return SimulacionAnomaliaOut(
         status="ok",
@@ -532,7 +520,7 @@ def restaurar_normalidad_cuba(cuba_id: int, db: Session = Depends(business_db("d
 
     db.commit()
 
-    prediccion = _calcular_prediccion_ml(db, proceso_activo.id)
+    prediccion = _calcular_prediccion_ml(db, proceso_activo)
     return {
         "status": "ok",
         "mensaje": "Cinética saludable restaurada con éxito",

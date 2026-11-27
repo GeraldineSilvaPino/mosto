@@ -1,8 +1,7 @@
 """Request-scoped authorization. Memberships, never JWT roles, grant access.
 
-Business sessions are separate from the authentication session, so their identity
-map cannot contain entities loaded before the scope was installed. Core SQL and
-bulk mutations are deliberately unavailable to business routers.
+Authorization loads scalar columns only, leaving the identity map empty when
+the business scope is installed. Core SQL and bulk mutations are unavailable.
 """
 from dataclasses import dataclass
 from functools import lru_cache
@@ -12,8 +11,8 @@ from sqlalchemy import and_, event, inspect, or_, select
 from sqlalchemy.orm import with_loader_criteria
 
 from app import models as m
-from app.database import SessionLocal
-from app.services.auth_service import get_current_user
+from app.database import get_db
+from app.services.auth_service import token_user_id
 
 
 def normalize_role(value):
@@ -42,6 +41,49 @@ WRITE_ROLES = {
     "provision": {"admin"},
 }
 KNOWN_ROLES = {"admin", "enologo", "operador", "lector"}
+
+
+@dataclass(frozen=True)
+class CompanyAccess:
+    user_id: int
+    name: str
+    email: str
+    company_id: int
+    company_name: str
+    memberships: tuple[tuple[int, str, str], ...]
+    company_admin: bool
+
+
+def load_company_access(db, user_id):
+    rows = (db.query(m.Usuario.nomb_compl, m.Usuario.correo_elec, m.EmpresaCliente.id.label("company_id"),
+                     m.EmpresaCliente.nomb_emp, m.Bodega.id.label("warehouse_id"), m.Bodega.nombre,
+                     m.UsuarioBodega.id.label("membership_id"), m.Rol.codigo)
+            .select_from(m.Usuario)
+            .outerjoin(m.EmpresaCliente, and_(m.EmpresaCliente.id == m.Usuario.empresa_id,
+                                              m.EmpresaCliente.activo.is_(True)))
+            .outerjoin(m.Bodega, m.Bodega.empresa_id == m.EmpresaCliente.id)
+            .outerjoin(m.UsuarioBodega, and_(m.UsuarioBodega.bodega_id == m.Bodega.id,
+                                             m.UsuarioBodega.usuario_id == m.Usuario.id))
+            .outerjoin(m.Rol, m.Rol.id == m.UsuarioBodega.rol_id)
+            .filter(m.Usuario.id == user_id, m.Usuario.activo.is_(True))
+            .order_by(m.Bodega.id).all())
+    if not rows:
+        raise HTTPException(401, "Usuario inactivo o no encontrado en el sistema.")
+    user = rows[0]
+    if user.company_id is None:
+        raise HTTPException(403, "Empresa inactiva o sin configurar")
+    memberships = tuple((r.warehouse_id, r.nombre, normalize_role(r.codigo))
+                        for r in rows if r.membership_id is not None)
+    roles = {warehouse: role for warehouse, _, role in memberships}
+    if not roles or len(roles) != len(memberships) or not set(roles.values()) <= KNOWN_ROLES:
+        raise HTTPException(403, "Sin asignaciones válidas a bodegas")
+    admin = len(memberships) == len(rows) and all(role == "admin" for role in roles.values())
+    return CompanyAccess(user_id, user.nomb_compl, user.correo_elec, user.company_id,
+                         user.nomb_emp, memberships, admin)
+
+
+def current_access(user_id: int = Depends(token_user_id), db=Depends(get_db)):
+    return load_company_access(db, user_id)
 
 
 def actor_id(db):
@@ -233,36 +275,15 @@ def business_db(policy="operations"):
     if policy not in WRITE_ROLES:
         raise ValueError("Política de autorización desconocida")
 
-    def dependency(request: Request, user=Depends(get_current_user)):
-        with SessionLocal() as db:
-            company = db.query(m.EmpresaCliente).filter_by(id=user.empresa_id, activo=True).first()
-            if company is None:
-                raise HTTPException(403, "Empresa inactiva o sin configurar")
-            company_ids = {row[0] for row in db.query(m.Bodega.id).filter_by(empresa_id=company.id)}
-            rows = db.query(m.UsuarioBodega.bodega_id, m.Rol.codigo).join(m.Rol).join(
-                m.Bodega, m.Bodega.id == m.UsuarioBodega.bodega_id).filter(
-                m.UsuarioBodega.usuario_id == user.id, m.Bodega.empresa_id == company.id).all()
-            roles = {}
-            for warehouse, role in rows:
-                role = normalize_role(role)
-                if warehouse in roles or role not in KNOWN_ROLES:
-                    raise HTTPException(403, "Asignaciones de permisos ambiguas o desconocidas")
-                roles[warehouse] = role
-            company_admin = bool(company_ids) and all(roles.get(i) == "admin" for i in company_ids)
-            writable = request.method not in {"GET", "HEAD", "OPTIONS"}
-            if policy == "admin" and not company_admin:
-                raise HTTPException(403, "Requiere administración de todas las bodegas de la empresa")
-            warehouses = tuple(sorted(i for i, role in roles.items()
-                                      if not writable or role in WRITE_ROLES[policy]))
-            if not warehouses:
-                raise HTTPException(403, "Sin permisos para esta operación")
-            # Authentication/provisioning reads must not survive in this identity map.
-            db.expunge_all()
-            install_scope(db, AccessContext(user.id, company.id, warehouses,
-                                            company_admin, policy, writable))
-            try:
-                yield db
-            except Exception:
-                db.rollback()
-                raise
+    def dependency(request: Request, access=Depends(current_access), db=Depends(get_db)):
+        writable = request.method not in {"GET", "HEAD", "OPTIONS"}
+        if policy == "admin" and not access.company_admin:
+            raise HTTPException(403, "Requiere administración de todas las bodegas de la empresa")
+        warehouses = tuple(i for i, _, role in access.memberships if not writable or role in WRITE_ROLES[policy])
+        if not warehouses:
+            raise HTTPException(403, "Sin permisos para esta operación")
+        db.expunge_all()
+        install_scope(db, AccessContext(access.user_id, access.company_id, warehouses,
+                                        access.company_admin, policy, writable))
+        return db
     return dependency

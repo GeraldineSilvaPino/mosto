@@ -9,13 +9,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
-from app.models import Usuario, EmpresaCliente, Bodega, UsuarioBodega, Rol
-from app.services.access import normalize_role, KNOWN_ROLES
+from app.models import Usuario
+from app.services.access import load_company_access, current_access
 from app.schemas import LoginIn, LoginOut, UserAuthPayload, PasswordResetIn
 from app.services.auth_service import (
     verify_password,
     create_access_token,
-    get_current_user,
     REMEMBER_ME_EXPIRE_DAYS,
     ACCESS_TOKEN_EXPIRE_HOURS
 )
@@ -31,27 +30,16 @@ ROLE_LABEL_MAP = {
 }
 
 
-def _auth_payload(db, user):
-    company = db.query(EmpresaCliente).filter_by(id=user.empresa_id, activo=True).first()
-    if company is None:
-        raise HTTPException(403, "Empresa inactiva o sin configurar")
-    rows = db.query(UsuarioBodega.bodega_id, Bodega.nombre, Rol.codigo).join(
-        Bodega, UsuarioBodega.bodega_id == Bodega.id).join(Rol).filter(
-        UsuarioBodega.usuario_id == user.id, Bodega.empresa_id == company.id).all()
-    ids = [row[0] for row in rows]
-    codes = {normalize_role(row[2]) for row in rows}
-    if not rows or len(set(ids)) != len(ids) or not codes.issubset(KNOWN_ROLES):
-        raise HTTPException(403, "Sin asignaciones válidas a bodegas")
-    company_ids = {row[0] for row in db.query(Bodega.id).filter_by(empresa_id=company.id)}
-    company_admin = set(ids) == company_ids and codes == {"admin"}
+def _auth_payload(access):
+    codes = {role for _, _, role in access.memberships}
     code = next(iter(codes)) if len(codes) == 1 else "Roles por bodega"
-    parts = user.nomb_compl.split()
+    parts = access.name.split()
     avatar = "".join(part[0] for part in parts[:2]).upper() or "MO"
-    return UserAuthPayload(id=user.id, name=user.nomb_compl, email=user.correo_elec,
+    return UserAuthPayload(id=access.user_id, name=access.name, email=access.email,
         role=ROLE_LABEL_MAP.get(code, "Solo lectura" if code == "lector" else code),
-        winery=company.nomb_emp, avatarInitial=avatar, company_admin=company_admin,
-        memberships=[{"bodega_id": ident, "bodega_nombre": name, "role": normalize_role(role)}
-                     for ident, name, role in rows])
+        winery=access.company_name, avatarInitial=avatar, company_admin=access.company_admin,
+        memberships=[{"bodega_id": ident, "bodega_nombre": name, "role": role}
+                     for ident, name, role in access.memberships])
 
 
 @router.post("/login", response_model=LoginOut)
@@ -106,7 +94,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
     else:
         exp_delta = timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
 
-    user_payload = _auth_payload(db, usuario)
+    user_payload = _auth_payload(load_company_access(db, usuario.id))
 
     token_claims = {
         "sub": str(usuario.id),
@@ -148,9 +136,5 @@ def recuperar_password(payload: PasswordResetIn, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserAuthPayload)
-def obtener_perfil_actual(
-    usuario_actual: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Retorna el perfil del usuario autenticado a través del token Bearer."""
-    return _auth_payload(db, usuario_actual)
+def obtener_perfil_actual(access=Depends(current_access)):
+    return _auth_payload(access)

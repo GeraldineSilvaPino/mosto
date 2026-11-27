@@ -859,7 +859,7 @@ async function cargarDatosCuba(id, rangoHoras = 24) {
 
 async function cargarListaCubas() {
   try {
-    const lista = await cubaService.listarCubas()
+    const lista = await cubaService.listarCubas({ incluirPrediccion: false })
     if (Array.isArray(lista) && lista.length > 0) {
       cubasDisponibles.value = lista
     }
@@ -869,9 +869,16 @@ async function cargarListaCubas() {
 }
 
 async function inicializarVista() {
-  await cargarListaCubas()
-
   const rawId = route.params.id || route.query.id
+  const lista = cargarListaCubas()
+  const idRuta = Number(rawId)
+  if (Number.isSafeInteger(idRuta) && idRuta > 0) {
+    selectedCubaId.value = idRuta
+    await Promise.all([lista, cargarDatosCuba(idRuta, rangoToHoras(activeTimeRange.value))])
+    return
+  }
+  await lista
+  if (rawId !== (route.params.id || route.query.id)) return
   let idNumerico = null
 
   if (rawId) {

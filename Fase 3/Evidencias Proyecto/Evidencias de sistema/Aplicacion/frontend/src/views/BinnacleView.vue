@@ -47,7 +47,7 @@ async function loadEntries() {
 async function loadTanks() {
   tankError.value = ''
   try {
-    tanks.value = await cubaService.listarCubas()
+    tanks.value = await cubaService.listarCubas({ incluirPrediccion: false })
   } catch {
     tankError.value = 'No se pudieron cargar las cubas.'
   }

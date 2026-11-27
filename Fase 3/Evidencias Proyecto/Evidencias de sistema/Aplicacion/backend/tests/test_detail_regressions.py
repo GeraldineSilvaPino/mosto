@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from sqlalchemy import event
+from sqlalchemy.orm import Session
 
 from app import models as m
 from app.database import SessionLocal
@@ -53,6 +55,31 @@ def test_tank_atlas_preserves_unknown_capacity_with_recorded_volume(client):
     tank = next(row for row in result.json() if row['id'] == 1)
     assert tank['capacidad_lts'] is None
     assert tank['volumen_actual_lts'] == 6000
+
+
+def test_fleet_summary_loads_all_visible_tanks_in_one_scoped_query(client):
+    with SessionLocal() as db:
+        db.add(m.Cuba(codigo="RESERVA", bodega_id=1))
+        db.commit()
+    full = client.get('/api/cubas')
+    assert full.status_code == 200
+    rows = full.json()
+    assert any(row['prediccion_ml'] for row in rows)
+    assert any(row['proceso_activo_id'] is None for row in rows)
+
+    queries = []
+    def record(state):
+        if state.session.info.get("access"):
+            queries.append(state.statement)
+
+    event.listen(Session, "do_orm_execute", record)
+    try:
+        summary = client.get('/api/cubas', params={'incluir_prediccion': 'false'})
+    finally:
+        event.remove(Session, "do_orm_execute", record)
+    assert summary.status_code == 200
+    assert summary.json() == [dict(row, prediccion_ml=None) for row in rows]
+    assert len(queries) == 1
 
 
 def test_history_legacy_cutoff_and_ph_are_available(client):

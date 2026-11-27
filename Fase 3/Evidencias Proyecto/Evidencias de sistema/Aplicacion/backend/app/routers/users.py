@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.models import Usuario, Rol, UsuarioBodega, Bodega, EmpresaCliente
 from app.schemas import UsuarioOut, UsuarioCreateIn, UsuarioUpdateRolIn, UsuarioUpdateEstadoIn
 from app.services.access import business_db, actor_id, normalize_role, KNOWN_ROLES
@@ -87,7 +87,9 @@ def _preserve_admins(db, user, memberships):
 @router.get("", response_model=List[UsuarioOut])
 def listar_usuarios(rol: Optional[str] = Query(None), activo: Optional[bool] = Query(None),
                     db: Session = Depends(business_db("admin"))):
-    query = db.query(Usuario)
+    grants = joinedload(Usuario.bodega_asignaciones)
+    query = db.query(Usuario).options(grants.joinedload(UsuarioBodega.bodega),
+                                      grants.joinedload(UsuarioBodega.rol))
     if activo is not None:
         query = query.filter(Usuario.activo == activo)
     if rol and rol not in {"todos", "all"}:
